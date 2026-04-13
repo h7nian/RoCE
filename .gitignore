@@ -1,0 +1,37 @@
+# Compiled object files
+src/*.o
+src/*.so
+src/*.dll
+
+# R session data
+.RData
+.Rhistory
+.RDataTmp
+
+# R package build artifacts
+*.tar.gz
+*.Rcheck/
+
+# IDE files
+.Rproj.user/
+.Rproj
+.cursor/
+.claude/
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Log files
+log/
+
+# Checkpoint files
+checkpoints/
+
+# Results data
+results/
+
+# Rcpp generated files
+src/RcppExports.cpp
+R/RcppExports.R

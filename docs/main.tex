@@ -1,0 +1,878 @@
+\documentclass{article}
+
+\usepackage[a4paper, margin=1in]{geometry}
+\usepackage{amssymb}
+\usepackage{amsmath}
+\usepackage{amsthm}
+\usepackage{bm} % For bold math symbols like \boldsymbol
+\usepackage{mathtools} % For \coloneqq
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage[dvipsnames]{xcolor}
+\usepackage[authoryear]{natbib}
+\usepackage{hyperref}
+
+\theoremstyle{remark}
+\newtheorem{remark}{Remark}
+
+% Define expectation operators
+\DeclareMathOperator{\E}{\mathbb{E}}
+\DeclareMathOperator{\Var}{Var}
+\DeclareMathOperator{\Cov}{Cov}
+\newcommand{\tildeE}{\widetilde{E}} % Sample average operator
+\newcommand{\bX}{\boldsymbol{X}}
+\newcommand{\balpha}{\boldsymbol{\alpha}}
+\newcommand{\bgamma}{\boldsymbol{\gamma}}
+\newcommand{\bbeta}{\boldsymbol{\beta}}
+
+\begin{document}
+
+\title{Federated Adaptive Causal Estimation with High Dimensional Covariates (FACE-HD)}
+\author{Sinian Zhang}
+\date{\today}
+\maketitle
+
+\section{Framework for Multi-Site Causal Inference}
+
+\subsection{Problem Setting and Notation}
+
+We address a causal inference problem involving a single target site ($t$) and multiple source sites ($\mathcal{S} = \{s_1, s_2, \ldots, s_K\}$). Our primary objective is to estimate the average treatment effect (ATE) at the target site by leveraging data from both the target site and auxiliary information from the source sites.
+We define the target-site potential outcome means
+$\mu^1 \coloneqq \E_t[Y(1)]$ and $\mu^0 \coloneqq \E_t[Y(0)]$, and the ATE
+\[
+\tau \coloneqq \mu^1-\mu^0.
+\]
+Throughout, $\E_r[\cdot]$ denotes expectation conditional on site membership $R=r$.
+For exposition, we derive the nuisance losses, algorithms, and asymptotic results for $\mu^1$; the corresponding statements for $\mu^0$ follow by symmetry (replace treatment level $1$ by $0$ and use the corresponding nuisance parameters), and the ATE estimator is obtained by differencing:
+\[
+\widehat{\tau} \coloneqq \widehat{\mu}^1-\widehat{\mu}^0.
+\]
+
+\paragraph{Basic Notation:}
+\begin{itemize}
+    \item $R \in \{t, s_1, \ldots, s_K\}$: A site membership indicator.
+    \item $\boldsymbol{X}$: A vector of raw covariates. We define $\phi(\boldsymbol{X})$ as a basis expansion (e.g., polynomials, splines) of the covariates to allow for flexible modeling.
+    \item $A \in \{0,1\}$: A binary treatment indicator.
+    \item $Y$: The outcome of interest. $Y(1)$ and $Y(0)$ are the potential outcomes.
+    \item $\mathcal{D}_t, \mathcal{D}_{s_j}$: Data from the target site $t$ and source site $s_j$.
+    \item $N_t, N_{s_j}$: Sample sizes at the target and source sites.
+    \item $N_{\mathrm{all}} \coloneqq N_t + \sum_{j=1}^{K} N_{s_j}$: Total sample size across all sites.
+    \item $\tildeE_r(\cdot)$: Denotes the empirical average over data from site $r$ (e.g., $r=t$ or $r=s_j$).
+\end{itemize}
+
+\subsection{Generalized Linear Model Framework}
+
+\subsubsection{Exponential-Tilting Calibration Weights for Site/Treatment Reweighting}\label{sec:density_ratio}
+For each source site $s_j \in \mathcal{S}$ and treatment level $a \in \{0,1\}$, we construct \emph{calibration weights} that reweight the $(R=s_j, A=a)$ group to match the target covariate distribution. We use an \emph{exponential tilting} (log-linear) \emph{working model} for the tilting function
+\begin{equation} \label{eq:site_membership}
+    r_{s_j,a}(\boldsymbol{X};\boldsymbol{\gamma}_{s_j,a}) \;\coloneqq\; \exp\{\phi(\boldsymbol{X})^T \boldsymbol{\gamma}_{s_j,a}\}.
+\end{equation}
+This form is convenient because it yields convex calibration losses and strictly positive weights. We do \emph{not} interpret \eqref{eq:site_membership} as a literal probabilistic model for $P(R,A\mid \boldsymbol{X})$; instead, the key requirement for our theory is that the implied weights satisfy covariate balance (Equation~\eqref{eq:balancing_property}) at the population target.
+Crucially, for the pairwise DR estimator $\widehat{\mu}^1_{t,s_j}$, only the single parameter vector $\boldsymbol{\gamma}_{s_j,1}$ (for the treated group at source $s_j$) is required.
+
+Given \eqref{eq:site_membership}, we define the (unnormalized) calibration weight for source-site treated observations as
+\begin{equation} \label{eq:weight_def}
+    w(\boldsymbol{X}; \boldsymbol{\gamma}_{s_j,1}) \;\coloneqq\; I(A=1)\,\exp\{-\phi(\boldsymbol{X})^T \boldsymbol{\gamma}_{s_j,1}\} 
+    \;=\; \frac{I(A=1)}{e^{\phi(\boldsymbol{X})^T \boldsymbol{\gamma}_{s_j,1}}}.
+\end{equation}
+Because $\phi(\boldsymbol{X})$ includes an intercept, any multiplicative normalizing constant (equivalently, an additive constant in the log-tilt) is absorbed into the intercept component of $\boldsymbol{\gamma}_{s_j,1}$. Consequently, when $\boldsymbol{\gamma}_{s_j,1}^*$ is the population solution of the calibration/balancing equation (the initialization loss FOC in \eqref{eq:gamma_init} and the calibrated loss FOC in \eqref{eq:gamma_calibrated_loss}), the operational weight satisfies the \emph{balancing property}: for every integrable function $h$,
+\begin{equation}\label{eq:balancing_property}
+    \E_{s_j}\!\bigl[w(\boldsymbol{X}; \boldsymbol{\gamma}_{s_j,1}^*)\,h(\boldsymbol{X})\bigr] = \E_t\!\bigl[h(\boldsymbol{X})\bigr],
+\end{equation}
+In general, the identity \eqref{eq:balancing_property} for \emph{all} integrable $h$ corresponds to the ideal (population) density-ratio weighting relationship. In our implementation and high-dimensional analysis, we enforce balance over a rich but finite-dimensional function class, typically the linear span of the chosen features $h(\boldsymbol{X})\in\mathrm{span}\{\phi_1(\boldsymbol{X}),\ldots,\phi_p(\boldsymbol{X})\}$ (including an intercept). The corresponding “weight-model correctness” condition in the appendix should be interpreted relative to this function class.
+which is the key identity underlying the doubly robust estimator in Section~\ref{sec:pairwise}.
+
+\begin{remark}[Calibration weights vs.\ full probabilistic model]
+The exponential-tilting form \eqref{eq:site_membership} can be motivated by a multinomial logistic model for $(R,A\mid \boldsymbol{X})$ (with $R=t$ as a reference category), in which case the implied weights approximate inverse odds of site/treatment membership.
+In this paper, however, we treat \eqref{eq:site_membership} as a \emph{calibration working model}: $\boldsymbol{\gamma}_{s_j,a}$ is defined by the (regularized) calibration loss, and the substantive requirement is the resulting covariate-balance moment condition \eqref{eq:balancing_property}.
+\end{remark}
+
+\subsubsection{GLM-Based Outcome Models}
+We use generalized linear models for the potential outcomes. Let $\psi(\cdot; \cdot)$ be a GLM response function with a canonical link, mapping features to the conditional mean of the outcome.
+\begin{equation}
+    m^a(\boldsymbol{X}; \boldsymbol{\alpha}^a) = \psi(\phi(\boldsymbol{X}); \boldsymbol{\alpha}^a), \quad a \in \{0,1\}
+\end{equation}
+
+\subsection{Doubly Robust Estimators}
+\label{sec:pairwise}
+The doubly robust estimators combine outcome modeling and inverse probability weighting. The estimator for $\mu^1$ assisted by source site $s_j$ is:
+\begin{equation} \label{eq:dr_estimator}
+\widehat{\mu}^1_{t,s_j} = \tildeE_{t}\bigl(\psi(\phi(\boldsymbol{X}); \widehat{\boldsymbol{\alpha}}_{t,s_j}^1)\bigr) + \tildeE_{s_j}\left(\frac{I(A = 1)}{e^{\phi(\boldsymbol{X})^T \widehat{\boldsymbol{\gamma}}_{s_j,1}}} \bigl(Y - \psi(\phi(\boldsymbol{X}); \widehat{\boldsymbol{\alpha}}_{t,s_j}^1)\bigr)\right)
+\end{equation}
+The estimator for the control group, $\widehat{\mu}^0_{t,s_j}$, is defined symmetrically by using the nuisance parameters $(\boldsymbol{\alpha}^0,\boldsymbol{\gamma}_{s_j,0})$ and replacing $I(A=1)$ by $I(A=0)$ in the weighted residual term:
+\begin{equation}
+\widehat{\mu}^0_{t,s_j} = \tildeE_{t}\bigl(\psi(\phi(\boldsymbol{X}); \widehat{\boldsymbol{\alpha}}_{t,s_j}^0)\bigr) + \tildeE_{s_j}\left(\frac{I(A = 0)}{e^{\phi(\boldsymbol{X})^T \widehat{\boldsymbol{\gamma}}_{s_j,0}}} \bigl(Y - \psi(\phi(\boldsymbol{X}); \widehat{\boldsymbol{\alpha}}_{t,s_j}^0)\bigr)\right).
+\end{equation}
+Finally, the (pairwise) ATE estimator is $\widehat{\tau}_{t,s_j}\coloneqq \widehat{\mu}^1_{t,s_j}-\widehat{\mu}^0_{t,s_j}$, and the target-only ATE estimator is $\widehat{\tau}_{ot}\coloneqq \widehat{\mu}^1_{ot}-\widehat{\mu}^0_{ot}$.
+
+\paragraph{Target-site propensity score.}
+The target-only estimator $\widehat{\mu}^1_{ot}$ is a standard AIPW estimator on the target data alone and requires the \emph{target-site propensity score},
+\begin{equation}\label{eq:pi_ot}
+\pi_{ot}(\boldsymbol{X}) \coloneqq P(A=1 \mid R=t,\, \boldsymbol{X}),
+\end{equation}
+which models treatment assignment \emph{within} the target population.
+This is conceptually and operationally distinct from the cross-site calibration/tilting parameters $\boldsymbol{\gamma}_{s_j,a}$ defined in Section~\ref{sec:density_ratio}:
+$\pi_{ot}$ is estimated locally at the target site (e.g., via $\ell_1$-penalized logistic regression on $(A,\boldsymbol{X})$ pairs from $\mathcal{D}_t$), and does not enter the source-assisted estimator $\widehat{\mu}^1_{t,s_j}$ or its loss functions.
+
+\section{Parameter Estimation and Loss Functions}
+
+\subsection{The Coupling Challenge in Federated Settings}
+In this framework, the outcome model parameters $\boldsymbol{\alpha}_{t,s_j}^a$ and the site/treatment model parameters $\boldsymbol{\gamma}_{s_j,a}$ are interdependent. This coupling arises because the optimal choice for $\boldsymbol{\alpha}$ depends on weights derived from $\boldsymbol{\gamma}$, and vice-versa. Solving this coupled system jointly is computationally challenging in a federated setting where data is decentralized.
+
+\subsection{Derivation of Loss Functions}
+
+To derive loss functions for a federated, iterative estimation process, we follow the principle of constructing estimators that solve the efficient score equations, as identified by the influence function analysis.
+
+\paragraph{Step 1: Influence Function Decomposition.}
+The asymptotic error of $\widehat{\mu}^1_{t,s_j}$ can be decomposed into terms related to the estimation errors of the parameters $\boldsymbol{\alpha}$ and $\boldsymbol{\gamma}$:
+\begin{equation} \label{eq:if_decomposition}
+\widehat{\mu}^1_{t,s_j} - \bar{\mu}^1_{t,s_j} = (\boldsymbol{\widehat{\alpha}}_{t,s_j}^1 - \boldsymbol{\bar{\alpha}}_{t,s_j}^1)^T \boldsymbol{U}_{\alpha} + (\boldsymbol{\widehat{\gamma}}_{s_j,1} - \boldsymbol{\bar{\gamma}}_{s_j,1})^T \boldsymbol{U}_{\gamma} + \text{h.o.t.}
+\end{equation}
+where $\boldsymbol{\bar{\alpha}}_{t,s_j}^1$ and $\boldsymbol{\bar{\gamma}}_{s_j,1}$ denote the \emph{population targets} (probability limits / pseudo-true parameters) associated with the nuisance estimation step. Under correct specification of the corresponding nuisance model, these coincide with the true parameters. The vectors $\boldsymbol{U}_{\alpha}$ and $\boldsymbol{U}_{\gamma}$ are the score vectors:
+\begin{align} \label{eq:score_vectors}
+\boldsymbol{U}_{\alpha} &= \tildeE_{t} \left[ \nabla_{\boldsymbol{\alpha}} \psi(\phi(\boldsymbol{X}); \boldsymbol{\bar{\alpha}}_{t,s_j}^1) \right] - \tildeE_{s_j} \left[\frac{I(A = 1)}{e^{\phi(\boldsymbol{X})^T \boldsymbol{\bar{\gamma}}_{s_j,1}}} \nabla_{\boldsymbol{\alpha}} \psi(\phi(\boldsymbol{X}); \boldsymbol{\bar{\alpha}}_{t,s_j}^1) \right] \\
+\boldsymbol{U}_{\gamma} &= \tildeE_{s_j}  \left[ -\frac{I(A = 1)}{e^{\phi(\boldsymbol{X})^T \boldsymbol{\bar{\gamma}}_{s_j,1}}} \phi(\boldsymbol{X}) (Y - \psi(\phi(\boldsymbol{X}); \boldsymbol{\bar{\alpha}}_{t,s_j}^1)) \right]
+\end{align}
+ 
+\paragraph{Step 2: Cross-Calibration Principle.}
+For the remainder in \eqref{eq:if_decomposition} to be second-order in the nuisance errors (Neyman orthogonality / debiasing), the estimators must be constructed so that $\boldsymbol{U}_{\alpha} = \mathbf{0}$ \emph{at} $\boldsymbol{\gamma}=\widehat{\boldsymbol{\gamma}}$ and $\boldsymbol{U}_{\gamma} = \mathbf{0}$ \emph{at} $\boldsymbol{\alpha}=\widehat{\boldsymbol{\alpha}}$.
+The cross-calibration strategy achieves this by constructing the loss for $\boldsymbol{\gamma}$ so that its first-order condition \emph{is} the score equation $\boldsymbol{U}_{\alpha}=\boldsymbol{0}$, and symmetrically for $\boldsymbol{\alpha}$.
+
+\paragraph{Step 3: Calibrated Loss for $\boldsymbol{\gamma}$ and Verification.}
+We use the calibrated exponential-tilting loss in Eq.~\eqref{eq:gamma_calibrated_loss}.
+To verify the cross-calibration, take the gradient with respect to $\boldsymbol{\gamma}$ (setting aside the $\ell_1$ subdifferential):
+\[
+\nabla_{\boldsymbol{\gamma}} \ell = \tildeE_t\!\left[ \nabla_{\boldsymbol{\alpha}} \psi(\phi(\boldsymbol{X}); \boldsymbol{\bar{\alpha}}) \right] - \tildeE_{s_j}\!\left[ \frac{I(A=1)}{e^{\phi(\boldsymbol{X})^T \boldsymbol{\gamma}}} \,\psi'(\mathcal{T}(\phi(\boldsymbol{X})^T \boldsymbol{\bar{\alpha}}))\,\phi(\boldsymbol{X}) \right].
+\]
+For a canonical-link GLM, $\nabla_{\boldsymbol{\alpha}} \psi(\phi(\boldsymbol{X}); \boldsymbol{\alpha}) = \psi'(\phi(\boldsymbol{X})^T \boldsymbol{\alpha})\,\phi(\boldsymbol{X})$, so under asymptotically inactive truncation the two terms become
+\[
+\nabla_{\boldsymbol{\gamma}} \ell = \tildeE_t\!\left[\psi'(\phi^T \boldsymbol{\bar{\alpha}})\,\phi(\boldsymbol{X})\right] - \tildeE_{s_j}\!\left[w(\boldsymbol{X};\boldsymbol{\gamma})\,\psi'(\phi^T \boldsymbol{\bar{\alpha}})\,\phi(\boldsymbol{X})\right],
+\]
+which matches the score vector $\boldsymbol{U}_{\alpha}$ in \eqref{eq:score_vectors} up to an asymptotically negligible truncation term.
+\emph{Hence the population first-order condition of the calibrated $\boldsymbol{\gamma}$-loss enforces the same first-order orthogonality equation} $\boldsymbol{U}_{\alpha}=\boldsymbol{0}$.
+Moreover, the calibrated loss \eqref{eq:gamma_calibrated_loss} is strictly convex in $\boldsymbol{\gamma}$ (because $t\mapsto e^{-t}$ is convex), guaranteeing a unique minimizer under standard regularity.
+
+\paragraph{Step 4: Calibrated Loss for $\boldsymbol{\alpha}$ and Verification.}
+The outcome model is fitted by minimizing the calibrated weighted GLM negative log-likelihood in Eq.~\eqref{eq:alpha_calibrated_loss}, given a plug-in site/treatment model $\widehat{\boldsymbol{\gamma}}$.
+where $w(\boldsymbol{X}; \widehat{\boldsymbol{\gamma}}) = I(A=1)/e^{\phi(\boldsymbol{X})^T \widehat{\boldsymbol{\gamma}}_{s_j,1}}$ is the exponential-tilting calibration weight from \eqref{eq:weight_def}, and $\Psi(\cdot)$ is the log-partition (cumulant) function of the GLM.
+The gradient is
+\[
+\nabla_{\boldsymbol{\alpha}} \ell = \tildeE_{s_j}\!\left[ w_{\tau}(\boldsymbol{X}; \widehat{\boldsymbol{\gamma}})\, \bigl(-Y + \psi(\phi(\boldsymbol{X})^T \boldsymbol{\alpha})\bigr)\,\phi(\boldsymbol{X}) \right],
+\]
+and under asymptotically inactive truncation this matches $-\,\boldsymbol{U}_{\gamma}(\boldsymbol{\alpha},\, \widehat{\boldsymbol{\gamma}})$ at first order, so the first-order condition $\nabla_{\boldsymbol{\alpha}} \ell = \boldsymbol{0}$ enforces $\boldsymbol{U}_{\gamma}=\boldsymbol{0}$.
+
+\paragraph{Cross-calibration summary.}
+Steps~3--4 establish the cross-calibration: minimizing the $\boldsymbol{\gamma}$-loss enforces $\boldsymbol{U}_{\alpha}=\boldsymbol{0}$, and minimizing the $\boldsymbol{\alpha}$-loss enforces $\boldsymbol{U}_{\gamma}=\boldsymbol{0}$.
+Together, the first-order terms in the remainder \eqref{eq:if_decomposition} vanish at the population level, leaving a second-order error $O_p(\|\widehat{\boldsymbol{\alpha}}-\boldsymbol{\alpha}^*\|\cdot\|\widehat{\boldsymbol{\gamma}}-\boldsymbol{\gamma}^*\|)$ that is negligible under standard high-dimensional rates; see the appendix proofs for details.
+
+\subsection{Two-Step Estimation Procedure}
+To handle the parameter coupling in a federated context, we employ a two-round iterative estimation strategy based on the alternating minimization of our cross-calibrated loss functions.
+
+\paragraph{Step 1: Initial Parameter Estimation (Iteration 0).}
+First, we obtain robust initial estimates to bootstrap the process.
+
+\textbf{Initial Outcome Model:} A simple regularized regression on source site data provides a starting point $\widehat{\boldsymbol{\alpha}}_{t,s_j}^{1,(0)}$. Let $\ell_{GLM}$ be the standard loss for the chosen GLM (e.g., squared error for linear, log-loss for logistic).
+\begin{equation}\label{eq:alpha_init}
+\ell\left(\boldsymbol{\alpha}_{t,s_j}^{1}\right) = \tildeE_{s_j}\left[I(A=1)\ell_{GLM}\left(Y, \psi\left(\phi(\boldsymbol{X}); \boldsymbol{\alpha}_{t,s_j}^1\right)\right)\right] + \lambda_{\alpha} \|\boldsymbol{\alpha}_{t,s_j}^{1}\|_1
+\end{equation}
+
+\textbf{Initial Site/Treatment Model:} We initialize $\widehat{\boldsymbol{\gamma}}_{s_j,a}^{(0)}$ by minimizing the following regularized exponential tilting loss, which targets the density ratio weights without depending on the outcome model, providing a robust starting point.
+
+\begin{equation} \label{eq:gamma_init}
+\ell(\boldsymbol{\gamma}_{s_j,1}) = \left( \tildeE_t \left[ \phi(\boldsymbol{X}) \right] \right)^T \boldsymbol{\gamma}_{s_j,1} + \tildeE_{s_j} \left[ I(A=1) e^{-\phi(\boldsymbol{X})^T \boldsymbol{\gamma}_{s_j,1}} \right] + \lambda_{\gamma} \|\boldsymbol{\gamma}_{s_j,1}\|_1
+\end{equation}
+
+\paragraph{Step 2: Calibrated Parameter Estimation (Iteration 1).}
+Using the initial estimates, we perform one round of alternating minimization.
+\begin{enumerate}
+    \item \textbf{Calibrated Site/Treatment Model:} Obtain $\widehat{\boldsymbol{\gamma}}_{s_j,1}^{(1)}$ by minimizing the calibrated loss function \eqref{eq:gamma_calibrated_loss} with the initial $\widehat{\boldsymbol{\alpha}}_{t,s_j}^{1,(0)}$ plugged in.
+    \item \textbf{Calibrated Outcome Model:} Obtain $\widehat{\boldsymbol{\alpha}}_{t,s_j}^{1,(1)}$ by minimizing the calibrated loss function \eqref{eq:alpha_calibrated_loss} using the initial site/treatment model $\widehat{\boldsymbol{\gamma}}_{s_j,1}^{(0)}$ as the plug-in weight model (this plug-in order is intentional in the two-level cross-fitting construction and does not affect first-order asymptotics under the alignment condition stated in the appendix).
+\end{enumerate}
+The final parameters used are $\widehat{\boldsymbol{\alpha}}_{t,s_j}^{1} \coloneqq \widehat{\boldsymbol{\alpha}}_{t,s_j}^{1,(1)}$ and $\widehat{\boldsymbol{\gamma}}_{s_j,1} \coloneqq \widehat{\boldsymbol{\gamma}}_{s_j,1}^{(1)}$.
+
+\section{Asymptotic Properties, Aggregation, and Inference}
+
+\subsection{Influence Functions and Variance Components}
+To construct confidence intervals and find optimal aggregation weights, we rely on the influence functions (IF) of our estimators. The total variance of the final aggregated estimator is a function of the variances and covariances of these IFs.
+
+Let $\widehat{\mu}^1_{ot}$ be the target-only estimator and $\widehat{\mu}^1_{t,s_j}$ be the source-assisted estimator from site $s_j$.
+
+\subsubsection{Specific Influence Functions}
+The empirical influence functions are estimated as follows:
+
+\paragraph{Target-Only Estimator IF ($\widehat{\varphi}_{ot,i}$):}
+Using the target-site propensity score $\widehat{\pi}_{ot}(\boldsymbol{X})$ defined in \eqref{eq:pi_ot} and a target-only outcome model $\widehat{\boldsymbol{\alpha}}_{ot}^1$:
+\begin{equation} \label{eq:if_target_only}
+\widehat{\varphi}_{ot,i} = \frac{A_i Y_i}{\widehat{\pi}_{ot}(\boldsymbol{X}_i)} - \left(\frac{A_i}{\widehat{\pi}_{ot}(\boldsymbol{X}_i)} - 1\right)\psi(\phi(\boldsymbol{X}_i); \widehat{\boldsymbol{\alpha}}_{ot}^1) - \widehat{\mu}^1_{ot}
+\end{equation}
+
+\paragraph{Target-Site Component IF ($\widehat{\zeta}_{t,s_j,i}$):}
+\begin{equation} \label{eq:if_target_component}
+\widehat{\zeta}_{t,s_j,i} = \psi(\phi(\boldsymbol{X}_i); \widehat{\boldsymbol{\alpha}}_{t,s_j}^1) - \tildeE_t(\psi(\phi(\boldsymbol{X}); \widehat{\boldsymbol{\alpha}}_{t,s_j}^1))
+\end{equation}
+
+\paragraph{Source-Site Component IF ($\widehat{\xi}_{t,s_j,i}$):}
+Using the calibration weight $w(\boldsymbol{X}; \boldsymbol{\gamma})$ from \eqref{eq:weight_def}:
+\begin{equation} \label{eq:if_source_component}
+\widehat{\xi}_{t,s_j,i} = \frac{A_i}{e^{\phi(\boldsymbol{X}_i)^T \widehat{\boldsymbol{\gamma}}_{s_j,1}}}(Y_i - \psi(\phi(\boldsymbol{X}_i); \widehat{\boldsymbol{\alpha}}_{t,s_j}^1)) - \widehat{\delta}_{t,s_j}^1
+\end{equation}
+where $\widehat{\delta}^1_{t,s_j} = \tildeE_{s_j} \left(\frac{A}{e^{\phi(\boldsymbol{X})^T \widehat{\boldsymbol{\gamma}}_{s_j,1}}} (Y - \psi(\phi(\boldsymbol{X}); \widehat{\boldsymbol{\alpha}}_{t,s_j}^1))\right)$.
+
+\subsubsection{Variance Components}
+From these influence functions, we can estimate the necessary variance and covariance components.
+\begin{align} \label{eq:variance_components}
+    \widehat{V}_{ot} &= \frac{1}{N_t}\sum_{i \in \mathcal{D}_t}(\widehat{\varphi}_{ot,i} - \bar{\widehat{\varphi}}_{ot})^2 \\
+    \widehat{V}_{t,s_j} &= \frac{1}{N_t}\sum_{i \in \mathcal{D}_t}(\widehat{\zeta}_{t,s_j,i} - \bar{\widehat{\zeta}}_{t,s_j})^2 \\
+    \widehat{V}_{s_j} &= \frac{1}{N_{s_j}}\sum_{i \in \mathcal{D}_{s_j}}(\widehat{\xi}_{t,s_j,i} - \bar{\widehat{\xi}}_{t,s_j})^2 \\
+    \widehat{C}_{ot,s_j} &= \frac{1}{N_t}\sum_{i \in \mathcal{D}_t}(\widehat{\varphi}_{ot,i} - \bar{\widehat{\varphi}}_{ot})(\widehat{\zeta}_{t,s_j,i} - \bar{\widehat{\zeta}}_{t,s_j})
+\end{align}
+\textbf{Additionally, we must compute cross-site covariance terms} to account for the fact that all source-assisted estimators use the same target site data:
+\begin{equation} \label{eq:cross_site_covariance}
+    \widehat{C}_{t,s_j,s_k} = \frac{1}{N_t}\sum_{i \in \mathcal{D}_t}(\widehat{\zeta}_{t,s_j,i} - \bar{\widehat{\zeta}}_{t,s_j})(\widehat{\zeta}_{t,s_k,i} - \bar{\widehat{\zeta}}_{t,s_k}) \quad \text{for } j \neq k
+\end{equation}
+Ignoring these cross-site correlations would lead to a systematic underestimation of the aggregated estimator's variance and incorrect confidence intervals; see also the analogous shared-target covariance correction in FACE \citep{han2025federated}.
+
+\paragraph{Finite-sample numerical note.}
+In finite samples, the plug-in variance/covariance components (especially the shared-target covariance terms) can yield a quadratic objective in \eqref{eq:final_opt} that is only approximately convex due to estimation noise.
+Our implementation therefore symmetrizes the estimated covariance inputs and applies a minimal ridge regularization when needed to keep the weight optimization numerically well-posed; this ridge vanishes asymptotically under the regularity conditions in the appendix.
+
+\subsection{Optimal Aggregation of Estimators}
+The target site combines its own estimator, $\widehat{\mu}^1_{ot}$, with the estimators received from all source sites, $\{\widehat{\mu}^1_{t,s_j}\}_{j=1}^K$. The final aggregated estimator is a weighted combination:
+\begin{equation} \label{eq:aggregated_estimator}
+    \widehat{\mu}^1_{\text{agg}} = (1 - \sum_{j=1}^K \eta_j) \widehat{\mu}^1_{ot} + \sum_{j=1}^K \eta_j \widehat{\mu}^1_{t,s_j}
+\end{equation}
+The optimal weights $\boldsymbol{\eta}^* = (\eta_1^*, \ldots, \eta_K^*)$ are found by minimizing the asymptotic variance of $\widehat{\mu}^1_{\text{agg}}$, with an added penalty term to regularize the weights and perform source selection. This leads to the following quadratic optimization problem:
+\begin{equation} \label{eq:final_opt}
+\begin{aligned}
+\min_{\boldsymbol{\eta}} \quad & \frac{1}{N_t}\Bigl(1 - \sum_{j=1}^K \eta_j\Bigr)^2 \widehat{V}_{ot} + \sum_{j=1}^K \frac{\eta_j^2}{N_t} \widehat{V}_{t,s_j} + \sum_{j=1}^K \frac{\eta_j^2}{N_{s_j}} \widehat{V}_{s_j} \\
+&+ \frac{2}{N_t}\sum_{j=1}^K \eta_j\Bigl(1 - \sum_{k=1}^K \eta_k\Bigr)\widehat{C}_{ot,s_j} + \frac{2}{N_t}\sum_{j<k} \eta_j \eta_k \widehat{C}_{t,s_j,s_k} \\
+&+ \lambda \sum_{j = 1}^K\left|\eta_j\right|\left(\widehat{\mu}^1_{ot}-\widehat{\mu}^1_{t,s_j}\right)^2
+\end{aligned}
+\end{equation}
+\paragraph{Remark on Scaling.}
+Equation~\eqref{eq:final_opt} is written in terms of an estimated variance $\widehat{\Var}(\widehat{\mu}^1_{\text{agg}})$.
+For asymptotic analysis of $\sqrt{N_{\mathrm{all}}}(\widehat{\mu}^1_{\text{agg}}-\mu^1)$, one can equivalently work with the estimated asymptotic variance $N_{\mathrm{all}}\cdot \widehat{\Var}(\widehat{\mu}^1_{\text{agg}})$, which multiplies the variance and covariance terms in \eqref{eq:final_opt} by $N_{\mathrm{all}}$.
+This scaling can be absorbed into the tuning of $\lambda$ and is used in the appendix proofs.
+\paragraph{ATE aggregation.}
+Define $\widehat{\mu}^0_{\text{agg}}$ by applying the same aggregation construction to $\{\widehat{\mu}^0_{t,s_j}\}_{j=1}^K$ (with the corresponding variance/covariance components for the control arm), and set $\widehat{\tau}_{\text{agg}}\coloneqq \widehat{\mu}^1_{\text{agg}}-\widehat{\mu}^0_{\text{agg}}$. The appendix gives the asymptotic linearity/normality argument; inference for $\tau$ follows by standard linear combination (difference) of the two arm-specific influence function representations.
+
+\subsection{Theoretical Regularity Conditions (Summary)}
+The detailed proofs are provided in \texttt{proof.tex}. Here we summarize the main technical conditions that the proofs rely on and clarify a few points that are commonly questioned by reviewers.
+\begin{itemize}
+    \item \textbf{High-dimensional nuisance rates under calibrated losses.} The calibrated nuisance estimators $\widehat{\boldsymbol{\alpha}}$ and $\widehat{\boldsymbol{\gamma}}$ are $\ell_1$-penalized M-estimators. Under standard sub-Gaussian design/tail conditions and Restricted Strong Convexity (RSC), they satisfy
+    \(
+    \|\widehat{\boldsymbol{\beta}}-\boldsymbol{\beta}^*\|_2 = O_p(\sqrt{s\log(p)/N})
+    \)
+    and
+    \(
+    \|\widehat{\boldsymbol{\beta}}-\boldsymbol{\beta}^*\|_1 = O_p(s\sqrt{\log(p)/N})
+    \)
+    for $\boldsymbol{\beta}\in\{\boldsymbol{\alpha},\boldsymbol{\gamma}\}$; see \citet{tan2020model,negahban2012unified,buhlmann2011statistics}.
+    \item \textbf{Remainder control via calibration + cross-fitting.} The influence-function expansion has a remainder that is second-order in the nuisance errors because the calibrated losses enforce population score/orthogonality conditions. Cross-fitting ensures the evaluation fold is independent of the nuisance training sample, simplifying the empirical-process bounds (see also the general cross-fitting/orthogonality perspective in \citet{chernozhukov2018double}).
+    \item \textbf{Variance/covariance estimation with shared target data.} Because all source-assisted estimators use the same target sample, the cross-site covariance terms $\widehat{C}_{t,s_j,s_k}$ in \eqref{eq:final_opt} are required for a consistent variance estimate. These are still consistent plug-in estimators because they are ordinary sample averages over the i.i.d.\ target observations (with cross-fitted nuisances).
+    \item \textbf{Source selection and the ``separation'' assumption.} The support recovery guarantee for $\widehat{\boldsymbol{\eta}}$ uses a $\beta$-min type condition: biased sites must differ from the target estimand by at least a detectable amount so that the penalty dominates and drives $\widehat{\eta}_j\to 0$. More plainly: consistency of the aggregated estimator relies on the aggregation putting (asymptotically) negligible weight on non-transportable sources. If all sources have non-vanishing systematic bias for the target estimand and yet receive non-negligible weights, then $\widehat{\mu}^1_{\mathrm{agg}}$ will inherit bias (it targets a biased weighted mixture). Under weak bias/local alternatives (bias shrinking with $N$), exact selection consistency may fail; inference remains valid as long as any included weakly biased sources contribute $o_p(N^{-1/2})$ bias at the target scale.
+    \item \textbf{Bounded weights and clipping.} In practice one may clip extreme linear predictors during nuisance \emph{optimization} for numerical stability; this corresponds to using the truncation map $\mathcal{T}(\cdot)$ inside the calibrated nuisance losses (controlled by $M_{\tau}$). Our default inference formulas use the \emph{untruncated} DR estimating equation (equivalently, $M_{\tau,\mathrm{inference}}=\infty$ in the software). If one also applies truncation/clipping inside the final DR estimating equation, then the influence function changes in finite samples; the first-order limit theory is unchanged when truncation is asymptotically inactive (e.g., clipping probability $o(N^{-1})$ at the population targets), otherwise a clipping-induced bias term must be controlled (see \citet{tan2020model} for related discussion).
+    \item \textbf{Finite-sample convexity of the aggregation QP.} The population variance objective in \eqref{eq:final_opt} is convex because it is a variance of a linear combination of influence functions. In finite samples, separately estimated variance/covariance components can yield an approximately-convex (or slightly indefinite) quadratic form. Our implementation symmetrizes covariance inputs and adds a minimal ridge term when needed to ensure a well-posed convex optimization problem; the ridge is data-adaptive and vanishes as $N_t\to\infty$ under the stated conditions.
+    \item \textbf{Fixed $K$ vs.\ growing $K$.} The current theory treats the number of sources $K$ as fixed. Allowing $K$ to grow requires additional conditions to control accumulation of estimation error and selection (typically involving $\log K$ rates).
+\end{itemize}
+
+\subsection{Implementation--Theory Alignment (Practical Notes)}
+To improve reproducibility and avoid ambiguity in software implementations, we explicitly record how the code maps to the theory above:
+\begin{itemize}
+    \item \textbf{Centering convention for variance/covariance terms.} The variance components $\widehat V_{ot},\widehat V_{t,s_j},\widehat V_{s_j}$ and covariance terms $\widehat C_{ot,s_j},\widehat C_{t,s_j,s_k}$ are computed using fold-level centered influence-function components, matching Equations~\eqref{eq:variance_components}--\eqref{eq:cross_site_covariance}.
+    \item \textbf{Two variance targets in the workflow.} The quadratic objective in \eqref{eq:final_opt} is used to estimate fold-specific aggregation weights; final uncertainty for the cross-fitted estimator is then reported via a sample-level, \emph{site-stratified} (within-site centered) variance estimator computed from the unified estimating equation over all observations.
+    \item \textbf{Clipping/truncation defaults.} Truncation in nuisance optimization uses finite $M_{\tau}$, while the default inference setting uses the untruncated DR equation ($M_{\tau,\mathrm{inference}}=\infty$); finite inference truncation is treated as an optional finite-sample stabilization.
+\end{itemize}
+
+\paragraph{Formula-to-Implementation Map.}
+Table~\ref{tab:formula_code_map} summarizes the main equation-to-code correspondences used throughout the implementation.
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{|l|l|l|}
+\hline
+\textbf{Theory object} & \textbf{Equation} & \textbf{Implementation location} \\
+\hline
+Pairwise DR estimator & Eq.~\eqref{eq:dr_estimator} & \texttt{R/cross\_fitting\_algorithms.R}, \texttt{src/variance.cpp} \\
+\hline
+Variance components $\widehat V_{ot},\widehat V_t,\widehat V_s$ & Eq.~\eqref{eq:variance_components} & \texttt{R/estimators\_target.R}, \texttt{src/variance.cpp} \\
+\hline
+Cross-site covariance $\widehat C_{t,s_j,s_k}$ & Eq.~\eqref{eq:cross_site_covariance} & \texttt{R/cross\_fitting\_aggregation.R} \\
+\hline
+Aggregation objective (weights) & Eq.~\eqref{eq:final_opt} & \texttt{R/model\_fitting.R}, \texttt{src/weight\_optimization.cpp} \\
+\hline
+Sample-level final variance & Sec. Implementation notes & \texttt{aggregate\_fold\_estimates()} in \texttt{R/cross\_fitting\_aggregation.R} \\
+\hline
+\end{tabular}
+\caption{Mapping from main theoretical quantities to implementation modules.}
+\label{tab:formula_code_map}
+\end{table}
+
+\section{Federated Learning Algorithms}
+
+\subsection{Two-Round Communication for Calibrated Estimation}
+This is the robust, standard procedure implementing the two-step estimation strategy.
+
+\begin{algorithmic}[1]
+\STATE \textbf{Round 1: Initialization}
+\begin{enumerate}
+    \item \textbf{Source sites $s_j$ compute and send:} An initial OR model parameter $\widehat{\boldsymbol{\alpha}}_{t,s_j}^{1,(0)}$ by minimizing Eq. \eqref{eq:alpha_init}.
+    \item \textbf{Target site $t$ receives} all $\widehat{\boldsymbol{\alpha}}_{t,s_j}^{1,(0)}$. It also computes and sends back to each source site the summary statistic $\tildeE_t(\nabla_{\boldsymbol{\alpha}} \psi(\phi(\boldsymbol{X}); \widehat{\boldsymbol{\alpha}}_{t,s_j}^{1,(0)}))$, which is needed for the calibrated loss in Eq. \eqref{eq:gamma_calibrated_loss}.
+\end{enumerate}
+\STATE \textbf{Round 2: Calibrated Estimation}
+\begin{enumerate}
+    \item \textbf{Source sites $s_j$ receive target info and compute:}
+        \begin{itemize}
+            \item Calibrated parameters $\widehat{\boldsymbol{\gamma}}_{s_j,1}^{(1)}$ by minimizing the loss function from Eq. \eqref{eq:gamma_calibrated_loss}, using the received info and $\widehat{\boldsymbol{\alpha}}_{t,s_j}^{1,(0)}$.
+            \item Calibrated OR parameters $\widehat{\boldsymbol{\alpha}}_{t,s_j}^{1,(1)}$ by minimizing the loss function from Eq. \eqref{eq:alpha_calibrated_loss} using the initial site/treatment model $\widehat{\boldsymbol{\gamma}}_{s_j,1}^{(0)}$ obtained from Eq. \eqref{eq:gamma_init}; this is the intended plug-in order in our two-level cross-fitting implementation.
+            \item The final correction term $\widehat{\delta}_{t, s_j}^1$ and source variance $\widehat{V}_{s_j}$ using the final parameters.
+        \end{itemize}
+    \item \textbf{Source sites $s_j$ send back:} $\widehat{\delta}_{t, s_j}^1$, $N_{s_j}$, $\widehat{V}_{s_j}$, and the final $\widehat{\boldsymbol{\alpha}}_{t,s_j}^{1,(1)}$.
+    \item \textbf{Target site $t$ computes final estimates:} For each $s_j$, it computes $\widehat{\mu}^1_{t,s_j}$, $\widehat{V}_{t,s_j}$, $\widehat{C}_{ot,s_j}$, and all cross-site covariances $\widehat{C}_{t,s_j,s_k}$. It also computes its target-only estimates $\widehat{\mu}^1_{ot}$ and $\widehat{V}_{ot}$.
+    \item \textbf{Target site $t$ performs aggregation:} Solves the final optimization problem \eqref{eq:final_opt} for weights $\boldsymbol{\eta}$.
+\end{enumerate}
+\end{algorithmic}
+
+\section{Cross-Validation and Tuning Parameters}
+The framework involves two types of regularization parameters ($\lambda$) that must be tuned.
+
+\subsection{Cross-Validation for Nuisance Models}
+For each nuisance model (parameters $\boldsymbol{\gamma}$ and $\boldsymbol{\alpha}$), the regularization parameters ($\lambda_\gamma, \lambda_\alpha$) are selected via $K_f$-fold cross-validation, where $K_f$ is a fixed constant. The criterion for selection is the minimization of the corresponding calibrated loss function (\eqref{eq:gamma_calibrated_loss} or \eqref{eq:alpha_calibrated_loss}) on the validation folds. This is performed locally at each site during the federated step where the model is estimated.
+
+\subsection{Tuning the Aggregation Penalty}
+\label{sec:lambda_agg}
+The regularization parameter $\lambda$ in the aggregation objective~\eqref{eq:final_opt} controls the bias--variance trade-off of the final estimator: small $\lambda$ yields an unconstrained weighted combination (low bias, potentially high variance due to noisy weights), while large $\lambda$ shrinks the weights towards zero, recovering the target-only estimator (higher bias, lower variance).
+
+\subsubsection{Data-Adaptive Lambda Grid}
+A fixed grid $\Lambda$ (e.g.\ $[10^{-3}, 1]$) is not robust across problem scales because the ``interesting'' range of $\lambda$ depends on the magnitudes of the variance components and the site discrepancies.
+To construct a data-adaptive grid, we identify the \emph{natural scale} $\lambda_{\mathrm{nat}}$ at which the penalty term and the variance contribution are of comparable magnitude.
+
+For source site $s_j$, the unpenalized variance contribution is
+\[
+\sigma_j^2 \;\coloneqq\; \frac{\widehat{V}_{t,s_j}}{N_t} + \frac{\widehat{V}_{s_j}}{N_{s_j}},
+\]
+and the penalty scale is $d_j^2 \coloneqq (\widehat{\mu}^1_{ot} - \widehat{\mu}^1_{t,s_j})^2$.
+Setting $\lambda \, d_j^2 = \sigma_j^2$ gives the transition point
+$\lambda_j = \sigma_j^2 / d_j^2$.
+When $d_j^2$ is very small (i.e.\ the source and target estimates nearly agree, suggesting low bias), we floor $d_j^2$ at $\sigma_j^2$ to avoid $\lambda_j \to \infty$:
+\[
+\lambda_j \;=\; \frac{\sigma_j^2}{\max(d_j^2,\; \sigma_j^2)}.
+\]
+The natural scale is defined as
+\begin{equation} \label{eq:lambda_natural}
+\lambda_{\mathrm{nat}} \;=\; \operatorname{median}_{j=1,\ldots,K}\; \lambda_j,
+\end{equation}
+and the search grid spans two orders of magnitude on each side:
+\[
+\Lambda \;=\; \bigl\{\lambda : \lambda \in [10^{-2}\,\lambda_{\mathrm{nat}},\; 10^{2}\,\lambda_{\mathrm{nat}}]\bigr\},
+\]
+with $|\Lambda|$ evenly spaced on the log scale (e.g.\ 100 points).
+This ensures coverage of the full transition from under-regularised ($\eta_j$ unconstrained) to over-regularised ($\eta_j \approx 0$), regardless of the absolute scale of the variance components and discrepancies.
+
+\subsubsection{Stabilised Selection via the One-Standard-Error Rule}
+\label{sec:one_se_rule}
+\paragraph{Procedure.}
+For each fold $k_1$ in the two-layer cross-fitting loop, the variance components $\widehat{V}_{ot}$, $\widehat{V}_{t,s_j}$, $\widehat{V}_{s_j}$, $\widehat{C}_{ot,s_j}$, and $\widehat{C}_{t,s_j,s_k}$ are already computed from disjoint evaluation data.
+For each candidate $\lambda \in \Lambda$:
+\begin{enumerate}
+    \item Solve \eqref{eq:final_opt} for the optimal weights $\widehat{\boldsymbol{\eta}}^{(\lambda)}$.
+    \item Evaluate the resulting aggregated variance
+    $\widehat{\Var}^{(\lambda)} = \widehat{\Var}(\widehat{\mu}^1_{\mathrm{agg}};\, \widehat{\boldsymbol{\eta}}^{(\lambda)})$
+    using the plug-in formula from~\eqref{eq:final_opt}.
+\end{enumerate}
+Since the variance components are fixed for a given fold, no re-fitting of nuisance models is required; only the weight optimisation (a low-dimensional quadratic program over $K$ variables) is repeated.
+
+\paragraph{One-SE rule.}
+Rather than selecting the minimiser $\lambda^* = \arg\min_\lambda \widehat{\Var}^{(\lambda)}$ directly---which can overfit noisy variance component estimates---we adopt a conservative selection rule inspired by the one-standard-error (1-SE) rule of \citet{hastie2009elements}:
+\begin{equation} \label{eq:one_se_rule}
+\lambda^*_{\mathrm{1SE}} \;=\; \max\Bigl\{\lambda \in \Lambda :\; \widehat{\Var}^{(\lambda)} \;\le\; (1 + \epsilon)\, \min_{\lambda' \in \Lambda}\,\widehat{\Var}^{(\lambda')}\Bigr\},
+\end{equation}
+where $\epsilon > 0$ is a relative tolerance (we use $\epsilon = 0.10$).
+This selects the \emph{most regularised} $\lambda$ whose aggregated variance is within $\epsilon$ of the minimum—i.e.\ the largest $\lambda$ in the ``flat'' region of the variance curve.
+
+\paragraph{Rationale.}
+The classical 1-SE rule uses the standard error of cross-validated loss estimates across folds. Here, because $\lambda$ only affects the weight optimisation (and not nuisance estimation), there are no replicate loss values from which to compute a standard error.%
+\footnote{In the \texttt{glmnet} setting, each fold provides an independent loss estimate, so the standard error of these $K_f$ values quantifies selection uncertainty. In our setting, the variance components are computed once per fold and then shared across all $\lambda$ evaluations, so fold-specific ``loss'' values are deterministically linked.}
+Instead, the relative tolerance $\epsilon$ serves as a pragmatic substitute: accepting a $\le 10\%$ increase in estimated variance (equivalently, $\le 4.9\%$ increase in SE) in exchange for more stable, regularised weights.
+When the variance curve is flat (common when site estimates are similar), this avoids selecting an arbitrarily small $\lambda$ that produces extreme weights driven by estimation noise.
+
+\section{Simulation Study Design}
+
+\subsection{Data Generation Framework}
+
+We conduct simulation studies to evaluate the performance of our proposed doubly robust estimators across various model specifications and sample sizes. Our simulation framework generates synthetic datasets with one target site and multiple source sites, allowing us to control the degree of heterogeneity between sites and assess robustness under model misspecification.
+
+\subsection{Covariate Generation and Transformation}
+
+\subsubsection{Base Covariates}
+We generate $n$ observations with $p$ baseline covariates from a multivariate normal distribution:
+\begin{equation}
+\boldsymbol{X} = (X_1, \ldots, X_p) \sim \mathcal{N}(\mathbf{0}, \mathbf{I}_p)
+\end{equation}
+where each component is truncated to the interval $[-2.5, 2.5]$ and subsequently standardized. In our simulations we study $p \in \{10, 50, 100, 200\}$ to assess performance across a range of covariate dimensions; the outcome and site models are sparse (at most 3 active covariates), so the remaining $p-3$ coefficients are zero.
+
+\subsubsection{Nonlinear Covariate Transformations}
+To introduce model complexity and test robustness against misspecification, we create a transformed covariate matrix $\boldsymbol{X}^{\dagger}$. The first four covariates undergo nonlinear transformations:
+\begin{align}
+X_1^{\dagger} &= \text{scale}\left(\exp(0.5 \cdot X_1)\right) \\
+X_2^{\dagger} &= \text{scale}\left(10 + \frac{X_2}{1 + \exp(X_1)}\right) \\
+X_3^{\dagger} &= \text{scale}\left((0.04 \cdot X_1 \cdot X_3 + 0.5)^3\right) \\
+X_4^{\dagger} &= \text{scale}\left((X_2 + X_4 + 20)^2\right)
+\end{align}
+where $\text{scale}(\cdot)$ denotes standardization to zero mean and unit variance; the remaining covariates $X_j^{\dagger} = X_j$ for $j > 4$.
+
+Our software implementation additionally supports milder transformations and the identity transformation (i.e., $\boldsymbol{X}^{\dagger} = \boldsymbol{X}$) as optional simulation settings. In the current simulation scripts, the default is the \emph{mild} transformation; the stronger transformation above is used as a stress-test setting when specified.
+
+\subsection{Site Membership and Treatment Assignment Model}
+
+\subsubsection{Multinomial Logistic Site Assignment}
+We consider $K$ source sites in addition to one target site. The joint probability of site membership and treatment assignment follows our proposed multinomial logistic model. For each source site $s_j$ ($j = 1, 2, \ldots, K$), we define site-specific parameters:
+\begin{align}
+\boldsymbol{\gamma}_{s_j,0} &= (c_0, \epsilon_{j,0,1}, \epsilon_{j,0,2}, \mathbf{0}_{p-2}) \\
+\boldsymbol{\gamma}_{s_j,1} &= (c_0, \epsilon_{j,1,1}, \epsilon_{j,1,2}, \mathbf{0}_{p-2})
+\end{align}
+
+where $\epsilon_{j,a,k} \sim \mathcal{N}(0, \sigma_{\epsilon}^2)$ with $\sigma_{\epsilon} = 0.1$ represents small site-specific variations, and $c_0 = -0.15$ is a balancing intercept ensuring $P(R = t) \approx 1/(K+1)$.  Since the target site is the baseline category (all-zero $\gamma$), a negative intercept on source categories reduces their relative probability.  The value is derived from $\mathbb{E}[\exp(\boldsymbol{\gamma}^T \boldsymbol{Z})] = 1/2$ under unit-norm normalization with Gaussian covariates, yielding $P(R = t) = 1/(1 + 2K \cdot 1/2) = 1/(K+1)$ regardless of $K$.
+
+\textbf{Implementation detail (normalization and intercept):} In the simulation code, we first generate an \emph{unnormalized} parameter vector
+\begin{equation}
+\tilde{\boldsymbol{\gamma}}_{s_j,a} = (c_0, \epsilon_{j,a,1}, \epsilon_{j,a,2}, \mathbf{0}_{p-2})
+\end{equation}
+with the fixed intercept seed $c_0=-0.15$, and then normalize (and optionally rescale) it as
+\begin{equation}
+\boldsymbol{\gamma}_{s_j,a} = \kappa \cdot \tilde{\boldsymbol{\gamma}}_{s_j,a} / \|\tilde{\boldsymbol{\gamma}}_{s_j,a}\|_2,
+\end{equation}
+where $\kappa$ controls the shift strength (with $\kappa=1$ matching the unit-norm constraint below). Consequently, the \emph{normalized} intercept component of $\boldsymbol{\gamma}_{s_j,a}$ is random and typically much more negative than $c_0$; the statement $c_0=-0.15$ should be interpreted as a pre-normalization seed rather than the post-normalization intercept.
+
+To see why a negative normalized intercept yields approximately balanced site sizes, note that when $\phi(\boldsymbol{X}) = (1, \boldsymbol{Z}^T)^T$ with $\boldsymbol{Z}\sim\mathcal{N}(\mathbf{0},\mathbf{I})$ and $\boldsymbol{\gamma}=(\gamma_0,\boldsymbol{\gamma}_{-0}^T)^T$,
+\begin{equation}
+\mathbb{E}\left[\exp\{\phi(\boldsymbol{X})^T\boldsymbol{\gamma}\}\right] = \exp\left(\gamma_0 + \tfrac{1}{2}\|\boldsymbol{\gamma}_{-0}\|_2^2\right).
+\end{equation}
+Under the unit-norm constraint $\|\boldsymbol{\gamma}\|_2=1$, we have $\|\boldsymbol{\gamma}_{-0}\|_2^2 = 1-\gamma_0^2$, and choosing $\gamma_0$ so that this expectation is near $1/2$ leads to a negative intercept (approximately $\gamma_0\approx -0.84$ in the ideal Gaussian calculation). In finite samples with truncated/standardized covariates and random $\epsilon_{j,a,k}$, the balancing is approximate rather than exact.
+
+\textbf{Unit Norm Constraint:} The parameter vectors are normalized such that:
+\begin{align}
+\|\boldsymbol{\gamma}_{s_j,0}\|_2 &= 1 \quad \forall j = 1, 2, \ldots, K \\
+\|\boldsymbol{\gamma}_{s_j,1}\|_2 &= 1 \quad \forall j = 1, 2, \ldots, K
+\end{align}
+
+\subsubsection{Site Membership Probabilities}
+The probability of assignment to the target site is:
+\begin{equation}
+P(R = t | \phi(\boldsymbol{X})) = \frac{1}{1 + \sum_{j=1}^{K} \bigl(e^{\phi(\boldsymbol{X})^T \boldsymbol{\gamma}_{s_j,0}} + e^{\phi(\boldsymbol{X})^T \boldsymbol{\gamma}_{s_j,1}}\bigr)}
+\end{equation}
+where $\phi(\boldsymbol{X})$ represents either $\boldsymbol{X}$ or $\boldsymbol{X}^{\dagger}$ depending on the configuration.
+
+The joint probabilities for source sites are:
+\begin{align}
+P(R = s_j, A = a | \phi(\boldsymbol{X})) &= \frac{e^{\phi(\boldsymbol{X})^T \boldsymbol{\gamma}_{s_j,a}}}{1 + \sum_{k=1}^{K} \bigl(e^{\phi(\boldsymbol{X})^T \boldsymbol{\gamma}_{s_k,0}} + e^{\phi(\boldsymbol{X})^T \boldsymbol{\gamma}_{s_k,1}}\bigr)}
+\end{align}
+
+\subsubsection{Target Site Treatment Assignment}
+For subjects assigned to the target site, the treatment probability is derived from the aggregate source site behavior:
+\begin{equation}
+P(A = 1 \mid R = t, \phi(\boldsymbol{X})) = \frac{\sum_{j=1}^{K} P(R = s_j, A = 1 \mid \phi(\boldsymbol{X}))}{\sum_{j=1}^{K} \left[P(R = s_j, A = 0 \mid \phi(\boldsymbol{X})) + P(R = s_j, A = 1 \mid \phi(\boldsymbol{X}))\right]}
+\end{equation}
+
+\subsection{Outcome Generation Model}
+
+\subsubsection{Generalized Outcome Model Structure}
+We specify generalized linear outcome models using the GLM framework. The conditional expectation of potential outcomes follows:
+\begin{equation}
+\E[Y(a) \mid \phi(\boldsymbol{X}), R = r] = \psi(\phi(\boldsymbol{X}); \boldsymbol{\alpha}_r^a)
+\end{equation}
+where $\psi(\cdot; \cdot)$ is the response function and $\boldsymbol{\alpha}_r^a$ are site-specific and treatment-specific parameters.
+
+For the propensity score model, we similarly use the GLM framework where the linear predictor is:
+\begin{equation}
+\phi(\boldsymbol{X})^T \boldsymbol{\gamma}_{s_j,a}
+\end{equation}
+representing the linear predictor in the exponential family.
+
+\subsubsection{True Outcome Parameters}
+
+For binary outcomes, we use the logistic link function for the following two data-generating scenarios:
+
+\begin{enumerate}
+    \item \textbf{Scenario 1: Homogeneous Outcome Models}
+        In this scenario, target and source sites share the same outcome model parameters:
+        \begin{align}
+        \boldsymbol{\alpha}_1 &= (0.5, 0.5, 0.75, \mathbf{0}_{p-2})^T \quad \text{(treatment effect)} \\
+        \boldsymbol{\alpha}_0 &= (-0.5, 0.75, 0, \mathbf{0}_{p-2})^T \quad \text{(control outcome)}
+        \end{align}
+
+    \item \textbf{Scenario 2: Heterogeneous Outcome Models}
+        In this scenario, source sites have slightly different outcome model parameters than the target site:
+        \begin{itemize}
+            \item For target site:
+            \begin{align}
+            \boldsymbol{\alpha}_1 &= (0.5, 0.5, 0.75, \mathbf{0}_{p-2})^T \quad \text{(treatment effect)} \\
+            \boldsymbol{\alpha}_0 &= (-0.5, 0.75, 0, \mathbf{0}_{p-2})^T \quad \text{(control outcome)}
+            \end{align}
+            \item For source sites (mild heterogeneity):
+            \begin{align}
+            \boldsymbol{\alpha}_1 &= (0.5, 0.3, 0.45, \mathbf{0}_{p-2})^T \quad \text{(treatment effect)} \\
+            \boldsymbol{\alpha}_0 &= (-0.5, 0.75, 0, \mathbf{0}_{p-2})^T \quad \text{(control outcome)}
+            \end{align}
+        \end{itemize}
+\end{enumerate}
+
+\subsubsection{Potential Outcomes and Observed Outcomes}
+Let $\phi(\boldsymbol{X})_i$ represent either $\boldsymbol{X}_i$ or $\boldsymbol{X}_i^{\dagger}$ depending on the configuration.
+
+\paragraph{Binary outcome setting (default).}
+We define
+\[
+\mu_{i,a} \coloneqq \psi(\phi(\boldsymbol{X})_i; \boldsymbol{\alpha}_a), \qquad a\in\{0,1\},
+\]
+with logistic link $\psi(u)=\{1+\exp(-u)\}^{-1}$, and generate the observed outcome as
+\[
+Y_i \mid (A_i=a,\phi(\boldsymbol{X})_i) \sim \mathrm{Bernoulli}(\mu_{i,a}).
+\]
+Equivalently, under consistency, $Y_i = A_iY_i(1)+(1-A_i)Y_i(0)$ with
+$Y_i(a)\mid \phi(\boldsymbol{X})_i \sim \mathrm{Bernoulli}(\mu_{i,a})$.
+
+\paragraph{Continuous outcome setting (optional).}
+For continuous outcomes, we use the identity link and additive Gaussian noise:
+\begin{align}
+Y_i(1) &= \phi(\boldsymbol{X})_i^T \boldsymbol{\alpha}_1 + \varepsilon_{i,1}, \\
+Y_i(0) &= \phi(\boldsymbol{X})_i^T \boldsymbol{\alpha}_0 + \varepsilon_{i,0},
+\end{align}
+where $\varepsilon_{i,a}\sim\mathcal{N}(0,0.01)$, and $Y_i = A_iY_i(1)+(1-A_i)Y_i(0)$.
+
+\subsection{Simulation Configurations}
+
+We consider three main configurations to assess model robustness:
+
+\begin{description}
+\item[\textbf{Configuration C(1):}] \textit{Correct Specification}
+\begin{itemize}
+    \item Site assignment model uses $\boldsymbol{X}^{\dagger}$
+    \item Outcome model uses $\boldsymbol{X}^{\dagger}$
+    \item Both propensity score and outcome models are correctly specified
+\end{itemize}
+
+\item[\textbf{Configuration C(2):}] \textit{Outcome Model Misspecification}
+\begin{itemize}
+    \item Site assignment model uses $\boldsymbol{X}^{\dagger}$
+    \item Outcome model uses $\boldsymbol{X}$ (misspecified)
+\end{itemize}
+
+\item[\textbf{Configuration C(3):}] \textit{Propensity Score Model Misspecification}
+\begin{itemize}
+    \item Site assignment model uses $\boldsymbol{X}$ (misspecified)
+    \item Outcome model uses $\boldsymbol{X}^{\dagger}$
+\end{itemize}
+
+\item[\textbf{Configuration C(4):}] \textit{Both Models Misspecified}
+\begin{itemize}
+    \item Site assignment model uses $\boldsymbol{X}$ (misspecified)
+    \item Outcome model uses $\boldsymbol{X}$ (misspecified)
+    \item Tests the boundary of double robustness when neither model is correctly specified
+\end{itemize}
+\end{description}
+
+We study the finite sample performance of our proposed \textbf{FACE-HD estimator} against four competing methods: (i) an estimator that leverages target data only (target-only), (ii) a sample-size adjusted estimator (SS), (iii) an inverse-variance weighted estimator (IVW), and (iv) an exponentially-tilted augmented inverse probability weighted estimator (Tilted-AIPW) that multiplies calibration-weighted site-specific AIPW estimators and aggregates via SS. We examine the bias, root mean square error (RMSE), and coverage probability of the 95\% CIs of these estimators across 500 simulations.
+
+\appendix
+
+\section{One-Round Communication Algorithms for GLM Outcome Models}
+
+To reduce communication costs, we can devise one-round algorithms. The key idea is to use an initial model estimated on the target site to bootstrap the cross-calibration process at the source sites, removing the need for an initial round of communication from the sources to the target.
+
+This algorithm streamlines the two-round process by using the target-only outcome model, $\widehat{\boldsymbol{\alpha}}_{ot}^{1}$, as the initial estimate for the cross-calibration procedure. This is a pragmatic trade-off that significantly reduces communication complexity at the cost of a potentially less tailored initialization for each source site.
+
+\begin{algorithmic}[1]
+\STATE \textbf{Round 1: Single Communication Round}
+\begin{enumerate}
+    \item \textbf{Target site $t$ computes and sends:}
+        \begin{itemize}
+            \item Target-only outcome model parameters $\widehat{\boldsymbol{\alpha}}_{ot}^{1}$ by minimizing a standard regularized GLM loss on $\mathcal{D}_t$.
+            \item The summary statistic $\tildeE_t(\nabla_{\boldsymbol{\alpha}} \psi(\phi(\boldsymbol{X}); \widehat{\boldsymbol{\alpha}}_{ot}^{1}))$.
+            \item The summary statistic $\tildeE_t[\phi(\boldsymbol{X})]$ for the initial site/treatment model in Eq. \eqref{eq:gamma_init}.
+            \item The target site sends all quantities to all source sites $s_j$.
+        \end{itemize}
+    \item \textbf{Source sites $s_j$ receive info, compute, and send back:}
+        \begin{itemize}
+            \item Using the received $\tildeE_t(\nabla_{\boldsymbol{\alpha}} \psi(\cdot))$, $\tildeE_t[\phi(\boldsymbol{X})]$, and $\widehat{\boldsymbol{\alpha}}_{ot}^{1}$, each source site first computes an initial site/treatment model $\widehat{\boldsymbol{\gamma}}_{\mathrm{init},s_j,1}$ via Eq. \eqref{eq:gamma_init}, then computes the calibrated $\widehat{\boldsymbol{\gamma}}_{s_j,1}$ via Eq. \eqref{eq:gamma_calibrated_loss}.
+            \item Then, it finds its final outcome model $\widehat{\boldsymbol{\alpha}}_{t,s_j}^{1}$ by minimizing the calibrated loss in Eq. \eqref{eq:alpha_calibrated_loss} using the initial site/treatment model $\widehat{\boldsymbol{\gamma}}_{\mathrm{init},s_j,1}$ as plug-in.
+            \item It computes the correction term $\widehat{\delta}_{t, s_j}^1$ and source variance $\widehat{V}_{s_j}$.
+            \item Each source site $s_j$ sends back to the target: $\widehat{\delta}_{t, s_j}^1$, $N_{s_j}$, $\widehat{V}_{s_j}$, and the final outcome model parameters $\widehat{\boldsymbol{\alpha}}_{t,s_j}^{1}$.
+        \end{itemize}
+    \item \textbf{Target site $t$ receives info and performs final aggregation:}
+        \begin{itemize}
+            \item The target computes its target-only estimates $\widehat{\mu}^1_{ot}$ and $\widehat{V}_{ot}$.
+            \item For each source site $s_j$, using the received $\widehat{\boldsymbol{\alpha}}_{t,s_j}^{1}$ and $\widehat{\delta}_{t,s_j}^1$, it assembles the final estimator $\widehat{\mu}^1_{t,s_j}$.
+            \item It then computes all necessary target-side variance components: $\widehat{V}_{t,s_j}$, $\widehat{C}_{ot,s_j}$, and the cross-site covariances $\widehat{C}_{t,s_j,s_k}$ for all pairs $j \neq k$.
+            \item Finally, it solves the optimization problem in Eq. \eqref{eq:final_opt} to find the optimal aggregation weights $\boldsymbol{\eta}^*$ and compute the final estimate $\widehat{\mu}^1_{\text{agg}}$.
+        \end{itemize}
+\end{enumerate}
+\end{algorithmic}
+
+
+\section{Two-Level Cross-fitting for Enhanced Robustness}\label{app:two_level_cf}
+
+To enhance robustness against the overfitting bias that can arise from the sequential estimation of nuisance parameters, we adapt the two-level cross-fitting strategy from \citep{hou2025efficient}. This approach employs a nested sample-splitting scheme to ensure that the data used to train initial nuisance models is entirely disjoint from the data used for the subsequent calibration step. This not only mitigates bias but also relaxes the assumptions required for the initial estimators, achieving a property known as Neyman orthogonality. The following sections detail how this method is integrated into our one-round and two-round federated algorithms.
+
+\subsection{Calibrated Loss Functions}
+
+The core of the two-level cross-fitting method is the use of specially designed "calibrated" loss functions for refining the nuisance models. These losses are constructed to make the final ATE estimator insensitive to small estimation errors in the nuisance parameters. Following the principles in \citep{smucler2019unifying} and \citep{tan2020model}, we introduce a calibration step after obtaining robust initial estimates.
+
+Let $\widehat{\boldsymbol{\alpha}}_{\text{init}}$ and $\widehat{\boldsymbol{\gamma}}_{\text{init}}$ be the initial estimates of the outcome and site/treatment model parameters, respectively. To ensure numerical stability and satisfy theoretical positivity assumptions, we define a truncation function $\mathcal{T}(x) = \text{sign}(x)\min\{|x|, M_{\tau}\}$, where $M_{\tau}$ may depend on sample size and is chosen sufficiently large so truncation is asymptotically inactive at the population limit. (We avoid the symbol $\tau(\cdot)$ here to prevent collision with the ATE $\tau$.) The calibrated losses for refining the parameters are then defined as follows.
+For exponential-family GLMs with canonical link, we use the standard notation that the negative log-likelihood has the form $-Y\theta + \Psi(\theta)$, where $\theta=\phi(\boldsymbol{X})^T\boldsymbol{\alpha}$ is the linear predictor and $\psi(\theta)=\Psi'(\theta)$ is the conditional mean; $\psi'(\theta)$ denotes the derivative with respect to $\theta$.
+
+\paragraph{Calibrated Loss for Site/Treatment Model $\boldsymbol{\gamma}_{s_j,1}$.}
+The loss for $\boldsymbol{\gamma}_{s_j,1}$ is weighted by a function of the initial outcome model prediction. For a GLM outcome model, this is:
+\begin{equation}\label{eq:gamma_calibrated_loss}
+\begin{aligned}
+\ell_{\gamma, \text{cal}}(\boldsymbol{\gamma}_{s_j,1}; \widehat{\boldsymbol{\alpha}}_{\text{init}})
+&= \tildeE_t \left[ \nabla_{\boldsymbol{\alpha}} \psi(\phi(\boldsymbol{X}); \widehat{\boldsymbol{\alpha}}_{\text{init}})^T \boldsymbol{\gamma}_{s_j,1} \right] \\
+&\quad + \tildeE_{s_j} \left[ I(A=1) e^{-\phi(\boldsymbol{X})^T \boldsymbol{\gamma}_{s_j,1}} \psi'(\mathcal{T}(\phi(\boldsymbol{X})^T \widehat{\boldsymbol{\alpha}}_{\text{init}})) \right] \\
+&\quad + \lambda_{\gamma} \|\boldsymbol{\gamma}_{s_j,1}\|_1
+\end{aligned}
+\end{equation}
+
+\paragraph{Calibrated Loss for Outcome Model $\boldsymbol{\alpha}_{t,s_j}^1$.}
+Symmetrically, the loss for $\boldsymbol{\alpha}_{t,s_j}^1$ is a weighted GLM loss, where the weights depend on the initial site/treatment model prediction.
+\begin{equation}\label{eq:alpha_calibrated_loss}
+\begin{aligned}
+\ell_{\alpha, \text{cal}}(\boldsymbol{\alpha}_{t,s_j}^1; \widehat{\boldsymbol{\gamma}}_{\text{init}})
+&= \tildeE_{s_j} \left[ \frac{I(A=1)}{e^{\mathcal{T}(\phi(\boldsymbol{X})^T \widehat{\boldsymbol{\gamma}}_{\text{init}})}} \left( -Y \cdot (\phi(\boldsymbol{X})^T \boldsymbol{\alpha}_{t,s_j}^1) + \Psi(\phi(\boldsymbol{X})^T \boldsymbol{\alpha}_{t,s_j}^1) \right) \right] \\
+&\quad + \lambda_{\alpha} \|\boldsymbol{\alpha}_{t,s_j}^1\|_1
+\end{aligned}
+\end{equation}
+\paragraph{Asymptotic Alignment Remark.}
+In the two-level algorithm, the calibrated $\gamma$-loss uses $\widehat{\boldsymbol{\alpha}}_{\text{init}}$ while the calibrated $\alpha$-loss uses $\widehat{\boldsymbol{\gamma}}_{\text{init}}$. In the appendix proofs, we assume these initial estimators converge to the same population nuisance targets as the final calibrated estimators, so this plug-in order does not change the first-order asymptotic results.
+
+\subsection{Two-Round Algorithm with Two-Level Cross-fitting}
+This algorithm embeds the two-level cross-fitting logic within the two-round communication protocol. While it increases the computational load, it provides strong theoretical guarantees against overfitting bias.
+
+\begin{algorithmic}[1]
+\STATE \textbf{Initialization:} At each site $R \in \{t, s_1, \ldots, s_K\}$, randomly partition the local data $\mathcal{D}_R$ into $K_f$ disjoint, equally sized folds: $\{\mathcal{D}_{R,k}\}_{k=1}^{K_f}$. The following steps describe the computation for a single main estimation fold $k_1 \in \{1, \ldots, K_f\}$.
+
+\STATE \textbf{Round 1: Initial Nuisance Models}
+\begin{enumerate}
+    \item \textbf{Source sites $s_j$ compute and send:} For each secondary fold $k_2 \in \{1, \ldots, K_f\} \setminus \{k_1\}$, source site $s_j$ computes:
+    \begin{itemize}
+        \item An initial outcome model parameter $\widehat{\boldsymbol{\alpha}}_{\text{init},(k_1,k_2)}^{1}$ by minimizing the standard GLM loss from Equation~\ref{eq:alpha_init} using all its local data \textbf{except} folds $k_1$ and $k_2$, i.e., on data $\mathcal{D}_{s_j} \setminus (\mathcal{D}_{s_j,k_1} \cup \mathcal{D}_{s_j,k_2})$.
+        \item[\textbf{Note:}] The initial site/treatment model $\widehat{\boldsymbol{\gamma}}_{\text{init}}$ is \textbf{not} computed here as it requires target site information.
+    \end{itemize}
+    It sends the set of $K_f-1$ initial outcome models $\{\widehat{\boldsymbol{\alpha}}_{\text{init},(k_1,k_2)}^{1}\}_{k_2 \neq k_1}$ to the target site.
+
+    \item \textbf{Target site $t$ receives and sends back:} For each source $s_j$ and each secondary fold $k_2 \neq k_1$, the target computes two summary statistics using only data from its local fold $\mathcal{D}_{t,k_2}$:
+    \begin{itemize}
+        \item For the \textit{calibrated} site/treatment model: $\tildeE_{t,k_2}[\nabla_{\boldsymbol{\alpha}} \psi(\phi(\boldsymbol{X}); \widehat{\boldsymbol{\alpha}}_{\text{init},(k_1,k_2)}^{1})]$.
+        \item For the \textit{initial} site/treatment model: $\tildeE_{t,k_2}[\phi(\boldsymbol{X})]$.
+    \end{itemize}
+    It sends the corresponding set of $K_f-1$ pairs of summaries back to source site $s_j$.
+\end{enumerate}
+
+\STATE \textbf{Round 2: Calibrated Nuisance Models and Estimation}
+\begin{enumerate}
+    \item \textbf{Source sites $s_j$ receive target info and compute:}
+    \begin{itemize}
+        \item For each secondary fold $k_2 \neq k_1$, the source computes initial and then calibrated parameters:
+        \begin{itemize}
+            \item \textbf{First}, compute the initial site/treatment model $\widehat{\boldsymbol{\gamma}}_{\text{init},(k_1,k_2)}$ by minimizing its standard loss (Eq. \ref{eq:gamma_init}) using the received summary $\tildeE_{t,k_2}[\phi(\boldsymbol{X})]$ and its own data from $\mathcal{D}_{s_j} \setminus (\mathcal{D}_{s_j,k_1} \cup \mathcal{D}_{s_j,k_2})$.
+            \item \textbf{Then}, compute the calibrated parameters on its local data from fold $\mathcal{D}_{s_j, k_2}$:
+            \begin{itemize}
+                \item $\widehat{\boldsymbol{\gamma}}_{\text{cal},(k_1,k_2)}$ by minimizing the calibrated loss \eqref{eq:gamma_calibrated_loss} using its initial outcome model $\widehat{\boldsymbol{\alpha}}_{\text{init},(k_1,k_2)}^{1}$ and the summary $\tildeE_{t,k_2}[\nabla_{\boldsymbol{\alpha}} \psi(\cdot)]$.
+                \item $\widehat{\boldsymbol{\alpha}}_{\text{cal},(k_1,k_2)}^{1}$ by minimizing the calibrated loss \eqref{eq:alpha_calibrated_loss} using the initial site/treatment model $\widehat{\boldsymbol{\gamma}}_{\text{init},(k_1,k_2)}$ computed just above.
+            \end{itemize}
+        \end{itemize}
+        \item It computes the final nuisance models for the main fold $k_1$ by averaging the calibrated parameters from the $K_f-1$ secondary folds:
+        $$ \widehat{\boldsymbol{\alpha}}_{t,s_j,(k_1)}^{1} \coloneqq \frac{1}{K_f-1} \sum_{k_2 \neq k_1} \widehat{\boldsymbol{\alpha}}_{\text{cal},(k_1,k_2)}^{1}, \quad \widehat{\boldsymbol{\gamma}}_{s_j,(k_1)} \coloneqq \frac{1}{K_f-1} \sum_{k_2 \neq k_1} \widehat{\boldsymbol{\gamma}}_{\text{cal},(k_1,k_2)} $$
+        \item Using these final averaged parameters, it computes the correction term $\widehat{\delta}_{t,s_j,(k_1)}^1$ and source variance $\widehat{V}_{s_j,(k_1)}$ on its own main estimation data from fold $\mathcal{D}_{s_j,k_1}$.
+    \end{itemize}
+    \item \textbf{Source sites $s_j$ send back:} The final averaged parameters $\widehat{\boldsymbol{\alpha}}_{t,s_j,(k_1)}^{1}$, the correction term $\widehat{\delta}_{t,s_j,(k_1)}^1$, and variance component $\widehat{V}_{s_j,(k_1)}$.
+
+    \item \textbf{Target site $t$ computes fold-specific estimate:} Using the received information and its own data, the target computes:
+    \begin{itemize}
+        \item \textit{Inner-fold variance components:} For each secondary fold $k_2 \neq k_1$, using the per-$(k_1,k_2)$ calibrated parameters (available from Round 2) and inner-fold target-only models (trained on target data from folds $\setminus\{k_1,k_2\}$), compute all variance--covariance components on data from fold $\mathcal{D}_{k_2}$. Average these across the $K_f-1$ inner folds to obtain $\widehat{V}^{(-k_1)}_\cdot$, $\widehat{C}^{(-k_1)}_{\mathrm{ot}}$, and $\widehat{C}^{(-k_1)}_{\mathrm{cross}}$.
+        \item \textit{Weight optimization:} Solve \eqref{eq:final_opt} using these inner-fold variance components to get $\widehat{\boldsymbol{\eta}}^{(-k_1)}$.
+        \item \textit{Estimation:} Using the averaged nuisances $\widehat{\vartheta}^{(-k_1)}$ and the weights $\widehat{\boldsymbol{\eta}}^{(-k_1)}$, compute the fold-specific aggregated estimate $\widehat{\mu}^1_{\mathrm{agg},k_1}$ and per-sample IF values on the evaluation fold $\mathcal{D}_{k_1}$.
+    \end{itemize}
+\end{enumerate}
+\STATE \textbf{Final Aggregation:} The entire process is repeated for each main fold $k_1=1, \ldots, K_f$. The final point estimate is the average: $\widehat{\mu}^1_{\text{agg}} = \frac{1}{K_f}\sum_{k_1=1}^{K_f} \widehat{\mu}^1_{\text{agg},k_1}$.
+
+\textbf{Inner $M$-fold weight estimation.} To ensure that the aggregation weights $\widehat{\boldsymbol{\eta}}^{(-k_1)}$ are independent of the evaluation data $\mathcal{D}_{k_1}$, we estimate the variance--covariance components for weight optimisation (Eq.~\eqref{eq:final_opt}) via an inner cross-fitting loop within the training set $\mathcal{T}_{k_1} = \mathcal{D} \setminus \mathcal{D}_{k_1}$. Specifically, we set $M = K_f - 1$ inner folds that coincide with the secondary folds $\{k_2 : k_2 \neq k_1\}$.  For each inner fold $k_2$:
+\begin{enumerate}
+    \item Use the per-$(k_1, k_2)$ nuisance estimates $\widehat{\vartheta}^{(-k_1,-k_2)}$---trained on data excluding both $\mathcal{D}_{k_1}$ and $\mathcal{D}_{k_2}$---and the corresponding inner-fold target-only estimates (trained on target data from the same reduced set) to compute IF components ($\widehat{\varphi}_{\mathrm{ot}}$, $\widehat{\zeta}$, $\widehat{\xi}$) on the inner evaluation fold $\mathcal{D}_{k_2}$.
+    \item Compute all variance--covariance components ($\widehat{V}_{\mathrm{ot}}$, $\widehat{V}_{t}$, $\widehat{V}_{s}$, $\widehat{C}_{\mathrm{ot}}$, $\widehat{C}_{\mathrm{cross}}$) from these IF components on $\mathcal{D}_{k_2}$.
+\end{enumerate}
+The components are then averaged across the $K_f - 1$ inner folds:
+\[
+\widehat{V}_{\cdot}^{(-k_1)} \coloneqq \frac{1}{K_f-1}\sum_{k_2 \neq k_1} \widehat{V}_{\cdot,(k_1,k_2)},
+\]
+and similarly for $\widehat{C}_{\mathrm{ot}}^{(-k_1)}$ and $\widehat{C}_{\mathrm{cross}}^{(-k_1)}$. The weights $\widehat{\boldsymbol{\eta}}^{(-k_1)}$ are then obtained by solving \eqref{eq:final_opt} with these inner-fold variance components. Because the entire computation uses only data from $\mathcal{T}_{k_1}$ (with out-of-inner-fold nuisances), $\widehat{\boldsymbol{\eta}}^{(-k_1)}$ is independent of the evaluation fold $\mathcal{D}_{k_1}$.
+
+\textbf{Sample-level variance (unified estimating equation; multi-sample regime).} The point estimate and variance are derived from the \emph{same} set of per-observation uncentered influence functions. Under the standard multi-site sampling regime (independent samples per site with fixed sampling fractions), the variance of the overall mean depends on \emph{within-site} variation only. For each observation $i$ in evaluation fold $\mathcal{D}_{k(i)}$, define
+\[
+\widehat{\Phi}_i \coloneqq
+\begin{cases}
+\displaystyle\frac{N_{\mathrm{all}}}{N_t}\biggl[(1 - \textstyle\sum_j \widehat{\eta}_j^{(-k(i))})\,\widetilde{Y}_{\text{ot},i} + \textstyle\sum_j \widehat{\eta}_j^{(-k(i))}\,\psi(\phi(\bX_i);\widehat{\balpha}_{t,s_j}^{1,(-k(i))})\biggr], & i \in \text{target},\\[8pt]
+\displaystyle\frac{N_{\mathrm{all}}}{N_{s_j}}\,\widehat{\eta}_j^{(-k(i))}\,w(\bX_i;\widehat{\bgamma}_{s_j,1}^{(-k(i))})\bigl(Y_i - \psi(\phi(\bX_i);\widehat{\balpha}_{t,s_j}^{1,(-k(i))})\bigr), & i \in \text{source } s_j,
+\end{cases}
+\]
+Here $N_{\mathrm{all}} = N_t + \sum_j N_{s_j}$, $\widetilde{Y}_{\text{ot},i}$ is the \emph{uncentered} AIPW pseudo-outcome for the target-only estimator,
+\[
+\widetilde{Y}_{\text{ot},i}
+  \coloneqq \frac{A_i Y_i}{\widehat{\pi}_{ot}(\bX_i)}
+  - \biggl(\frac{A_i}{\widehat{\pi}_{ot}(\bX_i)} - 1\biggr)
+    \psi\bigl(\phi(\bX_i);\,\widehat{\balpha}_{ot}^{1,(-k(i))}\bigr),
+\]
+so that the centered IF defined in \eqref{eq:if_target_only} satisfies
+$\widehat{\varphi}_{\text{ot},i} = \widetilde{Y}_{\text{ot},i} - \widehat{\mu}^1_{\text{ot},k(i)}$
+(the fold-specific target-only point estimate).
+Likewise, the centered target-site component \eqref{eq:if_target_component} satisfies
+$\widehat{\zeta}_{t,s_j,i} = \psi(\phi(\bX_i);\widehat{\balpha}_{t,s_j}^{1,(-k(i))}) - \tildeE_{t,k(i)}[\psi(\cdot)]$.
+All nuisance parameters $\widehat{\balpha}_{t,s_j}^{1,(-k)}$, $\widehat{\bgamma}_{s_j,1}^{(-k)}$, and $\widehat{\pi}_{ot}^{(-k)}$ are trained on data excluding the evaluation fold $\mathcal{D}_k$ (with the inner $M$-fold calibration/averaging as described above).
+Note that the source contribution is written in uncentered form; subtracting the fold-specific correction term $\widehat{\delta}_{t,s_j}^{(-k)} = \tildeE_{s_j,k}[w(Y-\psi)]$ yields the centered influence component $\widehat{\xi}_{t,s_j,i}$ defined in \eqref{eq:if_source_component}.
+
+The point estimate and variance are then derived from the \emph{same} set $\{\widehat{\Phi}_i\}_{i=1}^{N_{\mathrm{all}}}$:
+\begin{align*}
+\widehat{\mu}^1_{\text{agg}} &= \bar{\Phi} \coloneqq \frac{1}{N_{\mathrm{all}}}\sum_{i=1}^{N_{\mathrm{all}}} \widehat{\Phi}_i, \\[4pt]
+\widehat{\mathrm{Var}}\bigl(\widehat{\mu}^1_{\text{agg}}\bigr)
+&= \frac{1}{N_{\mathrm{all}}^2} \sum_{g\in\{t,s_1,\ldots,s_K\}}\;\sum_{i\in\mathcal{D}_g} \bigl(\widehat{\Phi}_i - \bar{\Phi}_g\bigr)^2,
+\qquad \bar{\Phi}_g \coloneqq \frac{1}{N_g}\sum_{i\in\mathcal{D}_g}\widehat{\Phi}_i.
+\end{align*}
+This within-site centered form is the natural plug-in estimator for the variance of a mean under independent multi-sample (site-stratified) sampling; global centering would add an ANOVA between-site term that is not sampling variability in this regime. With balanced folds, $\bar{\Phi}$ coincides with the fold-average $(1/K_f)\sum_k \widehat{\mu}^1_{\text{agg},k}$.
+\end{algorithmic}
+
+\subsection{One-Round Algorithm with Two-Level Cross-fitting}
+This algorithm adapts the two-level split to the more communication-efficient one-round protocol. The target site bootstraps the entire cross-fitting process by computing and sending all necessary initial models and summary statistics in a single round.
+
+\begin{algorithmic}[1]
+\STATE \textbf{Initialization:} All sites partition their local data into $K_f$ folds: $\{\mathcal{D}_{R,k}\}_{k=1}^{K_f}$. The following describes the computation for a single main estimation fold $k_1$.
+
+\STATE \textbf{Round 1: Single Communication Round}
+\begin{enumerate}
+    \item \textbf{Target site $t$ computes and sends:}
+    \begin{itemize}
+        \item For each secondary fold $k_2$ where $k_2 \neq k_1$:
+        \begin{itemize}
+            \item Computes a preliminary target-only outcome model $\widehat{\boldsymbol{\alpha}}_{\text{init},(k_1,k_2)}^{1}$ on its local data from all folds \textbf{except} $k_1$ and $k_2$.
+            \item Computes the corresponding summary statistic for the \textit{calibrated} model: $$\tildeE_{t,k_2}[\nabla_{\boldsymbol{\alpha}} \psi(\phi(\boldsymbol{X}); \widehat{\boldsymbol{\alpha}}_{\text{init},(k_1,k_2)}^{1})]$$ on its local fold $\mathcal{D}_{t,k_2}$.
+            \item Computes the summary statistic for the \textit{initial} model: $\tildeE_{t,k_2}[\phi(\boldsymbol{X})]$ on its local fold $\mathcal{D}_{t,k_2}$.
+        \end{itemize}
+        \item It sends the full set of $(K_f-1)$ initial models and their corresponding $(K_f-1)$ pairs of summary statistics (all associated with main fold $k_1$) to all source sites.
+    \end{itemize}
+    \item \textbf{Source sites $s_j$ receive info, compute, and send back:}
+    \begin{itemize}
+        \item For each secondary fold $k_2 \neq k_1$, the source site computes its initial and calibrated parameters:
+        \begin{itemize}
+            \item \textbf{First}, compute the initial site/treatment model $\widehat{\boldsymbol{\gamma}}_{\text{init},(k_1,k_2)}$ on its local data from $\mathcal{D}_{s_j} \setminus (\mathcal{D}_{s_j,k_1} \cup \mathcal{D}_{s_j,k_2})$ using the received summary $\tildeE_{t,k_2}[\phi(\boldsymbol{X})]$.
+            \item \textbf{Then}, using the received information from the target and its own initial models, it computes the calibrated parameters $\widehat{\boldsymbol{\gamma}}_{\text{cal},(k_1,k_2)}$ and $\widehat{\boldsymbol{\alpha}}_{\text{cal},(k_1,k_2)}^{1}$ on its local data from fold $\mathcal{D}_{s_j, k_2}$.
+        \end{itemize}
+        \item It averages these to get the final nuisance models for the main fold $k_1$: $\widehat{\boldsymbol{\alpha}}_{t,s_j,(k_1)}^{1}$ and $\widehat{\boldsymbol{\gamma}}_{s_j,(k_1)}$.
+        \item It computes the correction term $\widehat{\delta}_{t,s_j,(k_1)}^1$ and variance $\widehat{V}_{s_j,(k_1)}$ on its main estimation data from fold $\mathcal{D}_{s_j,k_1}$.
+        \item Each source sends back the final averaged parameters $\widehat{\boldsymbol{\alpha}}_{t,s_j,(k_1)}^{1}$ along with $\widehat{\delta}_{t,s_j,(k_1)}^1$ and $\widehat{V}_{s_j,(k_1)}$.
+    \end{itemize}
+    \item \textbf{Target site $t$ receives info and computes fold-specific estimate:}
+    \begin{itemize}
+	        \item Using the received per-$(k_1,k_2)$ calibrated parameters and inner-fold target-only models, the target computes variance--covariance components on each inner fold $\mathcal{D}_{k_2}$ and averages them across $k_2 \neq k_1$ to obtain the inner-fold variance estimates.
+        \item It solves the weight optimisation using these inner-fold variance components and computes the fold-specific aggregated estimate $\widehat{\mu}^1_{\text{agg},k_1}$ and per-sample IF values on the evaluation fold $\mathcal{D}_{k_1}$.
+    \end{itemize}
+\end{enumerate}
+\STATE \textbf{Final Aggregation:} As before, the process is repeated for each main fold $k_1=1, \ldots, K_f$. The point estimate is $\widehat{\mu}^1_{\text{agg}} = \frac{1}{K_f}\sum_{k_1} \widehat{\mu}^1_{\text{agg},k_1}$, and the variance is computed using the sample-level DML formula with inner $M$-fold weights, as described in the two-round algorithm above.
+\end{algorithmic}
+
+\section{One-Round Communication Algorithm for Linear Outcome Models}
+When the outcome models are linear, i.e., $\psi(\phi(\boldsymbol{X}); \boldsymbol{\alpha}) = \boldsymbol{\alpha}^T \phi(\boldsymbol{X})$, the framework simplifies significantly. Specifically, the gradient of the outcome model, $\nabla_{\boldsymbol{\alpha}} \psi(\phi(\boldsymbol{X}); \boldsymbol{\alpha}) = \phi(\boldsymbol{X})$, does not depend on the parameter $\boldsymbol{\alpha}$. This breaks the iterative dependency between the outcome and site/treatment models, allowing for a highly efficient one-round estimation at the source sites. The strategy is for the target site to send sufficient statistics that allow source sites to locally perform a sequential estimation.
+
+\subsection{Derivations for One-Round Linear Algorithm}
+
+\subsubsection{Variance and Covariance}
+
+Here we first derive the key formulas that allow variance and covariance terms involving target site data to be computed efficiently using pre-calculated sufficient statistics in the linear model case. For notational simplicity, we write $\boldsymbol{X}$ in place of $\phi(\boldsymbol{X})$ throughout this section.
+
+\paragraph{Derivation of Target-Side Variance $\widehat{V}_{t,s_j}$.}
+The target-side variance for the estimator from source $s_j$ is the variance of its influence function component on the target data. By definition, and noting that the mean of the influence function component is zero:
+\begin{equation}
+\widehat{V}_{t,s_j} = \frac{1}{N_t}\sum_{i \in \mathcal{D}_t}(\widehat{\zeta}_{t,s_j,i})^2
+\end{equation}
+For a linear model, $\psi(\boldsymbol{X}_i; \boldsymbol{\alpha}) = \boldsymbol{\alpha}^T \boldsymbol{X}_i$. The influence function component is:
+\begin{equation}
+\widehat{\zeta}_{t,s_j,i} = \psi(\boldsymbol{X}_i; \widehat{\boldsymbol{\alpha}}_{t,s_j}^1) - \tildeE_t[\psi(\boldsymbol{X}; \widehat{\boldsymbol{\alpha}}_{t,s_j}^1)] = \widehat{\boldsymbol{\alpha}}_{t,s_j}^{1,T}\boldsymbol{X}_i - \widehat{\boldsymbol{\alpha}}_{t,s_j}^{1,T}\bar{\boldsymbol{X}}_t = \widehat{\boldsymbol{\alpha}}_{t,s_j}^{1,T}(\boldsymbol{X}_i - \bar{\boldsymbol{X}}_t)
+\end{equation}
+Squaring this term gives a scalar, which can be expressed as a quadratic form:
+\begin{equation}
+(\widehat{\zeta}_{t,s_j,i})^2 = \left(\widehat{\boldsymbol{\alpha}}_{t,s_j}^{1,T}(\boldsymbol{X}_i - \bar{\boldsymbol{X}}_t)\right) \left((\boldsymbol{X}_i - \bar{\boldsymbol{X}}_t)^T \widehat{\boldsymbol{\alpha}}_{t,s_j}^{1}\right) = \widehat{\boldsymbol{\alpha}}_{t,s_j}^{1,T}(\boldsymbol{X}_i - \bar{\boldsymbol{X}}_t)(\boldsymbol{X}_i - \bar{\boldsymbol{X}}_t)^T \widehat{\boldsymbol{\alpha}}_{t,s_j}^{1}
+\end{equation}
+Summing over all $i \in \mathcal{D}_t$ and dividing by $N_t$, the central term becomes the sample covariance matrix of the covariates at the target site, $\widehat{\Sigma}_t$:
+\begin{equation}
+\widehat{V}_{t,s_j} = \widehat{\boldsymbol{\alpha}}_{t,s_j}^{1,T} \left( \frac{1}{N_t} \sum_{i \in \mathcal{D}_t} (\boldsymbol{X}_i - \bar{\boldsymbol{X}}_t)(\boldsymbol{X}_i - \bar{\boldsymbol{X}}_t)^T \right) \widehat{\boldsymbol{\alpha}}_{t,s_j}^{1} = \widehat{\boldsymbol{\alpha}}_{t,s_j}^{1,T} \widehat{\Sigma}_t \widehat{\boldsymbol{\alpha}}_{t,s_j}^{1}
+\end{equation}
+
+\paragraph{Derivation of Covariance Term $\widehat{C}_{ot,s_j}$.}
+This term is the covariance between the target-only influence function and the target-side component from source $s_j$.
+\begin{align}
+\widehat{C}_{ot,s_j} &= \frac{1}{N_t}\sum_{i \in \mathcal{D}_t}(\widehat{\varphi}_{ot,i} - \bar{\varphi}_{ot})(\widehat{\zeta}_{t,s_j,i}) \\
+&= \frac{1}{N_t}\sum_{i \in \mathcal{D}_t}(\widehat{\varphi}_{ot,i} - \bar{\varphi}_{ot})\left(\widehat{\boldsymbol{\alpha}}_{t,s_j}^{1,T}(\boldsymbol{X}_i - \bar{\boldsymbol{X}}_t)\right)
+\end{align}
+Since $\widehat{\boldsymbol{\alpha}}_{t,s_j}^{1,T}$ is constant with respect to the sum, we can factor it out:
+\begin{align}
+\widehat{C}_{ot,s_j} &= \widehat{\boldsymbol{\alpha}}_{t,s_j}^{1,T} \left( \frac{1}{N_t}\sum_{i \in \mathcal{D}_t}(\widehat{\varphi}_{ot,i} - \bar{\varphi}_{ot})(\boldsymbol{X}_i - \bar{\boldsymbol{X}}_t) \right) \\
+&= \widehat{\boldsymbol{\alpha}}_{t,s_j}^{1,T} \widehat{\boldsymbol{C}}_{ot,X}
+\end{align}
+where $\widehat{\boldsymbol{C}}_{ot,X}$ is the pre-computed vector of covariances between the target-only IF and the covariates.
+
+\paragraph{Derivation of Cross-Site Covariance Term $\widehat{C}_{t,s_j,s_k}$.}
+This term is needed by the target site for the final aggregation. It requires the parameter vectors from two different source sites, $s_j$ and $s_k$.
+\begin{align}
+\widehat{C}_{t,s_j,s_k} &= \frac{1}{N_t}\sum_{i \in \mathcal{D}_t} (\widehat{\zeta}_{t,s_j,i})(\widehat{\zeta}_{t,s_k,i}) \\
+&= \frac{1}{N_t}\sum_{i \in \mathcal{D}_t} \left(\widehat{\boldsymbol{\alpha}}_{t,s_j}^{1,T}(\boldsymbol{X}_i - \bar{\boldsymbol{X}}_t)\right) \left(\widehat{\boldsymbol{\alpha}}_{t,s_k}^{1,T}(\boldsymbol{X}_i - \bar{\boldsymbol{X}}_t)\right)
+\end{align}
+Rewriting the second scalar term as its transpose allows us to form the quadratic expression:
+\begin{align}
+\widehat{C}_{t,s_j,s_k} &= \frac{1}{N_t}\sum_{i \in \mathcal{D}_t} \widehat{\boldsymbol{\alpha}}_{t,s_j}^{1,T} (\boldsymbol{X}_i - \bar{\boldsymbol{X}}_t) (\boldsymbol{X}_i - \bar{\boldsymbol{X}}_t)^T \widehat{\boldsymbol{\alpha}}_{t,s_k}^{1} \\
+&= \widehat{\boldsymbol{\alpha}}_{t,s_j}^{1,T} \left( \frac{1}{N_t}\sum_{i \in \mathcal{D}_t} (\boldsymbol{X}_i - \bar{\boldsymbol{X}}_t) (\boldsymbol{X}_i - \bar{\boldsymbol{X}}_t)^T \right) \widehat{\boldsymbol{\alpha}}_{t,s_k}^{1} = \widehat{\boldsymbol{\alpha}}_{t,s_j}^{1,T} \widehat{\Sigma}_t \widehat{\boldsymbol{\alpha}}_{t,s_k}^{1}
+\end{align}
+This shows that once the target has $\widehat{\Sigma}_t$ and receives the parameter vectors $\widehat{\boldsymbol{\alpha}}_{t,s_j}^{1}$ and $\widehat{\boldsymbol{\alpha}}_{t,s_k}^{1}$, it can compute this final covariance term.
+
+\subsubsection{Loss Functions}
+For the linear case, the general loss functions from the main text specialize to the following forms. This allows for a sequential estimation procedure: first $\boldsymbol{\gamma}$ is estimated to balance the raw covariates $\phi(\boldsymbol{X})$, and then $\boldsymbol{\alpha}$ is estimated using weights derived from $\boldsymbol{\gamma}$.
+
+\paragraph{Loss Function for Calibration (Tilting) Model $\boldsymbol{\gamma}_{s_j,1}$.}
+The loss for $\boldsymbol{\gamma}$ becomes a direct covariate balancing objective using an exponential tilting formulation. As it only depends on the features $\phi(\boldsymbol{X})$, it can be minimized first without knowledge of $\boldsymbol{\alpha}$.
+\begin{equation} \label{eq:gamma_loss_linear_corrected}
+\ell(\boldsymbol{\gamma}_{s_j,1}) = \left( \tildeE_t \left[ \phi(\boldsymbol{X}) \right] \right)^T \boldsymbol{\gamma}_{s_j,1} + \tildeE_{s_j} \left[ I(A=1) e^{-\phi(\boldsymbol{X})^T \boldsymbol{\gamma}_{s_j,1}} \right] + \lambda_{\gamma} \|\boldsymbol{\gamma}_{s_j,1}\|_1
+\end{equation}
+The term $\tildeE_t(\phi(\boldsymbol{X}))$ is the mean covariate vector $\bar{\boldsymbol{\phi}}_t$ sent from the target site.
+
+\paragraph{Loss Function for Outcome Model $\boldsymbol{\alpha}_{t,s_j}^1$.}
+The outcome model parameters are estimated using weighted least squares (Lasso Regression), which is the specific form of the general GLM loss for linear models. The weights are derived from the calibration/tilting model estimated in the previous step.
+\begin{equation} \label{eq:alpha_loss_linear_corrected}
+\ell(\boldsymbol{\alpha}_{t,s_j}^1) = \tildeE_{s_j}\left[ \frac{I(A=1)}{e^{\phi(\boldsymbol{X})^T \widehat{\boldsymbol{\gamma}}_{s_j,1}}} (Y - \boldsymbol{\alpha}_{t,s_j}^{1,T}\phi(\boldsymbol{X}))^2 \right] + \lambda_{\alpha} \|\boldsymbol{\alpha}_{t,s_j}^1\|_1
+\end{equation}
+
+\subsection{Algorithm Steps}
+\begin{algorithmic}[1]
+\STATE \textbf{Round 1: Single Communication Round}
+\begin{enumerate}
+    \item \textbf{Target site $t$ computes and sends:}
+        \begin{itemize}
+            \item Target-only estimates: $\widehat{\boldsymbol{\alpha}}_{ot}^1$, $\widehat{\mu}^1_{ot}$, and $\widehat{V}_{ot}$.
+            \item Sufficient statistics from $\mathcal{D}_t$: the covariate mean $\bar{\boldsymbol{\phi}}_t$, the covariate covariance matrix $\widehat{\Sigma}_t$, the sample size $N_t$, and the covariance vector $\widehat{\boldsymbol{C}}_{ot,X}$.
+            \item The target site broadcasts this package of information to all source sites.
+        \end{itemize}
+    \item \textbf{Source sites $s_j$ receive info, compute, and send back:}
+        \begin{itemize}
+            \item Each source site first computes its density ratio parameters $\widehat{\boldsymbol{\gamma}}_{s_j,1}$ by minimizing Eq. \eqref{eq:gamma_loss_linear_corrected} using the received $\bar{\boldsymbol{\phi}}_t$.
+            \item Then, it computes its outcome model parameters $\widehat{\boldsymbol{\alpha}}_{t,s_j}^{1}$ by minimizing the weighted least squares loss in Eq. \eqref{eq:alpha_loss_linear_corrected}, using weights derived from the newly computed $\widehat{\boldsymbol{\gamma}}_{s_j,1}$.
+            \item Using the received statistics, it computes the final estimator $\widehat{\mu}^1_{t,s_j}$, the target-side variance $\widehat{V}_{t,s_j} = \widehat{\boldsymbol{\alpha}}_{t,s_j}^{1,T} \widehat{\Sigma}_t \widehat{\boldsymbol{\alpha}}_{t,s_j}^1$, and the covariance $\widehat{C}_{ot,s_j} = \widehat{\boldsymbol{C}}_{ot,X}^T \widehat{\boldsymbol{\alpha}}_{t,s_j}^1$.
+            \item Using its own data, it computes the source-side variance $\widehat{V}_{s_j}$.
+            \item Each source site $s_j$ sends back to the target: $\widehat{\mu}^1_{t,s_j}$, $\widehat{V}_{t,s_j}$, $\widehat{V}_{s_j}$, $\widehat{C}_{ot,s_j}$, $N_{s_j}$, and the parameter vector $\widehat{\boldsymbol{\alpha}}_{t,s_j}^{1}$ (needed for cross-site covariances).
+        \end{itemize}
+    \item \textbf{Target site $t$ receives info and performs final aggregation:}
+        \begin{itemize}
+            \item For each pair of source sites $(s_j, s_k)$, the target computes the cross-site covariance: $\widehat{C}_{t,s_j,s_k} = \widehat{\boldsymbol{\alpha}}_{t,s_j}^{1,T} \widehat{\Sigma}_t \widehat{\boldsymbol{\alpha}}_{t,s_k}^{1}$.
+            \item With all estimators and variance-covariance components now available, the target solves the optimization problem in Eq. \eqref{eq:final_opt} to find the optimal aggregation weights $\boldsymbol{\eta}^*$ and compute the final estimate $\widehat{\mu}^1_{\text{agg}}$.
+        \end{itemize}
+\end{enumerate}
+\end{algorithmic}
+
+\bibliographystyle{plainnat}
+\bibliography{ref} % Ensure you have a ref.bib file for this to work
+
+\end{document}
