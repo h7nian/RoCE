@@ -14,7 +14,7 @@
 #SBATCH --cpus-per-task=64
 #SBATCH --mem=96g
 #SBATCH --job-name=FACE-C
-#SBATCH -p ag2tb,amd2tb,agsmall,amdsmall,msismall,msibigmem,msilong,saffo-2tb
+#SBATCH -p preempt,saffo-2tb,msismall,msilarge,msilong,amdsmall,agsmall,amdlarge,amd512,amd2tb
 #SBATCH --nice=5
 #SBATCH --requeue
 #SBATCH --signal=B:USR1@120

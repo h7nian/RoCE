@@ -104,11 +104,15 @@ test_that("run_crossfit(two_round) returns expected structure", {
 
 test_that("run_crossfit(two_round) rejects too few folds", {
   skip_if_not(exists("fit_general_glm_cpp"), message = "C++ not compiled")
-  
+
+  # get_smoke_data_split() generates continuous Y; pass family="gaussian" so
+  # validate_algorithm_inputs does not raise its binary-Y check before the
+  # n_folds validation we are exercising here.
   data_split <- get_smoke_data_split()
-  
+
   expect_error(
-    run_crossfit(data_split, n_folds = 2, communication_mode = "two_round", verbose = FALSE),
+    run_crossfit(data_split, n_folds = 2, communication_mode = "two_round",
+                 family = "gaussian", verbose = FALSE),
     "too small for two-level cross-fitting"
   )
 })

@@ -1,0 +1,21 @@
+# Package-level C++ compile flags for FACE-C.
+#
+# The template-heavy weight_optimization.cpp translation unit, combined with
+# heavy RcppEigen usage, occasionally triggers two linker failures on MSI's
+# older compute nodes where gcc-8.2.0 from the module tree is paired with the
+# stock /usr/bin/ld (pre-2.31) binutils:
+#
+#   1. "invalid relocation type 54" — the newer R_X86_64_GOTPCRELX relocations
+#      emitted by gcc-8.2.0 are unknown to the system ld. Suppressed with
+#      -Wa,-mrelax-relocations=no, which keeps the relocations in the
+#      pre-relax R_X86_64_* forms understood by all shipped binutils.
+#
+#   2. "relocation truncated to fit: R_X86_64_32 against *UND*" — DWARF debug
+#      info in the linked .so exceeds the 32-bit offset range because of
+#      template instantiation. -g1 keeps enough debug info for symbol names
+#      while dropping the location tables that push the section size over.
+#
+# These flags are prepended to (not replacing) R's default CXXFLAGS so that
+# standard warnings / optimization levels from ~/.R/Makevars still apply.
+
+PKG_CXXFLAGS = -Wa,-mrelax-relocations=no -g1

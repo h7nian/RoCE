@@ -10,20 +10,13 @@
 \usepackage{algorithmic}
 \usepackage[dvipsnames]{xcolor}
 \usepackage[authoryear]{natbib}
+\usepackage{xr-hyper}
 \usepackage{hyperref}
+\usepackage{face-macros}
+\externaldocument{proof}
 
 \theoremstyle{remark}
 \newtheorem{remark}{Remark}
-
-% Define expectation operators
-\DeclareMathOperator{\E}{\mathbb{E}}
-\DeclareMathOperator{\Var}{Var}
-\DeclareMathOperator{\Cov}{Cov}
-\newcommand{\tildeE}{\widetilde{E}} % Sample average operator
-\newcommand{\bX}{\boldsymbol{X}}
-\newcommand{\balpha}{\boldsymbol{\alpha}}
-\newcommand{\bgamma}{\boldsymbol{\gamma}}
-\newcommand{\bbeta}{\boldsymbol{\beta}}
 
 \begin{document}
 
@@ -32,7 +25,23 @@
 \date{\today}
 \maketitle
 
+\begin{abstract}
+Multi-site observational data such as electronic health records offer unprecedented opportunities for causal inference on large and heterogeneous populations, but three challenges arise in concert: privacy and regulatory constraints prohibit the sharing of patient-level data across sites, candidate confounders are high-dimensional, and covariate distributions differ markedly across sites. We propose FACE-HD, a federated adaptive causal estimation framework for high-dimensional covariates, which estimates the target-site average treatment effect (TATE) by combining a target-only doubly robust estimator with source-assisted estimators under covariate shift. In place of separate propensity score and density-ratio models at each source, we introduce an exponential-tilting calibration working model that targets the site/treatment-to-target density ratio directly through a covariate-balance moment condition; coupling this model with a generalized linear outcome regression through a two-step penalized calibrated procedure, combined with sample-splitting and two-level cross-fitting, yields pairwise estimators that are root-$N$ consistent and asymptotically normal whenever either the outcome model or the calibration weight model is correctly specified. The pairwise estimators are aggregated with the target-only estimator through a penalized quadratic objective whose squared-gap penalty adaptively down-weights sources with detectable bias, thereby preventing negative transfer without a separate pre-screening step. A two-round federated protocol---and a pragmatic single-round variant---preserves privacy by exchanging only summary statistics across sites. Formal proofs of the asymptotic results are collected in the Supplementary Material. Simulation studies across four specification regimes illustrate the robustness and efficiency gains of FACE-HD relative to target-only, sample-size-adjusted, inverse-variance-weighted, and tilted-AIPW benchmarks.
+\end{abstract}
+
+\section{Introduction}
+\label{sec:intro}
+
+The growing availability of real-world data---electronic health records (EHRs), administrative claims, multi-center registries---has opened unprecedented possibilities for studying the comparative effectiveness of treatments in large and heterogeneous populations. Realizing that potential, however, requires navigating a constellation of methodological difficulties that rarely appear in isolation. Patient-level data typically cannot be pooled across sites because of privacy, contractual, and regulatory considerations, so any practically viable procedure must operate on summary statistics rather than on raw individual records. At the same time, modern datasets routinely harbor many potential confounders, far in excess of what classical low-dimensional causal machinery was designed to handle, and the distributions of these confounders differ across sites. Neglecting any one of federation, high-dimensional confounding, or covariate shift undermines either the feasibility or the validity of the resulting inference \citep{Tong2025disc2o}.
+
+A line of recent work has begun to address subsets of these issues. \citet{Tong2025disc2o} developed DisC2o-HD, a distributed procedure that calibrates penalized propensity score and outcome models to attain covariate balance and doubly robust inference under covariate shift, although the estimand it targets is the site-specific treatment effect rather than its transport to a designated target population. \citet{Han2023multiply} proposed a multiply robust federated estimator that draws on transfer-learning devices to combine information across sites while preserving privacy, but the framework is fundamentally low-dimensional and requires separate modeling of the propensity score and the density ratio, which doubles the nuisance dimension in the high-dimensional regime. The Federated Adaptive Causal Estimation (FACE) framework of \citet{han2025federated} closes the transport gap by combining target-site and source-site doubly robust estimators through data-adaptive aggregation weights that perform source selection; its validity, however, hinges on pre-specification of the confounder set. In EHR-scale applications that presupposition is difficult to sustain: the relevant confounders must themselves be selected from a large candidate pool, and standard variable-selection devices introduce a bias that destroys the asymptotic linearity of the source-site augmentation terms and, with them, the aggregation step at the heart of FACE. In a parallel strand of the literature, the calibrated $\ell_1$-penalized estimators of \citet{smucler2019unifying} and \citet{tan2020model} deliver doubly robust inference for average treatment effects in high dimensions, but only in a single-site setting. A unified framework that simultaneously accommodates federation, high-dimensional confounding, and covariate shift has so far been missing.
+
+This paper develops such a framework. The proposed FACE-HD procedure extends FACE to the high-dimensional regime along three coordinated lines of design. The first is the replacement of separate propensity score and density-ratio models by a single exponential-tilting calibration working model whose regularized convex loss enforces a covariate-balance moment condition at the target population. The calibration parameters play the role of a combined propensity--density-ratio nuisance, and the induced weight function admits a stable, strictly positive form that is convenient in high dimensions. The second is the construction of cross-calibrated penalized losses for the outcome model and the calibration weight model in the spirit of \citet{smucler2019unifying} and \citet{tan2020model}, embedded in a two-level cross-fitting scheme adapted from \citet{hou2025efficient} and \citet{chernozhukov2018double} to enforce Neyman orthogonality between the two nuisances. The resulting pairwise estimators are $\sqrt{N_{\mathrm{all}}}$-consistent and asymptotically normal whenever either the outcome model or the calibration weight model is correctly specified, and are computed in a federated manner that exposes only summary statistics. The third is the aggregation of the pairwise estimators with the target-only estimator through a penalized quadratic objective, whose penalty is scaled by the squared gap between each pairwise estimator and the target-only estimator. Under a separation condition on biased sources, this penalty drives the weights of substantially biased sources to zero while retaining the informative sources at their variance-optimal weights. Selection consistency of the weights and oracle efficiency of the aggregated estimator are formally established in the Supplementary Material. The procedure is naturally compatible with federation: we describe a two-round protocol that transmits only gradient-type summary statistics between the target and the source sites, together with a single-round pragmatic variant that further reduces communication cost.
+
+The remainder of the paper is organized as follows. Section~\ref{sec:framework} develops the problem setting, the exponential-tilting calibration weights, the GLM outcome models, and the resulting pairwise doubly robust estimators. Section~\ref{sec:parameter_estimation} derives the cross-calibrated losses and states the two-step estimation procedure. Section~\ref{sec:inference} presents the influence-function representation, the variance and covariance components, the penalized aggregation objective, a dedicated treatment of negative transfer, and a summary of the regularity conditions required for the asymptotic results. Section~\ref{sec:two_round} describes the two-round federated algorithm, while Section~\ref{sec:cv} discusses cross-validation for the nuisance models together with a data-adaptive grid for the aggregation penalty. Section~\ref{sec:simulation} reports the simulation study, and Section~\ref{sec:discussion} concludes. One-round variants, two-level cross-fitting details, and full proofs are deferred to the appendices and the Supplementary Material.
+
 \section{Framework for Multi-Site Causal Inference}
+\label{sec:framework}
 
 \subsection{Problem Setting and Notation}
 
@@ -115,13 +124,14 @@ This is conceptually and operationally distinct from the cross-site calibration/
 $\pi_{ot}$ is estimated locally at the target site (e.g., via $\ell_1$-penalized logistic regression on $(A,\boldsymbol{X})$ pairs from $\mathcal{D}_t$), and does not enter the source-assisted estimator $\widehat{\mu}^1_{t,s_j}$ or its loss functions.
 
 \section{Parameter Estimation and Loss Functions}
+\label{sec:parameter_estimation}
 
 \subsection{The Coupling Challenge in Federated Settings}
-In this framework, the outcome model parameters $\boldsymbol{\alpha}_{t,s_j}^a$ and the site/treatment model parameters $\boldsymbol{\gamma}_{s_j,a}$ are interdependent. This coupling arises because the optimal choice for $\boldsymbol{\alpha}$ depends on weights derived from $\boldsymbol{\gamma}$, and vice-versa. Solving this coupled system jointly is computationally challenging in a federated setting where data is decentralized.
+The outcome model parameters $\boldsymbol{\alpha}_{t,s_j}^a$ and the site/treatment calibration parameters $\boldsymbol{\gamma}_{s_j,a}$ enter the doubly robust estimator \eqref{eq:dr_estimator} in a coupled manner: the optimal target of $\boldsymbol{\alpha}$ depends on the calibration weights induced by $\boldsymbol{\gamma}$, while the optimal target of $\boldsymbol{\gamma}$ depends on derivatives of the outcome mean at $\boldsymbol{\alpha}$. A joint solution of the two nuisance problems is, in principle, available at a single site, but in a federated setting---where neither party can examine the other's raw data---such joint optimization would require an excessive number of communication rounds and would entangle the convergence of the two components. We therefore pursue a decoupled, alternating estimation strategy that respects the communication constraints and nonetheless preserves the Neyman orthogonality property required for root-$N$ inference.
 
 \subsection{Derivation of Loss Functions}
 
-To derive loss functions for a federated, iterative estimation process, we follow the principle of constructing estimators that solve the efficient score equations, as identified by the influence function analysis.
+We derive the cross-calibrated loss functions by requiring that the estimating equations for the nuisances coincide with the efficient score equations implied by the influence-function expansion of the pairwise estimator \eqref{eq:dr_estimator}. This construction guarantees that the leading-order contribution of the nuisance estimation error to $\widehat{\mu}^1_{t,s_j}-\mu^1$ vanishes at the population level, leaving a remainder that is second-order in the nuisance errors and therefore asymptotically negligible under standard high-dimensional rates.
 
 \paragraph{Step 1: Influence Function Decomposition.}
 The asymptotic error of $\widehat{\mu}^1_{t,s_j}$ can be decomposed into terms related to the estimation errors of the parameters $\boldsymbol{\alpha}$ and $\boldsymbol{\gamma}$:
@@ -166,10 +176,10 @@ Steps~3--4 establish the cross-calibration: minimizing the $\boldsymbol{\gamma}$
 Together, the first-order terms in the remainder \eqref{eq:if_decomposition} vanish at the population level, leaving a second-order error $O_p(\|\widehat{\boldsymbol{\alpha}}-\boldsymbol{\alpha}^*\|\cdot\|\widehat{\boldsymbol{\gamma}}-\boldsymbol{\gamma}^*\|)$ that is negligible under standard high-dimensional rates; see the appendix proofs for details.
 
 \subsection{Two-Step Estimation Procedure}
-To handle the parameter coupling in a federated context, we employ a two-round iterative estimation strategy based on the alternating minimization of our cross-calibrated loss functions.
+To resolve the parameter coupling described in Section~\ref{sec:parameter_estimation} under the communication constraints of a federated setting, we proceed by an alternating two-step estimation strategy in which each of the two nuisance models is estimated once using an initial, non-calibrated plug-in for the other, and once using the resulting cross-calibrated loss.
 
 \paragraph{Step 1: Initial Parameter Estimation (Iteration 0).}
-First, we obtain robust initial estimates to bootstrap the process.
+In the first step we obtain initial estimates that are consistent under the corresponding model but do not yet satisfy the cross-calibration moment conditions; these serve as plug-ins in the subsequent calibration step.
 
 \textbf{Initial Outcome Model:} A simple regularized regression on source site data provides a starting point $\widehat{\boldsymbol{\alpha}}_{t,s_j}^{1,(0)}$. Let $\ell_{GLM}$ be the standard loss for the chosen GLM (e.g., squared error for linear, log-loss for logistic).
 \begin{equation}\label{eq:alpha_init}
@@ -191,9 +201,10 @@ Using the initial estimates, we perform one round of alternating minimization.
 The final parameters used are $\widehat{\boldsymbol{\alpha}}_{t,s_j}^{1} \coloneqq \widehat{\boldsymbol{\alpha}}_{t,s_j}^{1,(1)}$ and $\widehat{\boldsymbol{\gamma}}_{s_j,1} \coloneqq \widehat{\boldsymbol{\gamma}}_{s_j,1}^{(1)}$.
 
 \section{Asymptotic Properties, Aggregation, and Inference}
+\label{sec:inference}
 
 \subsection{Influence Functions and Variance Components}
-To construct confidence intervals and find optimal aggregation weights, we rely on the influence functions (IF) of our estimators. The total variance of the final aggregated estimator is a function of the variances and covariances of these IFs.
+Confidence intervals and optimal aggregation weights both rely on the influence-function representation of the pairwise estimators introduced in Section~\ref{sec:pairwise}. The asymptotic variance of the aggregated estimator decomposes into variance and covariance components of these influence functions, and consistent plug-in estimators of these components are what ultimately drive the selection behavior of the aggregation step.
 
 Let $\widehat{\mu}^1_{ot}$ be the target-only estimator and $\widehat{\mu}^1_{t,s_j}$ be the source-assisted estimator from site $s_j$.
 
@@ -256,8 +267,19 @@ This scaling can be absorbed into the tuning of $\lambda$ and is used in the app
 \paragraph{ATE aggregation.}
 Define $\widehat{\mu}^0_{\text{agg}}$ by applying the same aggregation construction to $\{\widehat{\mu}^0_{t,s_j}\}_{j=1}^K$ (with the corresponding variance/covariance components for the control arm), and set $\widehat{\tau}_{\text{agg}}\coloneqq \widehat{\mu}^1_{\text{agg}}-\widehat{\mu}^0_{\text{agg}}$. The appendix gives the asymptotic linearity/normality argument; inference for $\tau$ follows by standard linear combination (difference) of the two arm-specific influence function representations.
 
+\subsection{Preventing Negative Transfer via Penalized Aggregation}
+\label{sec:negative_transfer}
+
+A federated estimator that pools information across heterogeneous sources is always exposed to the possibility of \emph{negative transfer}: when the conditional outcome distribution or the covariate-balance relation at a source site deviates substantially from its target-site counterpart, the corresponding pairwise estimator $\widehat{\mu}^1_{t,s_j}$ converges to a limit different from $\mu^1$, and including it in the aggregation injects asymptotic bias rather than efficiency. A procedure that behaves well across a range of data-generating mechanisms must therefore be able to recognize such sources and to down-weight them automatically.
+
+The penalty term $\lambda\sum_{j=1}^K|\eta_j|(\widehat{\mu}^1_{ot}-\widehat{\mu}^1_{t,s_j})^2$ in the aggregation objective \eqref{eq:final_opt} is engineered for precisely this purpose. Sources whose pairwise estimators remain close to the target-only estimator $\widehat{\mu}^1_{ot}$ incur only negligible penalty and are retained at weights that minimize the asymptotic variance of the aggregated estimator; sources whose pairwise estimators are detectably biased pay a penalty that grows with the squared gap and are driven to weight zero. In this sense the mechanism can be viewed as a data-adaptive analog of the site screening performed heuristically in applied multi-site studies, but embedded directly into the estimating equation so that the bias and variance trade-offs are coherently resolved.
+
+To formalize the behavior, let $\mathcal{S}^*\coloneqq\{j:\lim_{N}\widehat{\mu}^1_{t,s_j}=\mu^1\}$ denote the set of \emph{informative} source sites, that is, those whose pairwise estimators are asymptotically unbiased for the target parameter. Under a separation ($\beta$-min) condition requiring the bias of any non-informative source to be detectable at the penalty scale, together with the regularity conditions summarized below, the penalized weights $\widehat{\boldsymbol{\eta}}$ satisfy the selection property $\widehat{\eta}_j=0$ with probability approaching one for every $j\notin\mathcal{S}^*$; correspondingly, the aggregated estimator attains the oracle asymptotic variance restricted to $\mathcal{S}^*$ and is, in particular, asymptotically at least as efficient as the target-only estimator. Formal statements and proofs of these selection and efficiency results are given in Lemma~\ref{lem:selection} and Theorem~\ref{thm:face_hd} of the Supplementary Material. When biased sources are only weakly biased---that is, when the separation scale shrinks with $N$---exact selection may fail, but the aggregated estimator remains asymptotically linear for any deterministic weight configuration and the incurred bias can be controlled at rate $\lambda/N_{\mathrm{all}}$.
+
+Operationally, the penalty $\lambda$ is tuned on a data-adaptive logarithmic grid whose center $\lambda_{\mathrm{nat}}$ is set to the median of the source-specific transitions $\lambda_j=\sigma_j^2/\max(d_j^2,\sigma_j^2)$, where $\sigma_j^2$ and $d_j^2$ denote the estimated pairwise variance and the squared gap to the target-only estimator (Section~\ref{sec:lambda_agg}); this calibration ensures that $\lambda$ scales correctly relative to the estimated bias and variance magnitudes, so that well-aligned sources are retained and substantially biased sources are discarded without manual pre-screening.
+
 \subsection{Theoretical Regularity Conditions (Summary)}
-The detailed proofs are provided in \texttt{proof.tex}. Here we summarize the main technical conditions that the proofs rely on and clarify a few points that are commonly questioned by reviewers.
+The detailed proofs are relegated to the Supplementary Material. The pairwise asymptotic normality of the cross-fitted doubly robust estimator $\widehat{\mu}^{1,\mathrm{CF}}_{t,s}$ is established in Theorem~\ref{thm:main}, and the asymptotic normality and oracle efficiency of the aggregated FACE-HD estimator are established in Theorem~\ref{thm:face_hd}; identification and double robustness are established in Lemma~\ref{lem:ident_dr_mu}, and the source-selection consistency underlying the discussion of negative transfer in Section~\ref{sec:negative_transfer} is established in Lemma~\ref{lem:selection}. In the present section we summarize the main technical conditions that these results rely on and clarify a few points that are likely to be questioned by readers.
 \begin{itemize}
     \item \textbf{High-dimensional nuisance rates under calibrated losses.} The calibrated nuisance estimators $\widehat{\boldsymbol{\alpha}}$ and $\widehat{\boldsymbol{\gamma}}$ are $\ell_1$-penalized M-estimators. Under standard sub-Gaussian design/tail conditions and Restricted Strong Convexity (RSC), they satisfy
     \(
@@ -276,41 +298,11 @@ The detailed proofs are provided in \texttt{proof.tex}. Here we summarize the ma
     \item \textbf{Fixed $K$ vs.\ growing $K$.} The current theory treats the number of sources $K$ as fixed. Allowing $K$ to grow requires additional conditions to control accumulation of estimation error and selection (typically involving $\log K$ rates).
 \end{itemize}
 
-\subsection{Implementation--Theory Alignment (Practical Notes)}
-To improve reproducibility and avoid ambiguity in software implementations, we explicitly record how the code maps to the theory above:
-\begin{itemize}
-    \item \textbf{Centering convention for variance/covariance terms.} The variance components $\widehat V_{ot},\widehat V_{t,s_j},\widehat V_{s_j}$ and covariance terms $\widehat C_{ot,s_j},\widehat C_{t,s_j,s_k}$ are computed using fold-level centered influence-function components, matching Equations~\eqref{eq:variance_components}--\eqref{eq:cross_site_covariance}.
-    \item \textbf{Two variance targets in the workflow.} The quadratic objective in \eqref{eq:final_opt} is used to estimate fold-specific aggregation weights; final uncertainty for the cross-fitted estimator is then reported via a sample-level, \emph{site-stratified} (within-site centered) variance estimator computed from the unified estimating equation over all observations.
-    \item \textbf{Clipping/truncation defaults.} Truncation in nuisance optimization uses finite $M_{\tau}$, while the default inference setting uses the untruncated DR equation ($M_{\tau,\mathrm{inference}}=\infty$); finite inference truncation is treated as an optional finite-sample stabilization.
-\end{itemize}
-
-\paragraph{Formula-to-Implementation Map.}
-Table~\ref{tab:formula_code_map} summarizes the main equation-to-code correspondences used throughout the implementation.
-\begin{table}[h]
-\centering
-\small
-\begin{tabular}{|l|l|l|}
-\hline
-\textbf{Theory object} & \textbf{Equation} & \textbf{Implementation location} \\
-\hline
-Pairwise DR estimator & Eq.~\eqref{eq:dr_estimator} & \texttt{R/cross\_fitting\_algorithms.R}, \texttt{src/variance.cpp} \\
-\hline
-Variance components $\widehat V_{ot},\widehat V_t,\widehat V_s$ & Eq.~\eqref{eq:variance_components} & \texttt{R/estimators\_target.R}, \texttt{src/variance.cpp} \\
-\hline
-Cross-site covariance $\widehat C_{t,s_j,s_k}$ & Eq.~\eqref{eq:cross_site_covariance} & \texttt{R/cross\_fitting\_aggregation.R} \\
-\hline
-Aggregation objective (weights) & Eq.~\eqref{eq:final_opt} & \texttt{R/model\_fitting.R}, \texttt{src/weight\_optimization.cpp} \\
-\hline
-Sample-level final variance & Sec. Implementation notes & \texttt{aggregate\_fold\_estimates()} in \texttt{R/cross\_fitting\_aggregation.R} \\
-\hline
-\end{tabular}
-\caption{Mapping from main theoretical quantities to implementation modules.}
-\label{tab:formula_code_map}
-\end{table}
-
 \section{Federated Learning Algorithms}
+\label{sec:algorithms}
 
 \subsection{Two-Round Communication for Calibrated Estimation}
+\label{sec:two_round}
 This is the robust, standard procedure implementing the two-step estimation strategy.
 
 \begin{algorithmic}[1]
@@ -334,7 +326,8 @@ This is the robust, standard procedure implementing the two-step estimation stra
 \end{algorithmic}
 
 \section{Cross-Validation and Tuning Parameters}
-The framework involves two types of regularization parameters ($\lambda$) that must be tuned.
+\label{sec:cv}
+The procedure involves two distinct classes of regularization parameters. Those appearing in the nuisance models---$\lambda_{\alpha}$ and $\lambda_{\gamma}$---govern the sparsity of the outcome regression and calibration-weight coefficients, respectively, and their tuning controls the nuisance estimation rate. The aggregation penalty $\lambda$ appearing in \eqref{eq:final_opt} plays a conceptually different role: it mediates the bias--variance trade-off between target-only estimation and source-assisted estimation, and its tuning determines which source sites contribute to the final estimator.
 
 \subsection{Cross-Validation for Nuisance Models}
 For each nuisance model (parameters $\boldsymbol{\gamma}$ and $\boldsymbol{\alpha}$), the regularization parameters ($\lambda_\gamma, \lambda_\alpha$) are selected via $K_f$-fold cross-validation, where $K_f$ is a fixed constant. The criterion for selection is the minimization of the corresponding calibrated loss function (\eqref{eq:gamma_calibrated_loss} or \eqref{eq:alpha_calibrated_loss}) on the validation folds. This is performed locally at each site during the federated step where the model is estimated.
@@ -369,34 +362,18 @@ and the search grid spans two orders of magnitude on each side:
 with $|\Lambda|$ evenly spaced on the log scale (e.g.\ 100 points).
 This ensures coverage of the full transition from under-regularised ($\eta_j$ unconstrained) to over-regularised ($\eta_j \approx 0$), regardless of the absolute scale of the variance components and discrepancies.
 
-\subsubsection{Stabilised Selection via the One-Standard-Error Rule}
-\label{sec:one_se_rule}
-\paragraph{Procedure.}
-For each fold $k_1$ in the two-layer cross-fitting loop, the variance components $\widehat{V}_{ot}$, $\widehat{V}_{t,s_j}$, $\widehat{V}_{s_j}$, $\widehat{C}_{ot,s_j}$, and $\widehat{C}_{t,s_j,s_k}$ are already computed from disjoint evaluation data.
-For each candidate $\lambda \in \Lambda$:
-\begin{enumerate}
-    \item Solve \eqref{eq:final_opt} for the optimal weights $\widehat{\boldsymbol{\eta}}^{(\lambda)}$.
-    \item Evaluate the resulting aggregated variance
-    $\widehat{\Var}^{(\lambda)} = \widehat{\Var}(\widehat{\mu}^1_{\mathrm{agg}};\, \widehat{\boldsymbol{\eta}}^{(\lambda)})$
-    using the plug-in formula from~\eqref{eq:final_opt}.
-\end{enumerate}
-Since the variance components are fixed for a given fold, no re-fitting of nuisance models is required; only the weight optimisation (a low-dimensional quadratic program over $K$ variables) is repeated.
+\subsubsection{Variance-Minimising Selection}
+\label{sec:lambda_min}
+For each fold $k_1$ in the two-layer cross-fitting loop, the variance components $\widehat{V}_{ot}$, $\widehat{V}_{t,s_j}$, $\widehat{V}_{s_j}$, $\widehat{C}_{ot,s_j}$, and $\widehat{C}_{t,s_j,s_k}$ are already computed from disjoint evaluation data; for each candidate $\lambda\in\Lambda$, we solve \eqref{eq:final_opt} for the optimal weights $\widehat{\boldsymbol{\eta}}^{(\lambda)}$ and evaluate the resulting aggregated variance $\widehat{\Var}^{(\lambda)}=\widehat{\Var}(\widehat{\mu}^1_{\mathrm{agg}};\,\widehat{\boldsymbol{\eta}}^{(\lambda)})$ through the plug-in formula in \eqref{eq:final_opt}. Because the variance components are fixed for a given fold, no re-fitting of nuisance models is required across $\Lambda$; only the low-dimensional weight optimisation over $K$ variables is repeated.
 
-\paragraph{One-SE rule.}
-Rather than selecting the minimiser $\lambda^* = \arg\min_\lambda \widehat{\Var}^{(\lambda)}$ directly---which can overfit noisy variance component estimates---we adopt a conservative selection rule inspired by the one-standard-error (1-SE) rule of \citet{hastie2009elements}:
-\begin{equation} \label{eq:one_se_rule}
-\lambda^*_{\mathrm{1SE}} \;=\; \max\Bigl\{\lambda \in \Lambda :\; \widehat{\Var}^{(\lambda)} \;\le\; (1 + \epsilon)\, \min_{\lambda' \in \Lambda}\,\widehat{\Var}^{(\lambda')}\Bigr\},
+We select the minimiser of the estimated aggregated variance,
+\begin{equation}\label{eq:lambda_min}
+\lambda^*=\arg\min_{\lambda\in\Lambda}\widehat{\Var}^{(\lambda)}.
 \end{equation}
-where $\epsilon > 0$ is a relative tolerance (we use $\epsilon = 0.10$).
-This selects the \emph{most regularised} $\lambda$ whose aggregated variance is within $\epsilon$ of the minimum—i.e.\ the largest $\lambda$ in the ``flat'' region of the variance curve.
-
-\paragraph{Rationale.}
-The classical 1-SE rule uses the standard error of cross-validated loss estimates across folds. Here, because $\lambda$ only affects the weight optimisation (and not nuisance estimation), there are no replicate loss values from which to compute a standard error.%
-\footnote{In the \texttt{glmnet} setting, each fold provides an independent loss estimate, so the standard error of these $K_f$ values quantifies selection uncertainty. In our setting, the variance components are computed once per fold and then shared across all $\lambda$ evaluations, so fold-specific ``loss'' values are deterministically linked.}
-Instead, the relative tolerance $\epsilon$ serves as a pragmatic substitute: accepting a $\le 10\%$ increase in estimated variance (equivalently, $\le 4.9\%$ increase in SE) in exchange for more stable, regularised weights.
-When the variance curve is flat (common when site estimates are similar), this avoids selecting an arbitrarily small $\lambda$ that produces extreme weights driven by estimation noise.
+Equivalently, this is the \texttt{lambda.min}-type selector applied to the aggregation objective. The selection is numerically well-behaved because the variance components are fixed across the grid and the objective in \eqref{eq:final_opt} is a convex quadratic in $\boldsymbol{\eta}$, so $\widehat{\Var}^{(\lambda)}$ is continuous in $\lambda$ and the minimiser is computed by a single pass over $\Lambda$. The data-adaptive grid of Section~\ref{sec:lambda_agg}, centred at the transition scale $\lambda_{\mathrm{nat}}$ and spanning two orders of magnitude on each side, is calibrated against the estimated variance-to-bias ratio of the source sites, which ensures that the interior minimum of $\widehat{\Var}^{(\lambda)}$ lies inside $\Lambda$ in practice. A one-standard-error-type stabilisation could be adopted when the variance curve is flat over an extended sub-range of $\Lambda$, but we found in simulation and in the implementation that direct minimisation is both stable and conservative enough under the adaptive grid; we therefore retain \eqref{eq:lambda_min} as the default selector throughout the experimental section and in the companion software.
 
 \section{Simulation Study Design}
+\label{sec:simulation}
 
 \subsection{Data Generation Framework}
 
@@ -574,13 +551,21 @@ We consider three main configurations to assess model robustness:
 
 We study the finite sample performance of our proposed \textbf{FACE-HD estimator} against four competing methods: (i) an estimator that leverages target data only (target-only), (ii) a sample-size adjusted estimator (SS), (iii) an inverse-variance weighted estimator (IVW), and (iv) an exponentially-tilted augmented inverse probability weighted estimator (Tilted-AIPW) that multiplies calibration-weighted site-specific AIPW estimators and aggregates via SS. We examine the bias, root mean square error (RMSE), and coverage probability of the 95\% CIs of these estimators across 500 simulations.
 
+\section{Discussion}
+\label{sec:discussion}
+
+We have developed FACE-HD, a federated adaptive causal estimation framework designed for high-dimensional multi-site observational data. The framework combines an exponential-tilting calibration working model for the site/treatment-to-target density ratio, a two-step penalized calibrated estimation procedure embedded in two-level cross-fitting, and a penalized quadratic aggregation objective whose adaptive selection behavior prevents negative transfer. Under standard sparsity and regularity conditions, the resulting estimator of the target-site average treatment effect is $\sqrt{N_{\mathrm{all}}}$-consistent and asymptotically normal, and remains consistent whenever either the outcome model or the calibration weight model is correctly specified. A two-round federated protocol, together with a pragmatic single-round variant, preserves patient-level privacy by exchanging only summary statistics across sites.
+
+Several aspects of the framework deserve further investigation. The present theory treats the number of source sites $K$ as fixed; permitting $K$ to grow with the total sample size requires uniform control of the nuisance estimation errors across sources and the variance/covariance components of the aggregated estimator, typically at $\log K$ rates. The GLM outcome and exponential-tilting calibration models can in principle be replaced with more flexible machine-learning nuisances within the same cross-fitted orthogonality architecture, at the cost of slower nuisance rates and more delicate truncation conditions. The current development focuses on a binary treatment observed at a single time point; continuous or multi-valued treatments and time-varying exposures are natural targets, although the calibration weight construction and the scale of the aggregation penalty would each require corresponding modification. Semi-supervised settings in which outcome labels are scarce at some sites can be incorporated by augmenting the calibrated losses with unlabeled covariate information, following a construction analogous to that of \citet{hou2025efficient}. Finally, an end-to-end open-source software implementation is distributed alongside this manuscript to facilitate reproducible research and transparent adoption in applied studies.
+
 \appendix
 
 \section{One-Round Communication Algorithms for GLM Outcome Models}
+\label{app:one_round}
 
-To reduce communication costs, we can devise one-round algorithms. The key idea is to use an initial model estimated on the target site to bootstrap the cross-calibration process at the source sites, removing the need for an initial round of communication from the sources to the target.
+In settings where communication cost is a binding constraint, the two-round protocol of Section~\ref{sec:two_round} can be streamlined into a single round of communication. The key observation is that the role of the source-specific initial outcome model in the cross-calibrated loss \eqref{eq:gamma_calibrated_loss} is to provide a consistent plug-in estimator of the target-population outcome mean; this role can be served just as well by the target-only outcome model $\widehat{\boldsymbol{\alpha}}_{ot}^{1}$, which is available to the target site without any prior communication from the sources.
 
-This algorithm streamlines the two-round process by using the target-only outcome model, $\widehat{\boldsymbol{\alpha}}_{ot}^{1}$, as the initial estimate for the cross-calibration procedure. This is a pragmatic trade-off that significantly reduces communication complexity at the cost of a potentially less tailored initialization for each source site.
+The resulting procedure substitutes $\widehat{\boldsymbol{\alpha}}_{ot}^{1}$ for the source-specific initial estimator throughout, thereby eliminating the inbound round of communication. This substitution introduces a pragmatic trade-off: the initialization is no longer adapted to each source site, which may inflate the finite-sample bias of the calibrated nuisance estimators when the target-only and source-specific initializers differ substantially. Under the alignment condition stated in the appendix of the calibrated loss derivation, however, the first-order asymptotic properties of the resulting pairwise and aggregated estimators coincide with those of the two-round procedure.
 
 \begin{algorithmic}[1]
 \STATE \textbf{Round 1: Single Communication Round}

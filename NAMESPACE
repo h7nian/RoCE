@@ -78,5 +78,21 @@ export(run_single_simulation)
 export(summarize_results)
 export(run_simulation_study)
 
+# Real-data: Right-Heart Catheterization (RHC) public dataset
+export(rhc_csv_path)
+export(load_rhc_raw)
+export(build_rhc_cohort)
+export(build_rhc_data_split)
+export(run_rhc_experiment)
+export(phi_rhc_bspline)
+
+# Plotting
+export(save_plot)
+export(plot_forest_methods)
+export(plot_aggregation_weights)
+export(plot_pairwise_vs_target)
+export(plot_simulation_metric)
+export(save_simulation_plot_grid)
+
 
 

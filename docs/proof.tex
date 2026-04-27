@@ -7,9 +7,11 @@
 \usepackage{mathtools} % For \coloneqq
 \usepackage{bm} % For \boldsymbol
 \usepackage[dvipsnames]{xcolor} % Use dvipsnames for Maroon color if needed
+\usepackage{enumitem}
 \usepackage[authoryear]{natbib}
-\usepackage{hyperref}
 \usepackage{xr-hyper}
+\usepackage{hyperref}
+\usepackage{face-macros}
 
 % Import labels from main.tex while ignoring BibTeX citation definitions in main.aux
 % (otherwise natbib will warn about multiply-defined citations).
@@ -20,21 +22,6 @@
 \let\bibcite\XR@old@bibcite
 \makeatother
 
-% --- Basic Notation (from user's preamble) ---
-\DeclareMathOperator{\E}{\mathbb{E}}
-\DeclareMathOperator{\Var}{Var}
-\DeclareMathOperator{\Cov}{Cov}
-\newcommand{\tildeE}{\widetilde{E}} % Sample average operator (match main manuscript)
-\newcommand{\R}{\mathbb{R}}
-\newcommand{\op}{o_p}
-\newcommand{\Op}{O_p}
-
-\newcommand{\bX}{\boldsymbol{X}}
-\newcommand{\balpha}{\boldsymbol{\alpha}}
-\newcommand{\bgamma}{\boldsymbol{\gamma}}
-\newcommand{\bbeta}{\boldsymbol{\beta}}
-\newcommand{\bhat}[1]{\widehat{\boldsymbol{#1}}}
-
 % --- Theorem Environments (from user's preamble) ---
 \newtheorem{theorem}{Theorem}[section]
 \newtheorem{lemma}[theorem]{Lemma}
@@ -43,6 +30,8 @@
 \newtheorem{proposition}[theorem]{Proposition}
 \newtheorem{definition}{Definition}[section]
 \newtheorem{remark}{Remark}[section]
+
+\newcommand{\hj}[1]{\textcolor{Maroon}{[Marquis: #1]}}
 
 % --- Document Start ---
 \begin{document}
@@ -66,7 +55,8 @@ Let $\mathcal{D}^{(-k)} = \mathcal{D} \setminus \mathcal{D}_k$ denote the out-of
 Let $\vartheta = (\boldsymbol{\alpha}^1, \boldsymbol{\gamma}_1)$ be the vector of nuisance parameters. For this fixed pair $(t,s)$ we write $\boldsymbol{\alpha}^1 \equiv \boldsymbol{\alpha}_{t,s}^1$ and $\boldsymbol{\gamma}_1 \equiv \boldsymbol{\gamma}_{s,1}$. Let $\vartheta^* = (\boldsymbol{\alpha}^{1,*}, \boldsymbol{\gamma}_1^*)$ denote the population targets of the calibrated estimation step (Equations~\eqref{eq:gamma_calibrated_loss} and \eqref{eq:alpha_calibrated_loss} in the main manuscript), and let $\widehat{\vartheta}^{(-k)} = (\widehat{\boldsymbol{\alpha}}_{t,s}^{1,(-k)}, \widehat{\boldsymbol{\gamma}}_{s,1}^{(-k)})$ be the nuisance estimators trained on data $\mathcal{D}^{(-k)}$ using the two-level cross-fitting procedure.
 Here the superscript $(-k)$ denotes the \emph{final} two-level cross-fitted nuisance estimators used for evaluating fold $k$ (including any inner-fold averaging), and hence $\widehat{\vartheta}^{(-k)}$ is independent of $\mathcal{D}_k$.
 
-To ensure numerical stability and theoretical regularity (bounded weights), we define a truncation function $\mathcal{T}(x) = \text{sign}(x)\min(|x|, M_{\tau})$, where $M_{\tau}=M_{\tau,N}$ is allowed to depend on $N$ (notation suppressed). (We avoid the symbol $\tau(\cdot)$ to prevent collision with the ATE $\tau$ in the main manuscript.) The truncated weighting function is defined as:
+To ensure numerical stability and theoretical regularity (bounded weights), we define a truncation function $\mathcal{T}(x) = \text{sign}(x)\min(|x|, M_{\tau})$, where $M_{\tau}=M_{\tau,N}$ is allowed to depend on $N$ (notation suppressed). (We avoid the symbol $\tau(\cdot)$ to prevent collision with the ATE $\tau$ in the main manuscript.)
+The truncated weighting function is defined as:
 \[
 w_\tau(\boldsymbol{X}; \boldsymbol{\gamma}) \coloneqq \frac{I(A=1)}{e^{\mathcal{T}(\phi(\boldsymbol{X})^T \boldsymbol{\gamma})}}.
 \]
@@ -159,6 +149,39 @@ Define the corresponding population estimand at $\vartheta$ as
 + \E_s[w(\boldsymbol{X};\boldsymbol{\gamma}_1)\{Y - \psi(\phi(\boldsymbol{X}); \boldsymbol{\alpha}^1)\}].
 \end{align*}
 
+
+\subsection{Common Notation and Definitions}\label{sec:notation_defs}
+
+To avoid defining objects inside later statements, we collect here the auxiliary definitions used throughout the appendix.
+
+\begin{definition}[Sub-Gaussian Orlicz norm]\label{def:subgaussian}
+For a random variable $Z$, the sub-Gaussian Orlicz norm is
+\[
+\|Z\|_{\psi_2}\;\coloneqq\;\inf\{t>0:\mathbb{E}[\exp(Z^2/t^2)]\le 2\},
+\]
+and $Z$ is called \emph{sub-Gaussian} when $\|Z\|_{\psi_2}<\infty$.
+\end{definition}
+
+\begin{definition}[Sparsity indices]\label{def:sparsity}
+For the population targets of the calibrated losses, define the $\ell_0$-sparsity levels
+\[
+s_\alpha\coloneqq \|\boldsymbol{\alpha}^{1,*}\|_0,\qquad s_\gamma\coloneqq \|\boldsymbol{\gamma}_1^*\|_0,\qquad s\coloneqq s_\alpha+s_\gamma,
+\]
+and throughout the appendix we use $s$ (rather than the equivalent notation $s_{\mathrm{tot}}$) for the total sparsity. The same convention applies to the initial nuisance estimators under the two-level alignment of Assumption~\ref{asmp:rsc}(c).
+\end{definition}
+
+\begin{definition}[Target outcome regression]\label{def:mt1}
+The target-site treated conditional mean is
+\[
+m_t^1(\boldsymbol{X})\;\coloneqq\;\mathbb{E}_t[Y\mid A=1,\boldsymbol{X}],
+\]
+so that under ignorability and overlap on the target site, $\mu^1=\mathbb{E}_t[m_t^1(\boldsymbol{X})]$.
+\end{definition}
+
+\begin{remark}[On $\phi(\boldsymbol{X})$]\label{rem:phi_convention}
+Throughout, $\phi:\mathbb{R}^p\to\mathbb{R}^p$ denotes a basis expansion of the raw covariates $\boldsymbol{X}$ that includes an intercept coordinate and is treated as fixed. All high-dimensional and sparsity statements below apply to $\phi(\boldsymbol{X})$; if the user does not require an explicit expansion, $\phi$ can be taken as the identity, in which case $p=\dim(\boldsymbol{X})$.
+\end{remark}
+
 \begin{lemma}[Identification / double robustness for $\mu^1(\vartheta^*)$]\label{lem:ident_dr_mu}
 Assume the target causal parameter is identified as $\mu^1=\E_t[Y(1)]$ (e.g., by consistency and ignorability/overlap on the target site), so that $\mu^1=\E_t[m_t^1(\boldsymbol{X})]$ where $m_t^1(\boldsymbol{X})\coloneqq \E_t[Y\mid A=1,\boldsymbol{X}]$.
 Recall $\phi(\boldsymbol{X})$ includes an intercept.
@@ -209,62 +232,111 @@ More generally, for any $\vartheta$ we define $\varphi_{t,s}(D;\vartheta) \colon
 Let $V^*_{t,s} := \Var\!\big(\varphi_{t,s}(D; \vartheta^*)\big)$.
 
 \subsection{Assumptions}
-\begin{assumption}[Data and Sparsity]\label{asmp:data}
-(a) Covariates $\phi(\boldsymbol{X})$ (including an intercept) are sub-Gaussian: there exists a constant $K_\phi$ such that $\max_{1\le j\le p}\|\phi_j(\boldsymbol{X})\|_{\psi_2}\le K_\phi$ under both $R=t$ and $R=s$, where $\|Z\|_{\psi_2}$ denotes the sub-Gaussian Orlicz norm.
-(b) The population minimizers $\boldsymbol{\alpha}^{1,*}$ and $\boldsymbol{\gamma}_1^*$ are $s_\alpha$-sparse and $s_\gamma$-sparse, respectively.
-\end{assumption}
 
-\begin{assumption}[Overlap, Smoothness, and Moments]\label{asmp:overlap}
-(a) Positivity and weight moments:
-\begin{enumerate}
-    \item[(i)] (Overlap / positivity) The treated-group overlap conditions needed to define the ideal density-ratio weights hold (so $w(\boldsymbol{X};\boldsymbol{\gamma}_1^*)$ is well-defined).
-    \item[(ii)] (Finite weight moments) For some $\delta>0$ (the same $\delta$ as in (b)(ii) below), under $R=s$,
-    \[
-        \sup_{\boldsymbol{\gamma}\in\mathcal{N}(\boldsymbol{\gamma}_1^*)}\E_s\!\left[w(\boldsymbol{X};\boldsymbol{\gamma})^{2+\delta}\right] < \infty,
-        \qquad
-        \sup_{\boldsymbol{\gamma}\in\mathcal{N}(\boldsymbol{\gamma}_1^*)}\E_s\!\left[w(\boldsymbol{X};\boldsymbol{\gamma})^{2+\delta}\,\|\phi(\boldsymbol{X})\|_2^{2+\delta}\right] < \infty.
-    \]
-\end{enumerate}
-(In computation, truncation in the calibrated losses guarantees bounded weights numerically; the limit theory below is for the untruncated estimator and uses the moment bounds above.)
-(b) Smoothness and Moment Conditions:
-		\begin{enumerate}
-		    \item \textbf{(Smoothness)} The GLM mean function $\psi:\mathbb{R}\to\mathbb{R}$ is continuously differentiable with bounded slope: $\sup_{u\in\mathbb{R}}|\psi'(u)|\le L_\psi<\infty$, and $\psi'$ is Lipschitz: $|\psi'(u_1)-\psi'(u_2)|\le L_{\psi'}|u_1-u_2|$.
-		    \item \textbf{(Tails/Moments)} There exists $\delta>0$ such that, under both $R=t$ and $R=s$, the outcome has finite $(2+\delta)$-moment, $\E[|Y|^{2+\delta}\mid R=r]<\infty$, and the score contribution has finite $(2+\delta)$-moment uniformly over a neighborhood of $\vartheta^*$:
-	    \[
-	    \sup_{\vartheta\in\mathcal{N}(\vartheta^*)}\E\!\left[\left|\widetilde{\varphi}_{t,s}(D;\vartheta)\right|^{2+\delta}\right]<\infty.
-	    \]
-	    A sufficient condition (used implicitly in the concentration steps below) is that $Y\mid(A=1,R=r)$ is sub-Gaussian and $\phi(\boldsymbol{X})$ is sub-Gaussian (Assumption~\ref{asmp:data}(a)); this includes linear regression with sub-Gaussian noise (where $\psi(u)=u$ and $\psi'(u)\equiv 1$) and logistic regression (where $\psi'$ is bounded).
-	\end{enumerate}
-(c) (Truncation Choice) With $M_{\tau,N}$ as in the definition of $\mathcal{T}(\cdot)$, we assume truncation is asymptotically inactive at the population targets in the sense that
+The assumptions below are organized so that each condition has a clearly identified role: Assumption~\ref{asmp:data} controls the design distribution, Assumption~\ref{asmp:overlap} controls the weight tails together with the outcome smoothness and moments, and Assumption~\ref{asmp:rsc} controls the nuisance estimation pipeline. Definitions of Orlicz norms, sparsity, and the target outcome regression are collected in Section~\ref{sec:notation_defs}.
+
+\begin{assumption}[Design distribution]\label{asmp:data}
+The coordinates of $\phi(\boldsymbol{X})$ (which includes an intercept) are sub-Gaussian in the sense of Definition~\ref{def:subgaussian}: there exists $K_\phi<\infty$ such that
 \[
-\begin{aligned}
-P\!\left(\left|\phi(\boldsymbol{X})^T \boldsymbol{\alpha}^{1,*}\right| > M_{\tau,N}\,\middle|\, R=r\right)
-&=o(N^{-1}) \quad \text{for } r\in\{t,s\}, \\
-P\!\left(\left|\phi(\boldsymbol{X})^T \boldsymbol{\gamma}_1^*\right| > M_{\tau,N}\,\middle|\, R=s\right)
-&=o(N^{-1}).
-\end{aligned}
+\max_{1\le j\le p}\|\phi_j(\boldsymbol{X})\|_{\psi_2}\le K_\phi\qquad\text{under both }R=t\text{ and }R=s.
 \]
-This $o(N^{-1})$ ``asymptotically inactive'' choice is convenient because it implies any difference between clipped and unclipped contributions in an $N^{-1/2}$-scaled empirical average is $o_p(1)$.
-This condition is stronger than strictly necessary; it is chosen to keep the exposition clean. One can weaken it (e.g., to $o(1)$) at the cost of tracking an additional clipping-induced bias term and showing it is $o_p(N^{-1/2})$ under the chosen $M_{\tau,N}$.
 \end{assumption}
 
-\begin{assumption}[Nuisance Model Properties]\label{asmp:rsc}
-(a) (RSC) The population versions of the calibrated loss functions (Equations~\eqref{eq:gamma_calibrated_loss} and \eqref{eq:alpha_calibrated_loss} in the main manuscript) are convex and satisfy Restricted Strong Convexity (RSC) around $\vartheta^*$ in appropriate sparse norms.
-(b) (Cross-fitting) The estimators $\widehat{\vartheta}^{(-k)}$ used for evaluation on fold $k$ are trained solely on data $\mathcal{D}^{(-k)}$, which is independent of $\mathcal{D}_k$.
-(c) (Two-level Limit Alignment) Let $(\boldsymbol{\alpha}^{1,*}_{\mathrm{init}}, \boldsymbol{\gamma}^{*}_{1,\mathrm{init}})$ denote the probability limits of the \emph{initial} nuisance estimators plugged into the calibrated losses in the two-level algorithm. Assume these initial estimators are consistent for the same population targets as the calibrated step, i.e., $\boldsymbol{\alpha}^{1,*}_{\mathrm{init}}=\boldsymbol{\alpha}^{1,*}$ and $\boldsymbol{\gamma}^{*}_{1,\mathrm{init}}=\boldsymbol{\gamma}^{*}_{1}$.
-(d) (Foldwise score-centering: optional strengthening) The conditional foldwise score-centering condition in the \textbf{(Special)} case of Lemma \ref{lem:nuisance_rates} holds for the foldwise calibrated losses used to estimate $\boldsymbol{\alpha}^1$ and $\boldsymbol{\gamma}_1$. This is the type of condition used in \citet{hou2025efficient} to remove the plug-in score term. Crucially, this foldwise conditional score-centering is not implied automatically by the population orthogonality conditions in Lemma \ref{lem:ortho_foc}; when (d) is not assumed/verified, one should use the \textbf{(General)} rate bound in Lemma \ref{lem:nuisance_rates}.
+\begin{assumption}[Overlap, smoothness, and moments]\label{asmp:overlap}
+\begin{enumerate}[label={(\alph*)},leftmargin=*]
+    \item (Bounded-weight overlap) There exists a constant $\bar{W}<\infty$ such that the ideal calibration weight at the population target is essentially bounded:
+    \[
+    w(\boldsymbol{X};\boldsymbol{\gamma}_1^*)\le \bar{W}\quad\text{almost surely under }R=s,
+    \]
+    equivalently, $\phi(\boldsymbol{X})^\top\boldsymbol{\gamma}_1^* \ge -\log \bar{W}$ a.s. Under this condition, numerical truncation in the calibrated losses is asymptotically inactive at the target.
+
+    \item (GLM smoothness) The mean function $\psi:\mathbb{R}\to\mathbb{R}$ is continuously differentiable with $\sup_u|\psi'(u)|\le L_\psi<\infty$, and $\psi'$ is Lipschitz with constant $L_{\psi'}<\infty$.
+
+    \item (Outcome moments) There exists $\delta>0$ such that $\mathbb{E}[|Y|^{2+\delta}\mid R=r]<\infty$ for $r\in\{t,s\}$. A sufficient condition, used in the concentration steps below, is that $Y\mid(A=1,R=r)$ is sub-Gaussian.
+
+    \item (Local IF moments) With the same $\delta$ as in (c), there exists a neighborhood $\mathcal{N}(\vartheta^*)$ of the population target such that the uncentered influence-function contribution $\widetilde{\varphi}_{t,s}$ defined in the Setup has a uniformly bounded $(2+\delta)$-th moment,
+    \[
+    \sup_{\vartheta\in\mathcal{N}(\vartheta^*)}\mathbb{E}\!\left[|\widetilde{\varphi}_{t,s}(D;\vartheta)|^{2+\delta}\right]<\infty.
+    \]
+    Under (a), (b), (c) and Assumption~\ref{asmp:data}, this condition is automatic: the bounded weight and sub-Gaussian $\phi(\boldsymbol{X})$ imply finite moments of $w(\boldsymbol{X};\boldsymbol{\gamma})\,\psi(\phi(\boldsymbol{X})^\top\boldsymbol{\alpha})$ of any order in a neighborhood of $\vartheta^*$.
+
+    \item (Inactive truncation) With $M_{\tau,N}$ as in the definition of $\mathcal{T}(\cdot)$, for $r\in\{t,s\}$,
+    \[
+    P\!\left(\bigl|\phi(\boldsymbol{X})^\top\boldsymbol{\alpha}^{1,*}\bigr| > M_{\tau,N}\,\Big|\, R=r\right)=o(N^{-1}),\qquad
+    P\!\left(\bigl|\phi(\boldsymbol{X})^\top\boldsymbol{\gamma}_1^*\bigr| > M_{\tau,N}\,\Big|\, R=s\right)=o(N^{-1}).
+    \]
+    This is stronger than strictly necessary but keeps the exposition clean; weakening it to $o(1)$ is possible at the cost of tracking a clipping-induced bias term of order $o_p(N^{-1/2})$.
+\end{enumerate}
+\end{assumption}
+
+\begin{assumption}[Nuisance estimation pipeline]\label{asmp:rsc}
+\begin{enumerate}[label={(\alph*)},leftmargin=*]
+    \item (Restricted strong convexity) The population versions of the calibrated loss functions (Equations~\eqref{eq:gamma_calibrated_loss} and \eqref{eq:alpha_calibrated_loss} in the main manuscript) are convex and satisfy Restricted Strong Convexity (RSC) around $\vartheta^*$ in the relevant sparse norms.
+    \item (Cross-fitting) The estimators $\widehat{\vartheta}^{(-k)}$ used for evaluation on fold $k$ are trained solely on $\mathcal{D}^{(-k)}$, which is independent of $\mathcal{D}_k$.
+    \item (Two-level limit alignment) The probability limits $(\boldsymbol{\alpha}^{1,*}_{\mathrm{init}},\boldsymbol{\gamma}^{*}_{1,\mathrm{init}})$ of the initial plug-in nuisance estimators coincide with the population targets of the calibrated step, i.e., $\boldsymbol{\alpha}^{1,*}_{\mathrm{init}}=\boldsymbol{\alpha}^{1,*}$ and $\boldsymbol{\gamma}^{*}_{1,\mathrm{init}}=\boldsymbol{\gamma}^{*}_{1}$.
+    \item (Foldwise score-centering; optional) The conditional foldwise score-centering condition of the \emph{Special} case in Lemma~\ref{lem:nuisance_rates} holds for the calibrated losses used to estimate $\boldsymbol{\alpha}^1$ and $\boldsymbol{\gamma}_1$; this is the condition exploited by \citet{hou2025efficient} to eliminate the plug-in score term. When (d) is not verified, the \emph{General} rate bound in Lemma~\ref{lem:nuisance_rates} applies instead.
+\end{enumerate}
 \end{assumption}
 
 \begin{remark}[On the alignment condition]\label{rem:alignment}
 Assumption \ref{asmp:rsc}(c) is a technical device to avoid tracking multiple population limits induced by the nested/coupled optimization. It is satisfied, for example, when (i) the population calibrated losses have unique minimizers $(\boldsymbol{\alpha}^{1,*},\boldsymbol{\gamma}_1^*)$ (by strict convexity in the relevant restricted set), and (ii) the mapping from an initial plug-in value to the population minimizer of the next calibrated update is continuous at $(\boldsymbol{\alpha}^{1,*},\boldsymbol{\gamma}_1^*)$, so that any consistent initialization converges to the same fixed point. In practice, the same calibrated estimating equations are solved throughout the nuisance-estimation pipeline, making the alignment natural under uniqueness.
 \end{remark}
 
-\subsection{Main Theorem and Proof}
+\subsection{Oracle Rates for the Calibrated Nuisance Estimators}\label{sec:oracle}
+
+Before stating the asymptotic normality of the cross-fitted estimator, we record the high-dimensional oracle rates of the calibrated nuisance estimators. The result is a direct specialization of the cross-fitted $\ell_1$-penalized nuisance rate bound of Lemma~\ref{lem:nuisance_rates} (which in turn adapts Lemma~A21 of \citet{hou2025efficient} and the RSC framework of \citet{negahban2012unified,tan2020model,buhlmann2011statistics}) to the calibrated outcome and calibration-weight losses of Equations~\eqref{eq:alpha_calibrated_loss} and \eqref{eq:gamma_calibrated_loss}. Separating this oracle step from the subsequent asymptotic-normality argument keeps the role of the nuisance rates logically distinct from the debiasing argument and facilitates reuse across the pairwise and aggregated statements.
+
+\begin{proposition}[Oracle rates of calibrated nuisance estimators]\label{prop:oracle_rates}
+Under Assumptions~\ref{asmp:data}, \ref{asmp:overlap}, and \ref{asmp:rsc}(a)--(c), with regularization parameters $\lambda_\alpha\asymp\sqrt{\log(p)/N}$ and $\lambda_\gamma\asymp\sqrt{\log(p)/N}$, the calibrated cross-fitted $\ell_1$-penalized nuisance estimators satisfy
+\[
+\|\widehat{\boldsymbol{\alpha}}_{t,s}^{1,(-k)}-\boldsymbol{\alpha}^{1,*}\|_2 = O_p\!\left(\sqrt{\frac{s_\alpha\log(p)}{N}}\right),
+\quad
+\|\widehat{\boldsymbol{\alpha}}_{t,s}^{1,(-k)}-\boldsymbol{\alpha}^{1,*}\|_1 = O_p\!\left(s_\alpha\sqrt{\frac{\log(p)}{N}}\right),
+\]
+and analogously for $\widehat{\boldsymbol{\gamma}}_{s,1}^{(-k)}$ with $s_\alpha$ replaced by $s_\gamma$. If Assumption~\ref{asmp:rsc}(d) additionally holds, the foldwise score-centering is available and the \emph{Special} rate bound in Lemma~\ref{lem:nuisance_rates} applies without inflation from the plug-in score term.
+\end{proposition}
+
+\begin{proof}
+The proposition is obtained by applying Lemma~\ref{lem:nuisance_rates} twice, once to the calibrated outcome loss (Equation~\eqref{eq:alpha_calibrated_loss} in the main manuscript) and once to the calibrated calibration-weight loss (Equation~\eqref{eq:gamma_calibrated_loss}). We verify each condition of Lemma~\ref{lem:nuisance_rates} and then derive the stated rates.
+
+\textbf{Step 1 (Outcome loss as an instance of Lemma~\ref{lem:nuisance_rates}).}
+Identify the generic estimation target of Lemma~\ref{lem:nuisance_rates} with $\boldsymbol{\beta}\equiv\boldsymbol{\alpha}^1$, the plug-in nuisance with $\boldsymbol{\gamma}\equiv\boldsymbol{\gamma}_1$, and the per-observation loss with
+\[
+\ell(D;\boldsymbol{\alpha}^1,\boldsymbol{\gamma}_1)=\frac{I(R=s)}{\rho_s}\frac{I(A=1)}{e^{\mathcal{T}(\phi(\boldsymbol{X})^\top\boldsymbol{\gamma}_1)}}\Bigl[-Y\,\phi(\boldsymbol{X})^\top\boldsymbol{\alpha}^1+\Psi(\phi(\boldsymbol{X})^\top\boldsymbol{\alpha}^1)\Bigr].
+\]
+We check the conditions (a)--(d) of Lemma~\ref{lem:nuisance_rates}:
+\begin{enumerate}[label={(\alph*)},leftmargin=*]
+\item Sub-Gaussian design with bounded $\psi_2$-norm is supplied by Assumption~\ref{asmp:data}.
+\item Response sub-Gaussianity is Assumption~\ref{asmp:overlap}(c); the GLM mean function $\psi$ and its derivative $\psi'$ are uniformly bounded on a neighborhood of $\boldsymbol{\alpha}^{1,*}$ by Assumption~\ref{asmp:overlap}(b), using that $\phi(\boldsymbol{X})^\top\boldsymbol{\alpha}^{1,*}$ has a sub-Gaussian distribution by Assumption~\ref{asmp:data}.
+\item Identifiability of the population Gram matrix $\mathbb{E}[\phi(\boldsymbol{X})\phi(\boldsymbol{X})^\top\mid R=s]$ follows from the RSC of the outcome calibrated loss (Assumption~\ref{asmp:rsc}(a)): RSC with curvature $\kappa_\alpha>0$ implies that the restricted minimum eigenvalue of the population Hessian at $\boldsymbol{\alpha}^{1,*}$ is bounded below, which, combined with bounded weights (Assumption~\ref{asmp:overlap}(a)), yields a strictly positive minimum eigenvalue of the unrestricted Gram matrix on the support of $\boldsymbol{\alpha}^{1,*}$ and in its local extensions.
+\item Weight regularity: the calibration weight $w(\boldsymbol{X};\boldsymbol{\gamma})$ is locally Lipschitz in $\boldsymbol{\gamma}$ because $u\mapsto e^{-u}$ is smooth, and its moments are finite under (a) of Assumption~\ref{asmp:overlap}.
+\end{enumerate}
+Cross-fitting independence is given by Assumption~\ref{asmp:rsc}(b), and the alignment condition (c) guarantees that the initial plug-in $\widehat{\boldsymbol{\gamma}}_1^{(-k)}$ converges to the same population target $\boldsymbol{\gamma}_1^*$ used in the analysis.
+With $\lambda_\alpha\asymp\sqrt{\log(p)/N}$, Lemma~\ref{lem:nuisance_rates} yields the stated $\ell_2$ and $\ell_1$ rates for $\widehat{\boldsymbol{\alpha}}_{t,s}^{1,(-k)}-\boldsymbol{\alpha}^{1,*}$ with the sparsity index $s_\alpha$ of Definition~\ref{def:sparsity}.
+
+\textbf{Step 2 (Calibration-weight loss).}
+Identify the generic target with $\boldsymbol{\beta}\equiv\boldsymbol{\gamma}_1$, the plug-in nuisance with $\boldsymbol{\gamma}\equiv\boldsymbol{\alpha}^1$, and the per-observation loss with
+\[
+\ell(D;\boldsymbol{\gamma}_1,\boldsymbol{\alpha}^1)=\frac{I(R=t)}{\rho_t}\psi'\!\left(\mathcal{T}(\phi(\boldsymbol{X})^\top\boldsymbol{\alpha}^1)\right)\phi(\boldsymbol{X})^\top\boldsymbol{\gamma}_1+\frac{I(R=s)}{\rho_s}\frac{I(A=1)\,\psi'\!\left(\mathcal{T}(\phi(\boldsymbol{X})^\top\boldsymbol{\alpha}^1)\right)}{e^{\phi(\boldsymbol{X})^\top\boldsymbol{\gamma}_1}}.
+\]
+The loss is strictly convex in $\boldsymbol{\gamma}_1$ because $u\mapsto e^{-u}$ is strictly convex, and its Hessian at $\boldsymbol{\gamma}_1^*$ equals $\mathbb{E}_s[w(\boldsymbol{X};\boldsymbol{\gamma}_1^*)\psi'(\phi(\boldsymbol{X})^\top\boldsymbol{\alpha}^{1,*})\phi(\boldsymbol{X})\phi(\boldsymbol{X})^\top]/\rho_s$, which is positive definite on the support of $\boldsymbol{\gamma}_1^*$ by Assumption~\ref{asmp:rsc}(a). Conditions (a)--(d) of Lemma~\ref{lem:nuisance_rates} are verified exactly as in Step~1 (with $\boldsymbol{\alpha}^1$ and $\boldsymbol{\gamma}_1$ swapped), using that $\sup_u|\psi'(u)|\le L_\psi$ (Assumption~\ref{asmp:overlap}(b)) and the bounded-weight condition (Assumption~\ref{asmp:overlap}(a)). With $\lambda_\gamma\asymp\sqrt{\log(p)/N}$, Lemma~\ref{lem:nuisance_rates} delivers the stated rates for $\widehat{\boldsymbol{\gamma}}_{s,1}^{(-k)}-\boldsymbol{\gamma}_1^*$ with sparsity index $s_\gamma$.
+
+\textbf{Step 3 (Foldwise score-centering).}
+If Assumption~\ref{asmp:rsc}(d) additionally holds, the foldwise conditional score-centering condition required by the \emph{Special} branch of Lemma~\ref{lem:nuisance_rates} is satisfied for both calibrated losses, and the corresponding rate bound applies without the plug-in score term; otherwise, the \emph{General} branch of the lemma applies, giving the same stated rates up to constants.
+\end{proof}
+
+The asymptotic-normality statements in Sections~\ref{sec:main_normality} and \ref{sec:agg_proofs} will invoke Proposition~\ref{prop:oracle_rates} exclusively through the product rate
+\[
+\|\widehat{\boldsymbol{\alpha}}_{t,s}^{1,(-k)}-\boldsymbol{\alpha}^{1,*}\|_2\cdot\|\widehat{\boldsymbol{\gamma}}_{s,1}^{(-k)}-\boldsymbol{\gamma}_1^*\|_2 = O_p\!\left(\frac{\sqrt{s_\alpha s_\gamma}\log(p)}{N}\right),
+\]
+which, combined with the cross-calibration property of Lemma~\ref{lem:ortho_foc}, drives the bias remainder $R_{2,k}$ to $o_p(N^{-1/2})$.
+
+\subsection{Main Theorem and Proof}\label{sec:main_normality}
 
 \begin{theorem}[Asymptotic Normality of $\widehat{\mu}^{1,\mathrm{CF}}_{t,s}$]\label{thm:main}
-Suppose Assumptions \ref{asmp:data}, \ref{asmp:overlap}, and \ref{asmp:rsc}(a)--\ref{asmp:rsc}(c) hold. (Assumption \ref{asmp:rsc}(d) is an optional strengthening used only to invoke the \textbf{Special} rate in Lemma \ref{lem:nuisance_rates}; the theorem also holds under the \textbf{General} rate condition there.) Assume $\vartheta^*$ is the unique population target pair induced by the calibrated losses under the alignment condition in Assumption \ref{asmp:rsc}(c), implying Lemma \ref{lem:ortho_foc} holds. If further, at least one nuisance model (outcome or weighting) is correctly specified in the sense of Lemma \ref{lem:ident_dr_mu} (so $\mu^1(\vartheta^*)=\mu^1$), and the total sparsity $s_{\mathrm{tot}} = s_\alpha + s_\gamma$ satisfies
+Suppose Assumptions \ref{asmp:data}, \ref{asmp:overlap}, and \ref{asmp:rsc}(a)--\ref{asmp:rsc}(c) hold. (Assumption \ref{asmp:rsc}(d) is an optional strengthening used only to invoke the \textbf{Special} rate in Lemma \ref{lem:nuisance_rates}; the theorem also holds under the \textbf{General} rate condition there.) Assume $\vartheta^*$ is the unique population target pair induced by the calibrated losses under the alignment condition in Assumption \ref{asmp:rsc}(c), implying Lemma \ref{lem:ortho_foc} holds. If further, at least one nuisance model (outcome or weighting) is correctly specified in the sense of Lemma \ref{lem:ident_dr_mu} (so $\mu^1(\vartheta^*)=\mu^1$), and the total sparsity $s=s_\alpha+s_\gamma$ of Definition~\ref{def:sparsity} (applied to both the initial and the calibrated nuisance targets under the alignment condition of Assumption~\ref{asmp:rsc}(c)) satisfies
 \[
-\frac{s_{\mathrm{tot}}^2 \log^2(p)}{N} \longrightarrow 0,
+\frac{s^2\, \log^2(p)}{N}\;\longrightarrow\;0,
 \]
 then the cross-fitted estimator is asymptotically normal:
 \[
@@ -277,20 +349,21 @@ Moreover, the finite-sample KKT perturbation from the $\ell_1$ penalties is abso
 \begin{proof}
 Suppose in addition that at least one nuisance model is correctly specified in the sense of Lemma \ref{lem:ident_dr_mu}, so that $\mu^1(\vartheta^*)=\mu^1$. We may then center the expansion at $\mu^1$.
 The total estimation error is decomposed as:
+Write the decomposition
 \[
 \begin{aligned}
 \widehat{\mu}^{1,\mathrm{CF}}_{t,s} - \mu^1
-&= \underbrace{\left( \frac{1}{N}\sum_{i=1}^{N} \varphi_{t,s}(D_i; \vartheta^*) \right)}_{\text{Term I: IF Average}} \\
-&\quad + \underbrace{\left( \widehat{\mu}^{1,\mathrm{CF}}_{t,s} - \frac{1}{N}\sum_{i=1}^{N} \varphi_{t,s}(D_i; \vartheta^*) - \mu^1 \right)}_{\text{Term II: Remainder}}
+&= \underbrace{\left(\frac{1}{N}\sum_{i=1}^{N} \varphi_{t,s}(D_i; \vartheta^*)\right)}_{\displaystyle \mathsf{T}_{\mathrm{I}}}
++ \underbrace{\left(\widehat{\mu}^{1,\mathrm{CF}}_{t,s} - \frac{1}{N}\sum_{i=1}^{N} \varphi_{t,s}(D_i; \vartheta^*) - \mu^1\right)}_{\displaystyle \mathsf{T}_{\mathrm{II}}},
 \end{aligned}
 \]
-	where $\E[\varphi_{t,s}(D; \vartheta^*)]=0$ by construction, and $\mu^1(\vartheta^*) = \mu^1_t(\boldsymbol{\alpha}^{1,*}) + \delta^1_s(\vartheta^*)$.
-	By Lemma \ref{lem:clt},
-	\[
-	\frac{1}{\sqrt{N}}\sum_{i=1}^{N}\varphi_{t,s}(D_i; \vartheta^*) \xrightarrow{d} \mathcal{N}(0, V^*_{t,s}),
-	\]
-	hence $\sqrt{N}\times \text{Term I} \xrightarrow{d} \mathcal{N}(0, V^*_{t,s})$.
-The remainder (Term II) is an average over the folds, $\frac{1}{K_f} \sum_{k=1}^{K_f} (R_{1,k} + R_{2,k})$.
+where $\mathsf{T}_{\mathrm{I}}$ is the average of centered influence functions at the population target and $\mathsf{T}_{\mathrm{II}}$ is the remainder; $\mathbb{E}[\varphi_{t,s}(D;\vartheta^*)]=0$ by construction and $\mu^1(\vartheta^*)=\mu^1_t(\boldsymbol{\alpha}^{1,*})+\delta^1_s(\vartheta^*)$.
+By Lemma~\ref{lem:clt},
+\[
+\frac{1}{\sqrt{N}}\sum_{i=1}^{N}\varphi_{t,s}(D_i; \vartheta^*) \xrightarrow{d} \mathcal{N}(0, V^*_{t,s}),
+\]
+so $\sqrt{N}\,\mathsf{T}_{\mathrm{I}}\xrightarrow{d}\mathcal{N}(0,V^*_{t,s})$.
+The remainder is an average over the folds, $\mathsf{T}_{\mathrm{II}}=\frac{1}{K_f}\sum_{k=1}^{K_f}(R_{1,k}+R_{2,k})$, with components analyzed below.
 $R_{1,k}$ is the conditional empirical process fluctuation of the \emph{difference} score:
 \[
 R_{1,k} = \left(\tildeE_k - \E[\cdot \mid \mathcal{D}^{(-k)}]\right)\left[
@@ -334,7 +407,7 @@ Since $N_k\asymp N$ for fixed $K_f$, Chebyshev's inequality yields
 \!+\!
 \|\widehat{\boldsymbol{\gamma}}_{s,1}^{(-k)}-\boldsymbol{\gamma}_{1}^{*}\|_2
 }{\sqrt{N}}\right)
-= O_p\!\left(\frac{\sqrt{s_{\mathrm{tot}}\log(p)}}{N}\right)
+= O_p\!\left(\frac{\sqrt{s\log(p)}}{N}\right)
 = o_p(N^{-1/2}).
 \]
 
@@ -356,14 +429,14 @@ By Lemma \ref{lem:bias_bound} (Part 1), which relies on the orthogonality condit
 Using the nuisance rates from Lemma \ref{lem:nuisance_rates}:
 \[
 |R_{2,k}| = O_p\left(\frac{s_\alpha \log(p)}{N}\right) + O_p\left(\frac{s_\gamma \log(p)}{N}\right) + O_p\left( \frac{\sqrt{s_\alpha s_\gamma} \log(p)}{N} \right)
-= O_p\left( \frac{s_{\mathrm{tot}} \log(p)}{N} \right).
+= O_p\left( \frac{s \log(p)}{N} \right).
 \]
 Averaging over $k$ gives the total bias remainder:
 \[
-R_2 = \frac{1}{K_f}\sum_{k=1}^{K_f} R_{2,k} = O_p\left( \frac{s_{\mathrm{tot}} \log(p)}{N} \right)
+R_2 = \frac{1}{K_f}\sum_{k=1}^{K_f} R_{2,k} = O_p\!\left( \frac{s \log(p)}{N} \right).
 \]
-We require $\sqrt{N} \cdot R_2 \to 0$, i.e., $O_p(s_{\mathrm{tot}} \log(p) / \sqrt{N}) \to 0$. Squaring both sides, this is implied by the theorem's condition $\frac{s_{\mathrm{tot}}^2 \log^2(p)}{N} \to 0$.
-Thus, the total remainder (Term II = $R_1 + R_2$) satisfies $\sqrt{N}\times\text{Term II}=o_p(1)$, and hence
+We require $\sqrt{N}\cdot R_2 \to 0$, i.e., $O_p(s \log(p) / \sqrt{N}) \to 0$, which is implied by the theorem's condition $s^2 \log^2(p)/N \to 0$.
+Thus the total remainder $\mathsf{T}_{\mathrm{II}}=R_1+R_2$ satisfies $\sqrt{N}\,\mathsf{T}_{\mathrm{II}}=o_p(1)$, and hence
 \[
 \sqrt{N}\,\big(\widehat{\mu}^{1,\mathrm{CF}}_{t,s} - \mu^1\big)
 =
@@ -372,23 +445,17 @@ Thus, the total remainder (Term II = $R_1 + R_2$) satisfies $\sqrt{N}\times\text
 Together with Lemma \ref{lem:clt}, this yields $\sqrt{N}\,(\widehat{\mu}^{1,\mathrm{CF}}_{t,s} - \mu^1)\xrightarrow{d}\mathcal{N}(0,V^*_{t,s})$ by Slutsky's theorem.
 \end{proof}
 
-\begin{remark}[Variance Estimation]\label{rem:var_est}
-The asymptotic variance $V^*_{t,s}$ can be consistently estimated using a plug-in estimator based on the empirical influence function evaluated within each fold $k$ using the out-of-fold nuisance estimates $\widehat{\vartheta}^{(-k)}$:
+\begin{lemma}[Consistent variance estimation]\label{lem:var_est}
+Assume Assumptions~\ref{asmp:data}--\ref{asmp:rsc} and that the population asymptotic variance is bounded away from zero, $V^*_{t,s}\ge \underline{v}>0$. Then the plug-in estimator based on the cross-fitted empirical influence function is consistent:
 \[
 \widehat{V}_{t,s} = \frac{1}{K_f} \sum_{k=1}^{K_f} \tildeE_k \left[ \left( \widetilde{\varphi}_{t,s}(D; \widehat{\vartheta}^{(-k)}) - \widehat{\mu}^{1,\mathrm{CF}}_{t,s} \right)^2 \right] \xrightarrow{p} V^*_{t,s}.
 \]
-\textbf{Consistency Argument:} The consistency of $\widehat{V}_{t,s}$ relies on three key ingredients:
-\begin{enumerate}
-    \item \textit{Nuisance Consistency}: By Lemma \ref{lem:nuisance_rates}, $\|\widehat{\vartheta}^{(-k)} - \vartheta^*\|_2 = o_p(1)$.
-    \item \textit{$L_2$-Lipschitz Continuity}: Under Assumption \ref{asmp:overlap}(b), the score contribution is locally Lipschitz in $\vartheta$ in mean-square, i.e., there exists $C<\infty$ such that for $\vartheta_1,\vartheta_2$ in a neighborhood of $\vartheta^*$,
-    \[
-    \E\!\left[\left(\widetilde{\varphi}_{t,s}(D; \vartheta_1) - \widetilde{\varphi}_{t,s}(D; \vartheta_2)\right)^2\right] \le C \|\vartheta_1 - \vartheta_2\|_2^2.
-    \]
-	    \item \textit{Uniform Integrability}: By the $(2+\delta)$ moment condition in Assumption \ref{asmp:overlap}(b), $\{\widetilde{\varphi}_{t,s}(D; \widehat{\vartheta}^{(-k)})^2\}_{k,N}$ is uniformly integrable.
-\end{enumerate}
-We now give a detailed proof (not just a sketch).
+\end{lemma}
 
-	\textbf{Step 1 (Reduce to within-fold centering).}
+\begin{proof}
+The argument combines three ingredients: the nuisance consistency rates of Proposition~\ref{prop:oracle_rates} (equivalently, $\|\widehat{\vartheta}^{(-k)}-\vartheta^*\|_2=o_p(1)$), the local $L_2$-Lipschitz continuity of $\vartheta\mapsto\widetilde{\varphi}_{t,s}(D;\vartheta)$ (there exists $C<\infty$ such that, for $\vartheta_1,\vartheta_2$ in a neighborhood of $\vartheta^*$, $\mathbb{E}[(\widetilde{\varphi}_{t,s}(D;\vartheta_1)-\widetilde{\varphi}_{t,s}(D;\vartheta_2))^2]\le C\|\vartheta_1-\vartheta_2\|_2^2$, which follows from Assumptions~\ref{asmp:overlap}(a)--(b) as in Lemma~\ref{lem:bias_bound}(Part~2)), and uniform integrability of $\{\widetilde{\varphi}_{t,s}(D;\widehat{\vartheta}^{(-k)})^2\}_{k,N}$ (supplied by the $(2+\delta)$-moment bound in Assumption~\ref{asmp:overlap}(d)).
+
+\textbf{Step 1 (Reduce to within-fold centering).}
 	For each fold $k$, define the foldwise score
 	\[
 	Z_{i}^{(k)} \coloneqq \widetilde{\varphi}_{t,s}(D_i;\widehat{\vartheta}^{(-k)}),
@@ -412,9 +479,10 @@ We now give a detailed proof (not just a sketch).
 		+
 		\frac{1}{K_f}\sum_{k=1}^{K_f}\left(\widehat{\mu}_k-\widehat{\mu}^{1,\mathrm{CF}}_{t,s}\right)^2.
 		\]
-	By Lemma \ref{lem:nuisance_rates}, $\widehat{\vartheta}^{(-k)}\to_p \vartheta^*$, and by the conditional LLN below we have $\widehat{\mu}_k\to_p \mu^1(\vartheta^*)$ for each fixed $k$. Since $K_f$ is fixed, this implies
+	By Lemma \ref{lem:nuisance_rates}, 
+    $\widehat{\vartheta}^{(-k)}=\vartheta^*+o_p(1)$, and by the conditional LLN below we have $\widehat{\mu}_k=\mu^1(\vartheta^*)+o_p(1)$ for each fixed $k$. Since $K_f$ is fixed, this implies
 	\(
-	\max_{1\le k\le K_f}\left|\widehat{\mu}_k-\widehat{\mu}^{1,\mathrm{CF}}_{t,s}\right| \to_p 0
+	\max_{1\le k\le K_f}\left|\widehat{\mu}_k-\widehat{\mu}^{1,\mathrm{CF}}_{t,s}\right| = o_p(1)
 	\),
 	and hence the second term is $o_p(1)$. Thus it suffices to show
 	\[
@@ -578,8 +646,8 @@ Hence $\widehat{\sigma}^2_T$ is not a target-only variance term; it already cont
 
 With balanced folds ($|\mathcal{D}_{t,k}|=N_t/K_f$, $|\mathcal{D}_{s_j,k}|=N_{s_j}/K_f$), $\bar{\Phi}$ coincides with the fold-average $(1/K_f)\sum_k \widehat{\mu}^1_{\mathrm{agg},k}$; with minor fold imbalance the difference is $O(N_{\mathrm{all}}^{-1})$.
 
-This unified form ensures $\widehat{\mu}^1_{\mathrm{agg}} - \mu^1 = \frac{1}{N_{\mathrm{all}}}\sum_{i=1}^{N_{\mathrm{all}}}(\widehat{\Phi}_i - \mu^1)$, so the DML representation of the estimation error as an IF average is preserved. By the same arguments as above (nuisance consistency, $L_2$-Lipschitz continuity, and $\widehat{\boldsymbol{\eta}}^{(-k)}\to_p \boldsymbol{\eta}^*$), $\widehat{V}_{\mathrm{agg}} \xrightarrow{p} V^*_{\mathrm{agg}}$.
-\end{remark}
+This unified form ensures $\widehat{\mu}^1_{\mathrm{agg}} - \mu^1 = \frac{1}{N_{\mathrm{all}}}\sum_{i=1}^{N_{\mathrm{all}}}(\widehat{\Phi}_i - \mu^1)$, so the DML representation of the estimation error as an IF average is preserved. By the same arguments as above (nuisance consistency, $L_2$-Lipschitz continuity, and $\widehat{\boldsymbol{\eta}}^{(-k)}=\boldsymbol{\eta}^*+o_p(1)$), $\widehat{V}_{\mathrm{agg}} \xrightarrow{p} V^*_{\mathrm{agg}}$.
+\end{proof}
 
 \subsection{Technical Lemmas}
 
@@ -1273,6 +1341,110 @@ which can be rewritten as:
 \]
 where $\widehat{\eta} = (\widehat{\eta}_1, \ldots, \widehat{\eta}_K)^T$ are adaptive weights minimizing the estimated asymptotic variance with a selection penalty.
 
+\subsection{Structure of the Aggregated Asymptotic Covariance}\label{sec:agg_cov_structure}
+
+Before turning to the penalized estimation of $\boldsymbol{\eta}$, we record a structural result on the population covariance entering the aggregation objective. The result clarifies why cross-site covariance terms only couple through the \emph{shared target sample} and justifies the block decomposition used implicitly in Equation~\eqref{eq:final_opt} of the main manuscript.
+
+For each source $s_j$, decompose the pairwise influence-function contribution into an outcome-regression part and a weighted-residual part:
+\[
+\varphi_{t,s_j}(D;\vartheta^*_{s_j})
+= \underbrace{\frac{I(R=t)}{\rho_t}\bigl\{\psi(\phi(\boldsymbol{X});\boldsymbol{\alpha}^{1,*}_{t,s_j}) - \mu^1_t(\boldsymbol{\alpha}^{1,*}_{t,s_j})\bigr\}}_{\displaystyle =:\ \xi^{\mathrm{OR}}_{t,s_j}(D)}
++ \underbrace{\frac{I(R=s_j)}{\rho_{s_j}}\bigl\{w(\boldsymbol{X};\boldsymbol{\gamma}_{s_j,1}^*)(Y-\psi(\phi(\boldsymbol{X});\boldsymbol{\alpha}^{1,*}_{t,s_j})) - \delta^1_{s_j}(\vartheta^*_{s_j})\bigr\}}_{\displaystyle =:\ \xi^{\mathrm{IPW}}_{s_j}(D)}.
+\]
+For the target-only estimator, denote analogously by $\varphi_{ot}(D)$ the AIPW influence function built from the target-site propensity $\pi_{ot}$ and a target-only outcome model, and by $\xi^{\mathrm{OR}}_{ot}(D)$ and $\xi^{\mathrm{IPW}}_{ot}(D)$ its outcome and residual components.
+
+\begin{lemma}[Block structure of the asymptotic covariance]\label{lem:cov_block_structure}
+Suppose the pairwise estimators $\widehat{\mu}^1_{ot}$ and $\{\widehat{\mu}^1_{t,s_j}\}_{j=1}^K$ admit the influence-function representations given above, with $\mathbb{E}[\xi^{\mathrm{OR}}_{\cdot}(D)]=0$ and $\mathbb{E}[\xi^{\mathrm{IPW}}_{\cdot}(D)\mid R=s_j]=0$ (the latter by the calibration moment condition). Then, for any $j,k\in\{1,\ldots,K\}$ with $j\ne k$:
+\begin{enumerate}[label={(\alph*)},leftmargin=*]
+\item \textbf{(Source residuals are mutually uncorrelated.)} Because observations with $R=s_j$ and $R=s_k$ are disjoint,
+\(
+\mathbb{E}\bigl[\xi^{\mathrm{IPW}}_{s_j}(D)\,\xi^{\mathrm{IPW}}_{s_k}(D)\bigr]=0.
+\)
+
+\item \textbf{(Source residuals are uncorrelated with every OR component.)} By the indicator $I(R=s_j)$ and the target-site support of $\xi^{\mathrm{OR}}_{t,s_k}$,
+\(
+\mathbb{E}\bigl[\xi^{\mathrm{IPW}}_{s_j}(D)\,\xi^{\mathrm{OR}}_{t,s_k}(D)\bigr]
+=\mathbb{E}\bigl[\xi^{\mathrm{IPW}}_{s_j}(D)\,\xi^{\mathrm{OR}}_{ot}(D)\bigr]=0,
+\)
+for any $j,k$.
+
+\item \textbf{(Cross-site correlation is driven solely by the shared target sample.)} Consequently,
+\[
+\Cov\bigl(\varphi_{t,s_j}(D),\ \varphi_{t,s_k}(D)\bigr)
+=\Cov\bigl(\xi^{\mathrm{OR}}_{t,s_j}(D),\ \xi^{\mathrm{OR}}_{t,s_k}(D)\bigr),
+\quad j\ne k,
+\]
+and similarly the covariance between $\varphi_{ot}$ and any $\varphi_{t,s_j}$ reduces to the covariance of their OR components evaluated on the target sample.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+Parts (a) and (b) follow from $I(R=s_j)I(R=s_k)=0$ for $j\ne k$, from $I(R=s_j)I(R=t)=0$, and from $\mathbb{E}[\xi^{\mathrm{IPW}}_{s_j}(D)\mid R=s_j]=0$. Part (c) follows by expanding the covariance using the decomposition of each $\varphi_{t,s_j}$ into its OR and IPW components and applying (a)--(b) to cancel the IPW cross-terms.
+\end{proof}
+
+The block structure established by Lemma~\ref{lem:cov_block_structure} implies that the population Hessian $H$ in the quadratic aggregation objective $L^*(\boldsymbol{\eta})=\boldsymbol{\eta}^\top H\boldsymbol{\eta}-2\,g^\top\boldsymbol{\eta}+c$ decomposes as $H=H^{\mathrm{OR}}+H^{\mathrm{IPW}}$, where $H^{\mathrm{IPW}}$ is diagonal (containing only the per-source residual variances) and $H^{\mathrm{OR}}$ is the $K\times K$ Gram matrix induced by the shared target-sample OR components. This decomposition is the direct high-dimensional counterpart of Equation~(11) in \citet{han2025federated}: the first sum $\sum_{k_s\in\mathcal{S}}\eta_{k_s}^2\,\widehat{\sigma}^2_{k_s}/n_{k_s}$ in the FACE aggregation objective corresponds to the diagonal $H^{\mathrm{IPW}}$ contribution, and the second sum $\sum_{k_t\in\mathcal{T}}\widehat{h}_{k_t}(\boldsymbol{\eta})^\top\widehat{\Sigma}_{k_t}/n_{k_t}\,\widehat{h}_{k_t}(\boldsymbol{\eta})$ encodes the cross-source coupling through the shared target sample that corresponds to $H^{\mathrm{OR}}$. The full penalized QP in Equation~\eqref{eq:final_opt} of the main manuscript, like the FACE objective, does not admit a closed-form minimizer in general and is solved numerically. The following corollary records the explicit solution in the limiting regime where the target-sample coupling vanishes, which is the high-dimensional analogue of the same diagonal simplification implicit in the coordinate-wise structure of the FACE aggregation rule.
+
+\begin{corollary}[Soft-thresholding closed form under diagonal Hessian]\label{cor:soft_threshold_face}
+Let $\Delta_j\coloneqq \widehat{\mu}^1_{t,s_j}-\widehat{\mu}^1_{ot}$ and $d_j\coloneqq \widehat{\mu}^1_{ot}-\widehat{\mu}^1_{t,s_j}=-\Delta_j$. Suppose that, in addition to the hypotheses of Lemma~\ref{lem:cov_block_structure}, the OR components are pairwise uncorrelated across source sites in the sense that
+\begin{equation}\label{eq:diag_cond}
+\Cov\!\bigl(\xi^{\mathrm{OR}}_{t,s_j}(D),\ \xi^{\mathrm{OR}}_{t,s_k}(D)\bigr)=0\qquad\text{for all }j\neq k.
+\end{equation}
+Then the population Hessian $H$ is diagonal with entries
+\[
+H_{jj}\;=\;\Var(\Delta_j)\;=\;\sigma_j^2,\qquad g_j\;=\;-\Cov(\widehat{\mu}^1_{ot},\,\Delta_j),
+\]
+where $\sigma_j^2$ collects the pairwise and target-only variance components present in Equation~\eqref{eq:final_opt} of the main manuscript, and the penalized aggregation problem
+\[
+\widehat{\boldsymbol{\eta}}\;=\;\arg\min_{\boldsymbol{\eta}\in\mathbb{R}^K}\left\{\boldsymbol{\eta}^\top\widehat{H}\boldsymbol{\eta}-2\widehat{g}^\top\boldsymbol{\eta}+\lambda\sum_{j=1}^K|\eta_j|\,d_j^2\right\}
+\]
+with $\widehat{H}$ diagonal admits the coordinate-wise closed-form \emph{soft-thresholding} solution
+\begin{equation}\label{eq:soft_thresh}
+\widehat{\eta}_j
+\;=\;
+\frac{1}{\widehat{H}_{jj}}\,\operatorname{sign}(\widehat{g}_j)\,\max\!\left\{0,\ |\widehat{g}_j|-\tfrac{\lambda}{2}\,d_j^2\right\}
+\;=\;
+\operatorname{sign}(\widehat{\eta}_j^{\mathrm{OLS}})\,\max\!\left\{0,\ |\widehat{\eta}_j^{\mathrm{OLS}}|-\frac{\lambda\,d_j^2}{2\,\widehat{H}_{jj}}\right\},
+\end{equation}
+where $\widehat{\eta}_j^{\mathrm{OLS}}\coloneqq \widehat{g}_j/\widehat{H}_{jj}$ is the unpenalized coordinate minimizer. In particular, $\widehat{\eta}_j=0$ whenever $|\widehat{\eta}_j^{\mathrm{OLS}}|\le \lambda d_j^2/(2\widehat{H}_{jj})$, so the selection step of the aggregation becomes an explicit thresholding rule.
+\end{corollary}
+
+\begin{proof}
+Under \eqref{eq:diag_cond}, Lemma~\ref{lem:cov_block_structure}(c) gives $\Cov(\Delta_j,\Delta_k)=\Cov(\xi^{\mathrm{OR}}_{t,s_j},\xi^{\mathrm{OR}}_{t,s_k})+\Cov(\xi^{\mathrm{IPW}}_{s_j},\xi^{\mathrm{IPW}}_{s_k})=0$ for $j\neq k$, where the IPW cross-term vanishes by disjoint support. Hence the population (and plug-in empirical) Hessian is diagonal, $\widehat{H}=\mathrm{diag}(\widehat{H}_{11},\ldots,\widehat{H}_{KK})$.
+
+Because $\widehat{H}$ is diagonal and the penalty decouples across coordinates, the aggregation problem separates into $K$ univariate problems:
+\begin{equation}\label{eq:coord_obj}
+\widehat{\eta}_j\;=\;\arg\min_{\eta\in\mathbb{R}}\,\bigl\{\widehat{H}_{jj}\,\eta^2-2\widehat{g}_j\,\eta+\lambda\,d_j^2\,|\eta|\bigr\}.
+\end{equation}
+Fix $j$ and let $h\coloneqq\widehat{H}_{jj}>0$, $g\coloneqq\widehat{g}_j$, $\ell\coloneqq\lambda d_j^2/2\ge 0$. The objective in \eqref{eq:coord_obj} is strictly convex, so its minimizer is characterized by the subdifferential optimality condition
+\[
+0\in\partial\bigl(h\eta^2-2g\eta+2\ell|\eta|\bigr)
+=\{2h\eta-2g+2\ell\,v:v\in\operatorname{sgn}(\eta)\},
+\]
+where $\operatorname{sgn}(\eta)=\{1\}$ if $\eta>0$, $\{-1\}$ if $\eta<0$, and $[-1,1]$ if $\eta=0$.
+
+\emph{Case $\eta>0$.} Optimality requires $h\eta-g+\ell=0$, i.e., $\eta=(g-\ell)/h$. This is consistent with $\eta>0$ iff $g>\ell$, in which case $\eta=(g-\ell)/h>0$ minimizes the objective (by strict convexity).
+
+\emph{Case $\eta<0$.} Optimality requires $h\eta-g-\ell=0$, i.e., $\eta=(g+\ell)/h$. This is consistent with $\eta<0$ iff $g<-\ell$, in which case $\eta=(g+\ell)/h<0$.
+
+\emph{Case $\eta=0$.} Optimality requires $0\in 2h\cdot 0-2g+2\ell\cdot[-1,1]$, i.e., $g\in[-\ell,\ell]$, which is consistent iff $|g|\le\ell$.
+
+Combining the three cases,
+\[
+\widehat{\eta}_j=\begin{cases}
+(g-\ell)/h,&g>\ell,\\
+0,&|g|\le\ell,\\
+(g+\ell)/h,&g<-\ell,
+\end{cases}
+\]
+which collapses to the single expression $\widehat{\eta}_j=h^{-1}\operatorname{sign}(g)\max\{0,|g|-\ell\}$. Restoring $h=\widehat{H}_{jj}$, $g=\widehat{g}_j$, $\ell=\lambda d_j^2/2$ yields the first form of \eqref{eq:soft_thresh}. The second form is obtained by factoring out $\widehat{H}_{jj}$ using $\widehat{\eta}_j^{\mathrm{OLS}}=\widehat{g}_j/\widehat{H}_{jj}$ and noting that $\operatorname{sign}$ is invariant under multiplication by the positive scalar $\widehat{H}_{jj}$.
+
+Finally, restating the minimizer in terms of the inverse-variance unpenalized weight $\widehat{\eta}_j^{\mathrm{OLS}}$ and the data-adaptive threshold $\lambda d_j^2/(2\widehat{H}_{jj})$ emphasizes the soft-thresholding interpretation: sources whose unpenalized weight is dominated by the squared target--source gap are exactly screened out. This is the high-dimensional counterpart of the selection behavior observed in the coordinate-wise structure of the FACE aggregation rule of \citet{han2025federated}, which, however, retains a non-trivial cross-source coupling through $\widehat{h}_{k_t}(\boldsymbol{\eta})$ (the analogue of $H^{\mathrm{OR}}$) and therefore does not admit a closed form in general.
+\end{proof}
+
+\begin{remark}[When does condition \eqref{eq:diag_cond} hold?]\label{rem:diag_condition}
+Condition \eqref{eq:diag_cond} is not generic: because $\xi^{\mathrm{OR}}_{t,s_j}(D)$ is supported on the shared target sample, its covariance with $\xi^{\mathrm{OR}}_{t,s_k}(D)$ depends on the correlation structure of the outcome models fitted with different pairwise nuisance targets $\boldsymbol{\alpha}^{1,*}_{t,s_j}$ and $\boldsymbol{\alpha}^{1,*}_{t,s_k}$. The condition holds in two natural limiting regimes: (i) when the per-source residual variances dominate the shared-target cross-covariances so that the off-diagonal entries of $H^{\mathrm{OR}}$ are negligible compared to the diagonal entries of $H^{\mathrm{IPW}}$; (ii) when the pairwise OR targets coincide asymptotically, in which case the shared-target covariance collapses into a rank-one structure that can be absorbed into the intercept. Outside these regimes, Corollary~\ref{cor:soft_threshold_face} provides a first-order approximation whose accuracy depends on the magnitude of the off-diagonal entries of $H^{\mathrm{OR}}$; the general solution, both in FACE and in FACE-HD, requires solving the full $K$-dimensional penalized QP as in Equation~\eqref{eq:final_opt}.
+\end{remark}
+
 \subsection{Penalized Variance Estimation}
 
 Define the empirical loss function as the estimated asymptotic variance of the aggregated estimator:
@@ -1658,15 +1830,6 @@ For strict improvement, consider one informative source $j \in \mathcal{S}^*$. T
 \]
 If the covariance is non-zero and the denominator is positive, the minimizing weight is non-zero and strictly decreases variance relative to $\eta=0$, so $L^*(\eta^*) < L^*(0)$.
 \end{proof}
-
-\begin{remark}[Comparison with FACE]
-The proof structure parallels the FACE paper \citet{han2025federated} (Supplement D.1--D.5), but extends to the high-dimensional setting by incorporating:
-\begin{itemize}
-    \item Cross-fitted nuisance estimation with $o_p(N_{\mathrm{all}}^{-1/4})$ rates (Lemma \ref{lem:nuisance_rates})
-    \item Double robustness through calibrated losses (Lemma \ref{lem:ortho_foc}, Lemma \ref{lem:dr_terms_revised})
-    \item Sparsity-aware penalty scaling in the aggregation objective
-\end{itemize}
-\end{remark}
 
 \bibliographystyle{plainnat}
 \bibliography{ref}

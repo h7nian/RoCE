@@ -70,6 +70,48 @@ inline double compute_diagonal_curvature_coordinate(
     return std::max(hess_diag, NumericalConstants::VAR_MIN);
 }
 
+// Off-diagonal Hessian entry H_{jk} for j != k, used only to detect whether
+// the quadratic objective separates across coordinates. From
+//   ∂²V/∂η_j ∂η_k = 2*V_ot/n_t - 2*C_ot(j)/n_t - 2*C_ot(k)/n_t
+//                 + 2*C_cross_sym(j,k)/n_t   (if has_cross)
+// Kept inline and side-effect free so the diagonal-H detection below is
+// symbolic with the coordinate update in compute_smooth_gradient_coordinate.
+inline double compute_offdiagonal_hessian_entry(
+        int j, int k, const WeightSmoothContext& ctx) {
+    double entry = 2.0 * ctx.V_ot / ctx.n_t
+                 - 2.0 * ctx.C_ot(j) / ctx.n_t
+                 - 2.0 * ctx.C_ot(k) / ctx.n_t;
+    if (ctx.has_cross) {
+        entry += 2.0 * ctx.C_cross_sym(j, k) / ctx.n_t;
+    }
+    return entry;
+}
+
+// Detect whether the smooth Hessian is (numerically) diagonal.
+// When true, the penalized QP in eq:final_opt separates into K univariate
+// soft-thresholding problems (Corollary cor:soft_threshold_face in proof.tex),
+// avoiding coordinate descent altogether.
+inline bool is_smooth_hessian_diagonal(int K, const WeightSmoothContext& ctx) {
+    if (K <= 1) return true;
+
+    double max_abs_diag = 0.0;
+    for (int j = 0; j < K; j++) {
+        double diag_j = compute_diagonal_curvature_coordinate(j, ctx);
+        if (diag_j > max_abs_diag) max_abs_diag = diag_j;
+    }
+    if (max_abs_diag <= 0.0) return false;
+
+    const double diag_tol = 1e-10 * max_abs_diag;
+    for (int j = 0; j < K; j++) {
+        for (int k = j + 1; k < K; k++) {
+            if (std::abs(compute_offdiagonal_hessian_entry(j, k, ctx)) > diag_tol) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 // Finite-sample safeguard: the plug-in quadratic form in eq:final_opt can be
 // slightly indefinite due to estimation noise (and because we pass only the
 // off-diagonal cross-site covariances via C_cross with diag set to 0).
@@ -158,6 +200,36 @@ List optimize_weights_cpp(const VectorXd& estimates, const VectorXd& V_t,
 
     if (is_weight_debug_enabled() && psd_ridge > 0.0) {
         Rcpp::Rcout << "[optimize_weights_cpp] PSD ridge activated: " << psd_ridge << "\n";
+    }
+
+    // ------------------------------------------------------------------
+    // Diagonal-Hessian fast path (Corollary cor:soft_threshold_face in
+    // proof.tex). When the cross-source coupling through the shared target
+    // sample vanishes, the penalized QP in eq:final_opt separates into K
+    // univariate soft-thresholding problems; we solve them in one sweep and
+    // skip the iterative coordinate descent below.
+    // ------------------------------------------------------------------
+    if (is_smooth_hessian_diagonal(K, smooth_ctx)) {
+        if (is_weight_debug_enabled()) {
+            Rcpp::Rcout << "[optimize_weights_cpp] Diagonal H detected; "
+                        << "using closed-form soft-thresholding (cor:soft_threshold_face)\n";
+        }
+        for (int j = 0; j < K; j++) {
+            double hess_diag_j = compute_diagonal_curvature_coordinate(j, smooth_ctx);
+            // Linear coefficient at eta = 0: dV/d eta_j = 2*(C_ot(j) - V_ot)/n_t.
+            // Unpenalized coordinate minimiser is therefore
+            //   eta_j^OLS = -b_j / H_jj = 2*(V_ot - C_ot(j)) / (n_t * H_jj).
+            double eta_ols_j     = 2.0 * (V_ot - C_ot(j)) / (n_t * hess_diag_j);
+            double threshold_j   = penalties(j) / hess_diag_j;  // penalties(j) = lambda * d_j^2
+            eta(j) = soft_threshold_cpp(eta_ols_j, threshold_j);
+            if (std::isnan(eta(j)) || std::isinf(eta(j)) ||
+                std::abs(eta(j)) > NumericalConstants::WEIGHT_MAX_ABS) {
+                eta(j) = 0.0;
+            }
+        }
+        return List::create(Named("weights")    = eta,
+                            Named("converged")  = true,
+                            Named("iterations") = 1);
     }
 
     for (int iter = 0; iter < max_iter; iter++) {
