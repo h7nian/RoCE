@@ -32,6 +32,9 @@ checkpoints/
 # Results data
 results/
 
+# Per-job temp directories (used by diagnosis pipeline checkpoint state)
+tmp/
+
 # Rcpp generated files
 src/RcppExports.cpp
 R/RcppExports.R
