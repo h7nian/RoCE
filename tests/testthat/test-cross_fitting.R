@@ -8,69 +8,8 @@ library(testthat)
 
 # Package loaded by helper-load.R (all functions available via FACEC namespace)
 
-# ============================================================================
-# Helper: generate small federated data split
-# ============================================================================
-
-make_small_data_split <- function(n_per_site = 40, K = 1, p = 4, seed = 42,
-                                  n_folds = 3, A_val = 1L, max_tries = 40) {
-  # Ensure each site has enough A==A_val units for K_f-fold cross-fitting
-  # to avoid stochastic flakiness in tiny synthetic datasets.
-  min_treated <- n_folds * 3
-
-  for (attempt in seq_len(max_tries)) {
-    set.seed(seed + attempt - 1L)
-    n_total <- n_per_site * (K + 1)
-    data <- generate_simulation_data(
-      n_total, K, p,
-      config = "C1",
-      outcome_type = "continuous"
-    )
-    data_split <- split_data_by_site(data)
-
-    site_names <- names(data_split)
-    treated_ok <- vapply(site_names, function(site) {
-      sum(data_split[[site]]$A == A_val) >= min_treated
-    }, logical(1))
-
-    if (all(treated_ok)) {
-      return(data_split)
-    }
-  }
-
-  stop("Unable to generate a stable small data split with sufficient treated counts.")
-}
-
-# Cache expensive smoke-run results so multiple tests don't rerun cross-fitting.
-.crossfit_smoke_cache <- new.env(parent = emptyenv())
-
-get_smoke_data_split <- function() {
-  if (!exists("data_split", envir = .crossfit_smoke_cache, inherits = FALSE)) {
-    .crossfit_smoke_cache$data_split <- make_small_data_split(
-      n_per_site = 40, K = 1, p = 4, seed = 2026, n_folds = 3
-    )
-  }
-  .crossfit_smoke_cache$data_split
-}
-
-get_smoke_result <- function(mode = c("two_round", "one_round")) {
-  mode <- match.arg(mode)
-  key <- paste0("res_", mode)
-  if (!exists(key, envir = .crossfit_smoke_cache, inherits = FALSE)) {
-    data_split <- get_smoke_data_split()
-    .crossfit_smoke_cache[[key]] <- run_crossfit(
-      data_split,
-      n_folds = 3,
-      communication_mode = mode,
-      lambda_selection = 0.1,
-      verbose = FALSE,
-      nlambda_init = 3L,
-      use_lambda_cache = TRUE,
-      family = "gaussian"
-    )
-  }
-  .crossfit_smoke_cache[[key]]
-}
+# make_small_data_split + get_smoke_data_split + get_smoke_result are shared
+# helpers loaded via tests/testthat/helper-data.R before this file is sourced.
 
 # ============================================================================
 # Tests for run_crossfit(..., communication_mode = "two_round")
@@ -87,6 +26,9 @@ test_that("run_crossfit(two_round) returns expected structure", {
   expect_true("se" %in% names(result))
   expect_true("ci_lower" %in% names(result))
   expect_true("ci_upper" %in% names(result))
+  expect_true("fold_lambdas" %in% names(result))
+  expect_true("clip_diagnostics" %in% names(result))
+  expect_equal(result$aggregation_lambda_rule, "min")
   
   # Estimate should be finite
   expect_true(is.finite(result$estimate))
@@ -132,6 +74,9 @@ test_that("run_crossfit(one_round) returns expected structure", {
   expect_true("se" %in% names(result))
   expect_true("ci_lower" %in% names(result))
   expect_true("ci_upper" %in% names(result))
+  expect_true("fold_lambdas" %in% names(result))
+  expect_true("clip_diagnostics" %in% names(result))
+  expect_equal(result$aggregation_lambda_rule, "min")
   
   # Basic sanity checks
   expect_true(is.finite(result$estimate))

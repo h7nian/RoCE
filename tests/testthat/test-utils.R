@@ -132,11 +132,108 @@ test_that("validate_algorithm_inputs catches invalid data", {
   
   # Should not throw error for valid data
   expect_silent(validate_algorithm_inputs(valid_data, "cv"))
-  
+
   # Test with non-binary Y (should give warning or error)
   invalid_data <- valid_data
   invalid_data$t$Y <- rnorm(10)  # Continuous, not binary
-  
+
   expect_error(validate_algorithm_inputs(invalid_data, "cv"))
+})
+
+test_that("validate_algorithm_inputs accepts lambda_selection = NULL", {
+  # Comparison methods (estimate_tilted_aipw, estimate_federated_dr,
+  # estimate_pooled_dr) do not use a lambda parameter; they pass
+  # lambda_selection = NULL so the validator skips that check.
+  valid_data <- list(
+    t = list(
+      W_outcome = matrix(rnorm(20), nrow = 10, ncol = 2),
+      Z_site = matrix(rnorm(20), nrow = 10, ncol = 2),
+      A = rep(c(0, 1), 5),
+      Y = rep(c(0, 1), 5),
+      n = 10
+    ),
+    s1 = list(
+      W_outcome = matrix(rnorm(20), nrow = 10, ncol = 2),
+      Z_site = matrix(rnorm(20), nrow = 10, ncol = 2),
+      A = rep(c(0, 1), 5),
+      Y = rep(c(0, 1), 5),
+      n = 10
+    )
+  )
+
+  expect_silent(validate_algorithm_inputs(valid_data))
+  expect_silent(validate_algorithm_inputs(valid_data, lambda_selection = NULL))
+  expect_silent(validate_algorithm_inputs(valid_data, family = "binomial"))
+})
+
+test_that("comparison estimators validate inputs at entry", {
+  # Regression test: every exported comparison estimator must reject malformed
+  # data_split BEFORE attempting any nuisance fitting. The shared entry
+  # validator (validate_algorithm_inputs) is responsible for these checks.
+  bad_inputs <- list(
+    "NULL"          = NULL,
+    "empty list"    = list(),
+    "no target 't'" = list(s1 = list())
+  )
+
+  comparison_estimators <- list(
+    estimate_tilted_aipw           = estimate_tilted_aipw,
+    estimate_federated_dr          = estimate_federated_dr,
+    estimate_pooled_dr             = estimate_pooled_dr,
+    estimate_sample_size_weighted  = estimate_sample_size_weighted,
+    estimate_inverse_variance_weighted = estimate_inverse_variance_weighted
+  )
+
+  for (est_name in names(comparison_estimators)) {
+    est_fn <- comparison_estimators[[est_name]]
+    for (label in names(bad_inputs)) {
+      bad <- bad_inputs[[label]]
+      expect_error(est_fn(bad),
+                   info = paste(est_name, "must reject:", label))
+    }
+  }
+})
+
+test_that("RHC imputers fail fast when no non-NA values remain", {
+  # Regression test: previously these helpers silently returned all-NA or
+  # unchanged data, deferring failure to a far less informative call site.
+  na_vec <- rep(NA_real_, 5L)
+  expect_error(.rhc_impute_continuous(na_vec, var_name = "test_cont"),
+               "no non-NA values")
+  expect_error(.rhc_impute_mode(rep(NA_character_, 5L), var_name = "test_mode"),
+               "no non-NA values")
+
+  # And succeed on the happy path so the strict check does not over-fire.
+  cont <- c(1.0, 2.0, NA, 4.0, 5.0)
+  imputed <- .rhc_impute_continuous(cont, var_name = "happy")
+  expect_equal(sum(is.na(imputed)), 0L)
+  expect_equal(imputed[3L], stats::median(cont, na.rm = TRUE))
+
+  cat <- c("a", "b", NA, "a", "")
+  imputed_mode <- .rhc_impute_mode(cat, var_name = "happy_mode")
+  expect_equal(sum(is.na(imputed_mode)), 0L)
+  expect_true(all(imputed_mode != ""))
+  expect_equal(imputed_mode[3L], "a")  # mode of {"a","b","a"}
+})
+
+test_that("calculate_weighted_site_aipw warns when too few treated units", {
+  # Regression test: previously this function silently returned NA / Inf with
+  # a zero influence function when the treated-arm cell was below
+  # MIN_TREATED_FOR_MODEL. It must now emit a warning carrying the counts.
+  set.seed(1)
+  n <- 50
+  X <- matrix(rnorm(n * 3), nrow = n, ncol = 3)
+  Y <- rbinom(n, 1, 0.5)
+  A <- rep(0L, n)              # zero treated units
+  A[1L] <- 1L                  # one treated unit -- below MIN_TREATED_FOR_MODEL
+
+  expect_warning(
+    res <- calculate_weighted_site_aipw(y = Y, a = A, X = X, A_val = 1L),
+    "calculate_weighted_site_aipw: only 1 unit"
+  )
+  expect_true(is.na(res$estimate))
+  expect_identical(typeof(res$estimate), "double")  # NA_real_, not NA (logical)
+  expect_true(is.infinite(res$variance))
+  expect_equal(res$psi, rep(0, n))
 })
 

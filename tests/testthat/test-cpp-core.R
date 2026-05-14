@@ -165,9 +165,13 @@ test_that("select_lambda_cv_general_refined_outcome_cpp returns valid result", {
   expect_equal(length(result$cv_scores), 10)
 })
 
-test_that("CV functions handle all-control data gracefully (empty treated set)", {
+test_that("CV functions fail fast on all-control data (empty treated set)", {
+  # The estimator is not identifiable when there are no A == A_val units in any
+  # CV training fold, and the project's fail-fast philosophy requires that the
+  # underlying C++ routine raises a clear, contextual error rather than
+  # silently returning a meaningless lambda.
   skip_if_not(exists("select_lambda_cv_density_ratio_cpp"), message = "C++ not compiled")
-  
+
   n <- 40
   p <- 3
   X <- matrix(rnorm(n * p), n, p)
@@ -175,14 +179,13 @@ test_that("CV functions handle all-control data gracefully (empty treated set)",
   mean_grad_psi <- rnorm(p + 1)
   alpha_init <- rnorm(p + 1)
   lambda_grid <- exp(seq(log(0.01), log(1), length.out = 5))
-  
-  result <- select_lambda_cv_density_ratio_cpp(X, A, mean_grad_psi, alpha_init,
-                                                lambda_grid, 3, 100, 1e-4,
-                                                A_val = 1L, family_int = 1L, link_int = 1L)
-  
-  # Should return early without error
 
-  expect_true("best_lambda" %in% names(result))
+  expect_error(
+    select_lambda_cv_density_ratio_cpp(X, A, mean_grad_psi, alpha_init,
+                                       lambda_grid, 3, 100, 1e-4,
+                                       A_val = 1L, family_int = 1L, link_int = 1L),
+    "no observations with A_val"
+  )
 })
 
 # ============================================================================

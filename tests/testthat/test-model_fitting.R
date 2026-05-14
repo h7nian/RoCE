@@ -33,11 +33,22 @@ test_that("fit_initial_outcome returns coefficients of expected length", {
   expect_true(all(is.finite(alpha)))
 })
 
-test_that("fit_initial_outcome works when no treated or few treated", {
+test_that("fit_initial_outcome errors when requested treatment arm is absent", {
   d <- make_site_data(100, 3, treated_frac = 0.05, seed = 7)
-  
-  # Should not error even if few treated
-  alpha <- fit_initial_outcome(d$X, d$Y, d$A, A_val = 1)
+  d$A[] <- 0
+
+  expect_error(
+    fit_initial_outcome(d$X, d$Y, d$A, A_val = 1),
+    "no observations with A_val"
+  )
+})
+
+test_that("fit_initial_outcome works when requested treatment arm is sparse but present", {
+  d <- make_site_data(100, 3, treated_frac = 0.08, seed = 7)
+  d$A[] <- 0
+  d$A[1:10] <- 1
+
+  alpha <- fit_initial_outcome(d$X, d$Y, d$A, A_val = 1, nlambda = 3L)
   expect_true(all(is.finite(alpha)))
 })
 
@@ -127,6 +138,78 @@ test_that("fit_unified_density_ratio_cpp converges with Hessian step approximati
   # focus on checking the result is well-formed and finite
   expect_equal(length(res$gamma), p + 1)
   expect_true(all(is.finite(res$gamma)))
+})
+
+test_that("site-basis GLM gradient matches outcome basis when W and Z agree", {
+  skip_if_not(exists("mean_glm_gradient_cpp"), message = "C++ not compiled")
+
+  set.seed(2027)
+  W <- matrix(rnorm(80 * 3), 80, 3)
+  alpha <- rnorm(4, sd = 0.2)
+
+  r_grad <- .mean_glm_gradient_site_basis(W, W, alpha,
+                                          family_int = FAMILY_BINOMIAL,
+                                          link_int = LINK_LOGIT)
+  cpp_grad <- mean_glm_gradient_cpp(W, alpha, FAMILY_BINOMIAL, LINK_LOGIT)
+
+  expect_equal(r_grad, as.numeric(cpp_grad), tolerance = 1e-10)
+})
+
+test_that("site-basis GLM gradient supports different W and Z dimensions", {
+  set.seed(2028)
+  W <- matrix(rnorm(60 * 2), 60, 2)
+  Z <- matrix(rnorm(60 * 5), 60, 5)
+  alpha <- rnorm(3, sd = 0.2)
+
+  grad <- .mean_glm_gradient_site_basis(W, Z, alpha,
+                                        family_int = FAMILY_BINOMIAL,
+                                        link_int = LINK_LOGIT)
+
+  expect_equal(length(grad), ncol(Z) + 1)
+  expect_true(all(is.finite(grad)))
+})
+
+test_that("fit_unified_density_ratio rejects mismatched target-gradient dimensions", {
+  skip_if_not(exists("fit_unified_density_ratio_cpp"), message = "C++ not compiled")
+
+  set.seed(2029)
+  n <- 120
+  W <- matrix(rnorm(n * 2), n, 2)
+  Z <- matrix(rnorm(n * 4), n, 4)
+  A <- rbinom(n, 1, 0.5)
+  alpha_init <- rnorm(ncol(W) + 1, sd = 0.1)
+  wrong_mean_grad <- rnorm(ncol(W) + 1, sd = 0.01)
+
+  expect_error(
+    fit_unified_density_ratio(Z, A, wrong_mean_grad, alpha_init,
+                              lambda = 0.05, calibrated = TRUE, M_tau = 10.0,
+                              W_outcome = W),
+    "mean_grad_psi length must match"
+  )
+})
+
+test_that("correction term reports clipping diagnostics", {
+  skip_if_not(exists("calculate_correction_term_cpp"), message = "C++ not compiled")
+
+  n <- 12
+  Z <- matrix(c(rep(-30, n), rep(0, n)), n, 2)
+  W <- matrix(rnorm(n * 2), n, 2)
+  A <- rep(1, n)
+  Y <- rnorm(n)
+  gamma <- c(0, 1, 0)
+  alpha <- c(0, 0, 0)
+
+  res <- calculate_correction_term_cpp(
+    Z, A, Y, gamma, alpha, W,
+    M_tau = Inf,
+    family_int = FAMILY_GAUSSIAN,
+    link_int = LINK_IDENTITY,
+    A_val = 1L
+  )
+
+  expect_true("clip_diagnostics" %in% names(res))
+  expect_true(res$clip_diagnostics$ratio_max_clipped > 0)
+  expect_true(isTRUE(res$clip_diagnostics$any_clipped))
 })
 
 # ============================================================================
