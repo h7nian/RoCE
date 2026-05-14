@@ -36,6 +36,18 @@ check_finite <- function(x, field_name, site_label) {
   invisible(TRUE)
 }
 
+.is_non_default_numeric <- function(value, default, tol = sqrt(.Machine$double.eps)) {
+  is.na(value) || !isTRUE(all.equal(as.numeric(value), as.numeric(default),
+                                    tolerance = tol, check.attributes = FALSE))
+}
+
+.warn_ignored_param <- function(param, value, dgp_type, reason) {
+  warning(sprintf(
+    "Parameter '%s' = %s is ignored when dgp_type = '%s': %s",
+    param, paste(value, collapse = ","), dgp_type, reason
+  ), call. = FALSE)
+}
+
 #' Validate algorithm input data structure
 #'
 #' Checks that data_split contains properly formatted data for target and
@@ -43,6 +55,11 @@ check_finite <- function(x, field_name, site_label) {
 #'
 #' @param data_split List of site data, split by site identifier.
 #' @param lambda_selection Lambda selection method ("cv" or numeric value).
+#'        Optional (default NULL). When NULL, the lambda_selection check is
+#'        skipped; this lets comparison estimators that do not use a lambda
+#'        (e.g. \code{estimate_tilted_aipw}, \code{estimate_federated_dr},
+#'        \code{estimate_pooled_dr}) reuse this validator for data-shape
+#'        checks without passing a placeholder.
 #' @param family GLM family: "gaussian" or "binomial".
 #'        Y values are validated based on the family: binomial requires Y in \{0,1\}.
 #' @return TRUE if valid; throws informative error otherwise.
@@ -56,8 +73,8 @@ check_finite <- function(x, field_name, site_label) {
 #'   \item \code{Y}: Outcome vector (family-specific validation)
 #'   \item \code{n}: Sample size
 #' }
-validate_algorithm_inputs <- function(data_split, lambda_selection, family = "binomial",
-                                      A_val = 1L) {
+validate_algorithm_inputs <- function(data_split, lambda_selection = NULL,
+                                      family = "binomial", A_val = 1L) {
   # Check for NULL
   if (is.null(data_split)) {
     stop("data_split must not be NULL")
@@ -166,23 +183,26 @@ validate_algorithm_inputs <- function(data_split, lambda_selection, family = "bi
     
     # Check if there are units with the target treatment value
     if (sum(source_data$A == A_val) == 0) {
-      warning(sprintf("No units with A=%d found in source site %s", A_val, site))
+      stop(sprintf("No units with A=%d found in source site %s", A_val, site))
     }
   }
   
-  # Validate lambda_selection
-  if (!is.character(lambda_selection) && !is.numeric(lambda_selection)) {
-    stop("lambda_selection must be either 'cv' or a numeric value")
+  # Validate lambda_selection only when callers actually use one. Comparison
+  # methods that pass lambda_selection = NULL skip this block.
+  if (!is.null(lambda_selection)) {
+    if (!is.character(lambda_selection) && !is.numeric(lambda_selection)) {
+      stop("lambda_selection must be either 'cv' or a numeric value")
+    }
+
+    if (is.character(lambda_selection) && lambda_selection != "cv") {
+      stop("lambda_selection must be 'cv' if character")
+    }
+
+    if (is.numeric(lambda_selection) && (lambda_selection <= 0 || lambda_selection > 1)) {
+      stop("lambda_selection must be between 0 and 1 if numeric")
+    }
   }
-  
-  if (is.character(lambda_selection) && lambda_selection != "cv") {
-    stop("lambda_selection must be 'cv' if character")
-  }
-  
-  if (is.numeric(lambda_selection) && (lambda_selection <= 0 || lambda_selection > 1)) {
-    stop("lambda_selection must be between 0 and 1 if numeric")
-  }
-  
+
   return(TRUE)
 }
 
@@ -218,8 +238,10 @@ validate_crossfit_sample_sizes <- function(data_split, n_folds, min_fold_size = 
   }
   
   if (n_folds == 2) {
-    warning("Using n_folds = 2 may lead to unstable variance estimation. ",
-            "Consider using n_folds >= 3 for more reliable inference.")
+    warning(sprintf(
+      "validate_crossfit_sample_sizes: n_folds = %d may lead to unstable variance estimation; consider n_folds >= 3 for more reliable inference.",
+      n_folds
+    ), call. = FALSE)
   }
   
   target_data <- data_split[["t"]]
@@ -330,24 +352,33 @@ validate_truncation_parameters <- function(M_tau, M_tau_inference) {
 #' @param shift_strength Positive numeric multiplier
 #' @param n_folds Integer >= 3
 #' @param n_sims Positive integer (NULL to skip this check)
+#' @param n_total Positive integer total sample size (NULL to skip this check)
+#' @param K Positive integer number of source sites (NULL to skip this check)
+#' @param p Positive integer number of covariates (NULL to skip this check)
 #' @param config Configuration string (NULL to skip, else must be "C1"-"C4")
 #' @param dgp_type "facec" (default) or "face"
 #' @param ate_deviation Numeric ATE deviation for FACE paper non-informative sites (>= 0)
 #' @param n_deviated_sites Non-negative integer: how many source sites deviate (FACE paper only)
+#' @param warn_ignored Logical. If TRUE, warn when parameters are accepted for
+#'   API compatibility but ignored by the selected DGP.
 #' @return TRUE invisibly; throws informative error on invalid input
 #' @export
 validate_simulation_params <- function(estimand_type = "superpopulation",
                                         site_allocation = "model",
-                                        transform_type = "strong",
+                                        transform_type = "mild",
                                         outcome_type = "binary",
                                         heterogeneity_type = "none",
                                         shift_strength = 1.0,
                                         n_folds = N_FOLDS_DEFAULT,
                                         n_sims = NULL,
+                                        n_total = NULL,
+                                        K = NULL,
+                                        p = NULL,
                                         config = NULL,
                                         dgp_type = "facec",
                                         ate_deviation = 0.0,
-                                        n_deviated_sites = 0L) {
+                                        n_deviated_sites = 0L,
+                                        warn_ignored = TRUE) {
   if (!(dgp_type %in% VALID_DGP_TYPES)) {
     stop(sprintf("Invalid dgp_type: '%s'. Must be one of: %s",
                  dgp_type, paste(VALID_DGP_TYPES, collapse = ", ")))
@@ -387,6 +418,17 @@ validate_simulation_params <- function(estimand_type = "superpopulation",
       stop("shift_strength must be a positive number.")
     }
 
+    if (isTRUE(warn_ignored)) {
+      if (.is_non_default_numeric(ate_deviation, 0.0)) {
+        .warn_ignored_param("ate_deviation", ate_deviation, dgp_type,
+                            "only the FACE paper DGP uses source-site ATE deviations.")
+      }
+      if (.is_non_default_numeric(n_deviated_sites, 0L)) {
+        .warn_ignored_param("n_deviated_sites", n_deviated_sites, dgp_type,
+                            "only the FACE paper DGP uses deviated source-site counts.")
+      }
+    }
+
   } else if (dgp_type == "face") {
     # FACE paper DGP-specific validation
     if (is.na(ate_deviation) || ate_deviation < 0) {
@@ -399,20 +441,70 @@ validate_simulation_params <- function(estimand_type = "superpopulation",
       stop(sprintf("Invalid outcome_type: '%s'. Must be one of: %s",
                    outcome_type, paste(VALID_OUTCOME_TYPES, collapse = ", ")))
     }
+
+    if (isTRUE(warn_ignored)) {
+      if (!identical(site_allocation, "model")) {
+        .warn_ignored_param("site_allocation", site_allocation, dgp_type,
+                            "FACE paper DGP has its own site-specific covariate generator.")
+      }
+      if (!identical(transform_type, "mild")) {
+        .warn_ignored_param("transform_type", transform_type, dgp_type,
+                            "FACE paper DGP builds its own linear/quadratic design matrices.")
+      }
+      if (!identical(heterogeneity_type, "none")) {
+        .warn_ignored_param("heterogeneity_type", heterogeneity_type, dgp_type,
+                            "FACE paper DGP uses ate_deviation/n_deviated_sites instead.")
+      }
+      if (.is_non_default_numeric(shift_strength, 1.0)) {
+        .warn_ignored_param("shift_strength", shift_strength, dgp_type,
+                            "FACE paper DGP uses fixed skewed-normal covariate shifts.")
+      }
+    }
   }
 
-  if (is.na(n_folds) || n_folds < 3) {
+  if (!is.null(n_total)) {
+    if (any(is.na(n_total)) || any(n_total < 1) ||
+        any(abs(n_total - round(n_total)) > sqrt(.Machine$double.eps))) {
+      stop("n_total must contain only positive integers.")
+    }
+  }
+
+  if (!is.null(K)) {
+    if (any(is.na(K)) || any(K < 1) ||
+        any(abs(K - round(K)) > sqrt(.Machine$double.eps))) {
+      stop("K must contain only positive integer source-site counts.")
+    }
+  }
+
+  if (!is.null(p)) {
+    if (any(is.na(p)) || any(p < 1) ||
+        any(abs(p - round(p)) > sqrt(.Machine$double.eps))) {
+      stop("p must contain only positive integer covariate counts.")
+    }
+  }
+
+  if (!is.null(n_total) && !is.null(K) && min(n_total) < max(K) + 1L) {
+    stop(sprintf(
+      "n_total contains value(s) too small for K: min(n_total)=%d, max(K)=%d, so at least max(K) + 1 observations are required.",
+      as.integer(min(n_total)), as.integer(max(K))
+    ))
+  }
+
+  if (is.na(n_folds) || n_folds < 3 ||
+      abs(n_folds - round(n_folds)) > sqrt(.Machine$double.eps)) {
     stop("n_folds must be an integer >= 3.")
   }
 
-  if (!is.null(n_sims) && (is.na(n_sims) || n_sims < 1)) {
+  if (!is.null(n_sims) && (is.na(n_sims) || n_sims < 1 ||
+                           abs(n_sims - round(n_sims)) > sqrt(.Machine$double.eps))) {
     stop("n_sims must be a positive integer.")
   }
 
   if (!is.null(config)) {
-    if (!(config %in% VALID_CONFIGS)) {
+    if (any(!(config %in% VALID_CONFIGS))) {
       stop(sprintf("Invalid config: '%s'. Must be one of: %s",
-                   config, paste(VALID_CONFIGS, collapse = ", ")))
+                   paste(config[!(config %in% VALID_CONFIGS)], collapse = ","),
+                   paste(VALID_CONFIGS, collapse = ", ")))
     }
   }
 

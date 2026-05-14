@@ -172,6 +172,7 @@ aggregate_fold_estimates <- function(fold_aggregated_estimates, all_phi_agg,
   C_ot_k1 <- numeric(K)
   zeta_components_k1 <- vector("list", K)
   xi_components_k1 <- vector("list", K)
+  source_variance_clip_diagnostics <- vector("list", K)
   source_idx_k1 <- vector("list", K)
 
   for (i in seq_along(source_sites)) {
@@ -191,6 +192,7 @@ aggregate_fold_estimates <- function(fold_aggregated_estimates, all_phi_agg,
     )
     V_s_k1[i] <- source_var_result$V_s
     xi_components_k1[[i]] <- source_var_result$xi_components
+    source_variance_clip_diagnostics[[i]] <- source_var_result$clip_diagnostics
 
     target_var_result <- calculate_target_variance_cpp(
       target_fold_k1$W_outcome, fold_params$alpha_ts, fold_params$mu_pred_ts,
@@ -219,6 +221,7 @@ aggregate_fold_estimates <- function(fold_aggregated_estimates, all_phi_agg,
     varphi_ot = varphi_ot_k1,
     zeta_components = zeta_components_k1,
     xi_components = xi_components_k1,
+    source_variance_clip_diagnostics = source_variance_clip_diagnostics,
     target_idx = target_fold_k1$original_idx,
     source_idx = source_idx_k1
   )
@@ -310,9 +313,11 @@ aggregate_fold_estimates <- function(fold_aggregated_estimates, all_phi_agg,
 .compute_phase2_weights <- function(n_folds, inner_fold_info, fold_info,
                                     n_t, n_source_full,
                                     lambda_selection, crossfit_type, K,
-                                    verbose) {
+                                    verbose, lambda_rule = c("min", "1se")) {
+  lambda_rule <- match.arg(lambda_rule)
   fold_aggregated_estimates <- numeric(n_folds)
   fold_weights <- array(0, dim = c(n_folds, K))
+  fold_lambdas <- numeric(n_folds)
 
   for (k1 in 1:n_folds) {
     log_info(verbose, "      Phase 2: Inner-fold weights for fold k1=%d/%d", k1, n_folds)
@@ -325,13 +330,15 @@ aggregate_fold_estimates <- function(fold_aggregated_estimates, all_phi_agg,
       select_lambda_cv_crossfit(
         n_folds, inner_v$avg_target_est, inner_v$avg_source_est,
         variances_k1, inner_v$C_ot, n_samples_k1, inner_v$C_cross, verbose = FALSE,
-        crossfit_type = crossfit_type
+        crossfit_type = crossfit_type,
+        lambda_rule = lambda_rule
       )
     } else if (is.numeric(lambda_selection)) {
       lambda_selection
     } else {
       LAMBDA_DEFAULT
     }
+    fold_lambdas[k1] <- lambda_reg_k1
 
     eta_k1 <- optimize_weights(
       inner_v$avg_source_est, variances_k1, inner_v$C_ot, n_samples_k1,
@@ -351,7 +358,62 @@ aggregate_fold_estimates <- function(fold_aggregated_estimates, all_phi_agg,
     }
   }
 
-  list(fold_weights = fold_weights, fold_aggregated_estimates = fold_aggregated_estimates)
+  list(
+    fold_weights = fold_weights,
+    fold_aggregated_estimates = fold_aggregated_estimates,
+    fold_lambdas = fold_lambdas
+  )
+}
+
+.empty_clip_diagnostics <- function() {
+  list(
+    n_obs = 0L,
+    weight_min_clipped = 0L,
+    weight_max_clipped = 0L,
+    ratio_min_clipped = 0L,
+    ratio_max_clipped = 0L,
+    max_abs_logit = 0,
+    max_raw_weight = 0,
+    any_clipped = FALSE
+  )
+}
+
+.add_clip_diagnostics <- function(acc, diag) {
+  if (is.null(diag)) return(acc)
+
+  for (nm in c("n_obs", "weight_min_clipped", "weight_max_clipped",
+               "ratio_min_clipped", "ratio_max_clipped")) {
+    acc[[nm]] <- as.integer(acc[[nm]]) + as.integer(diag[[nm]] %||% 0L)
+  }
+  # NOTE: we deliberately do NOT pass na.rm = TRUE below. If the C++ clipping
+  # diagnostics ever emit NA / NaN for max_abs_logit or max_raw_weight, that is
+  # a real signal that something went wrong upstream (e.g., log(0) or Inf
+  # propagating into the logit). Letting NA propagate makes the failure visible
+  # in the final summary rather than silently absorbing it.
+  acc$max_abs_logit  <- max(acc$max_abs_logit,
+                            as.numeric(diag$max_abs_logit  %||% 0))
+  acc$max_raw_weight <- max(acc$max_raw_weight,
+                            as.numeric(diag$max_raw_weight %||% 0))
+  acc$any_clipped <- (acc$weight_min_clipped + acc$weight_max_clipped +
+                        acc$ratio_min_clipped + acc$ratio_max_clipped) > 0L
+  acc
+}
+
+.summarize_correction_clipping <- function(fold_results, source_sites) {
+  by_source <- setNames(vector("list", length(source_sites)), source_sites)
+  total <- .empty_clip_diagnostics()
+
+  for (s in source_sites) {
+    source_total <- .empty_clip_diagnostics()
+    for (fold_res in fold_results) {
+      diag <- fold_res$source_results[[s]]$correction_clip_diagnostics
+      source_total <- .add_clip_diagnostics(source_total, diag)
+    }
+    by_source[[s]] <- source_total
+    total <- .add_clip_diagnostics(total, source_total)
+  }
+
+  list(total = total, by_source = by_source)
 }
 
 .compute_phase3_all_phi <- function(n_folds, fold_weights, fold_info,
@@ -426,6 +488,7 @@ aggregate_fold_estimates <- function(fold_aggregated_estimates, all_phi_agg,
 #' @param final_target_estimate Scalar; cross-fitted target-only estimate
 #' @param target_estimates Vector of per-fold target estimates
 #' @param source_estimates Named numeric vector of source estimates
+#' @param source_estimates_matrix Fold-by-source matrix of source estimates
 #' @param crossfit_type Character; "two_round" or "one_round"
 #' @param algorithm_label Character; algorithm name for the result list
 #' @param family_int Integer code for GLM family (0=gaussian, 1=binomial)
@@ -437,11 +500,14 @@ calculate_crossfit_aggregation <- function(data_split, target_data, source_sites
                                          n_folds, M_tau,
                                          M_tau_inference = M_TAU_INFERENCE_DEFAULT,
                                          lambda_selection, verbose,
+                                         lambda_rule = c("min", "1se"),
                                          final_target_estimate, target_estimates,
                                          source_estimates,
+                                         source_estimates_matrix,
                                          crossfit_type, algorithm_label,
                                          family_int = 1L, link_int = 1L,
                                          A_val = 1L) {
+  lambda_rule <- match.arg(lambda_rule)
   n_t <- target_data$n
 
   # Total sample size across all sites
@@ -536,10 +602,12 @@ calculate_crossfit_aggregation <- function(data_split, target_data, source_sites
     lambda_selection = lambda_selection,
     crossfit_type = crossfit_type,
     K = K,
-    verbose = verbose
+    verbose = verbose,
+    lambda_rule = lambda_rule
   )
   fold_weights <- phase2_res$fold_weights
   fold_aggregated_estimates <- phase2_res$fold_aggregated_estimates
+  fold_lambdas <- phase2_res$fold_lambdas
 
   average_weights <- colMeans(fold_weights)
 
@@ -604,6 +672,34 @@ calculate_crossfit_aggregation <- function(data_split, target_data, source_sites
   ci_lower <- final_agg$ci_lower
   ci_upper <- final_agg$ci_upper
   weights <- final_agg$average_weights
+  clip_diagnostics <- .summarize_correction_clipping(fold_results, source_sites)
+  if (isTRUE(clip_diagnostics$total$any_clipped)) {
+    warning(sprintf(
+      "Inference clipping was triggered: weight_min=%d, weight_max=%d, ratio_min=%d, ratio_max=%d. Inspect result$clip_diagnostics.",
+      clip_diagnostics$total$weight_min_clipped,
+      clip_diagnostics$total$weight_max_clipped,
+      clip_diagnostics$total$ratio_min_clipped,
+      clip_diagnostics$total$ratio_max_clipped
+    ))
+  }
+  phase1_summary <- list(
+    V_ot = vapply(fold_info, function(x) x$V_ot, numeric(1L)),
+    V_t = do.call(rbind, lapply(fold_info, function(x) x$V_t)),
+    V_s = do.call(rbind, lapply(fold_info, function(x) x$V_s)),
+    C_ot = do.call(rbind, lapply(fold_info, function(x) x$C_ot)),
+    fold_target_estimate = vapply(fold_info, function(x) x$fold_target_estimate, numeric(1L)),
+    fold_source_estimates = do.call(rbind, lapply(fold_info, function(x) x$fold_source_estimates)),
+    mu_pred_ts = do.call(rbind, lapply(fold_info, function(x) x$mu_pred_ts)),
+    delta_ts = do.call(rbind, lapply(fold_info, function(x) x$delta_ts))
+  )
+  phase1b_summary <- list(
+    V_ot = vapply(inner_fold_info, function(x) x$V_ot, numeric(1L)),
+    V_t = do.call(rbind, lapply(inner_fold_info, function(x) x$V_t)),
+    V_s = do.call(rbind, lapply(inner_fold_info, function(x) x$V_s)),
+    C_ot = do.call(rbind, lapply(inner_fold_info, function(x) x$C_ot)),
+    avg_target_est = vapply(inner_fold_info, function(x) x$avg_target_est, numeric(1L)),
+    avg_source_est = do.call(rbind, lapply(inner_fold_info, function(x) x$avg_source_est))
+  )
 
   results <- list(
     estimate = final_estimate,
@@ -618,11 +714,26 @@ calculate_crossfit_aggregation <- function(data_split, target_data, source_sites
     source_estimates = source_estimates,
     weights = weights,
     fold_weights = fold_weights,
+    fold_lambdas = fold_lambdas,
     fold_aggregated_estimates = fold_aggregated_estimates,
+    aggregation_lambda_rule = lambda_rule,
+    clip_diagnostics = clip_diagnostics,
     n_sites = K + 1,
     n_folds = n_folds,
     N_all = N_all,
     all_phi_agg = all_phi_agg,
+    intermediates = list(
+      target_estimates = target_estimates,
+      source_estimates_matrix = source_estimates_matrix,
+      phase1 = phase1_summary,
+      phase1b = phase1b_summary,
+      fold_lambdas = fold_lambdas,
+      fold_weights = fold_weights,
+      fold_aggregated_estimates = fold_aggregated_estimates,
+      aggregation_lambda_rule = lambda_rule,
+      clip_diagnostics = clip_diagnostics,
+      sample_sizes = list(n_t = n_t, n_source = n_source_full, N_all = N_all)
+    ),
     method = algorithm_label,    # consistent with comparison methods
     fold_results = fold_results
   )

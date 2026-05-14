@@ -15,6 +15,10 @@ init_checkpoint_config <- function(checkpoint_dir = "checkpoints",
   if (!dir.exists(checkpoint_dir)) {
     dir.create(checkpoint_dir, showWarnings = FALSE, recursive = TRUE)
   }
+  if (!dir.exists(checkpoint_dir)) {
+    stop(sprintf("init_checkpoint_config: failed to create checkpoint directory '%s'.",
+                 checkpoint_dir), call. = FALSE)
+  }
 
   config <- list(
     dir              = checkpoint_dir,
@@ -32,53 +36,52 @@ init_checkpoint_config <- function(checkpoint_dir = "checkpoints",
 #' @param state List containing current simulation state.
 #' @param checkpoint_file Path to checkpoint RData file.
 #' @param sim_level Logical; if TRUE, print a compact simulation-level message.
-#' @return TRUE on success, FALSE on failure.
+#' @return TRUE invisibly on success; throws an error on failure.
 #' @export
 save_checkpoint <- function(state, checkpoint_file, sim_level = FALSE) {
-  tryCatch({
-    temp_file <- paste0(checkpoint_file, ".tmp")
-    save(state, file = temp_file)
-    file.rename(temp_file, checkpoint_file)
+  temp_file <- paste0(checkpoint_file, ".tmp")
+  save(state, file = temp_file)
+  renamed <- file.rename(temp_file, checkpoint_file)
+  if (!isTRUE(renamed)) {
+    stop(sprintf("save_checkpoint: failed to move temporary checkpoint '%s' to '%s'.",
+                 temp_file, checkpoint_file), call. = FALSE)
+  }
 
-    if (sim_level) {
-      cat(sprintf("  Checkpoint saved: setting %d, simulation %d/%d\n",
-                  state$current_setting_idx, state$current_sim_idx, state$n_sims))
-    } else {
-      cat(sprintf("Checkpoint saved: %s (setting %d/%d completed)\n",
-                  checkpoint_file, state$current_setting_idx, state$total_settings))
-    }
-    return(TRUE)
-  }, error = function(e) {
-    warning(sprintf("save_checkpoint: failed to save '%s': %s", checkpoint_file, e$message))
-    return(FALSE)
-  })
+  if (sim_level) {
+    cat(sprintf("  Checkpoint saved: setting %d, simulation %d/%d\n",
+                state$current_setting_idx, state$current_sim_idx, state$n_sims))
+  } else {
+    cat(sprintf("Checkpoint saved: %s (setting %d/%d completed)\n",
+                checkpoint_file, state$current_setting_idx, state$total_settings))
+  }
+  invisible(TRUE)
 }
 
 #' Load checkpoint state if the file exists
 #'
 #' @param checkpoint_file Path to checkpoint RData file.
-#' @return Restored state list, or NULL if no checkpoint found.
+#' @return Restored state list, or NULL if no checkpoint found. Throws an
+#'   error if an existing checkpoint cannot be loaded.
 #' @export
 load_checkpoint <- function(checkpoint_file) {
   if (!file.exists(checkpoint_file)) return(NULL)
 
-  tryCatch({
-    load(checkpoint_file)  # restores 'state'
+  load(checkpoint_file)  # restores 'state'
+  if (!exists("state", inherits = FALSE) || !is.list(state)) {
+    stop(sprintf("load_checkpoint: '%s' did not contain a valid checkpoint state.",
+                 checkpoint_file), call. = FALSE)
+  }
 
-    if (!is.null(state$sim_results) && !is.null(state$current_sim_idx)) {
-      cat(sprintf("Checkpoint loaded: %s\n", checkpoint_file))
-      cat(sprintf("   Resuming setting %d/%d from simulation %d/%d\n",
-                  state$current_setting_idx, state$total_settings,
-                  state$current_sim_idx + 1, state$n_sims))
-    } else {
-      cat(sprintf("Checkpoint loaded: %s (resuming from setting %d/%d)\n",
-                  checkpoint_file, state$current_setting_idx + 1, state$total_settings))
-    }
-    return(state)
-  }, error = function(e) {
-    warning(sprintf("load_checkpoint: failed to load '%s': %s (starting fresh)", checkpoint_file, e$message))
-    return(NULL)
-  })
+  if (!is.null(state$sim_results) && !is.null(state$current_sim_idx)) {
+    cat(sprintf("Checkpoint loaded: %s\n", checkpoint_file))
+    cat(sprintf("   Resuming setting %d/%d from simulation %d/%d\n",
+                state$current_setting_idx, state$total_settings,
+                state$current_sim_idx + 1, state$n_sims))
+  } else {
+    cat(sprintf("Checkpoint loaded: %s (resuming from setting %d/%d)\n",
+                checkpoint_file, state$current_setting_idx + 1, state$total_settings))
+  }
+  return(state)
 }
 
 #' Check if a SLURM preemption signal was received
@@ -95,7 +98,12 @@ check_preempt_signal <- function(preempt_signal_file) {
 #' @param saved_signal_file Path to the saved-signal file.
 #' @export
 signal_checkpoint_saved <- function(saved_signal_file) {
-  file.create(saved_signal_file)
+  created <- file.create(saved_signal_file)
+  if (!isTRUE(created)) {
+    stop(sprintf("signal_checkpoint_saved: failed to create '%s'.",
+                 saved_signal_file), call. = FALSE)
+  }
+  invisible(TRUE)
 }
 
 #' Clean up all checkpoint artifacts after successful completion

@@ -44,6 +44,13 @@ M_TAU_DEFAULT <- 10.0
 #' Users can set a finite value for numerical stability if needed.
 M_TAU_INFERENCE_DEFAULT <- Inf
 
+#' Truncation parameter for inference on the RHC real-data application.
+#' The RHC cohort produces a small number of extreme density-ratio logits, so
+#' \code{run_rhc_experiment()} truncates the correction-term linear predictor
+#' at \eqn{|g| \le M_{\tau,\text{inf}}} for numerical stability. This is a
+#' real-data-specific override; simulations use \code{M_TAU_INFERENCE_DEFAULT}.
+M_TAU_INFERENCE_RHC <- 3.0
+
 #' Maximum iterations for coordinate descent optimization
 MAX_ITER_DEFAULT <- 10000L
 
@@ -55,6 +62,14 @@ LAMBDA_GRID_SIZE_STANDARD <- 100
 
 #' Lambda grid size for fast mode CV selection
 LAMBDA_GRID_SIZE_FAST <- 20
+
+#' Ratio of \code{lambda_min} to \code{lambda_max} in the CV grid when the
+#' design is low-dimensional (n > p). Matches glmnet's default in that regime.
+LAMBDA_MIN_RATIO_LOW_DIM <- 1e-4
+
+#' Ratio of \code{lambda_min} to \code{lambda_max} in the CV grid when the
+#' design is high-dimensional (n <= p). Matches glmnet's default in that regime.
+LAMBDA_MIN_RATIO_HIGH_DIM <- 0.01
 
 # =============================================================================
 # VARIANCE / WEIGHT OPTIMIZATION BOUNDS

@@ -58,9 +58,15 @@ trap 'handle_preemption' USR1
 cd "${SLURM_SUBMIT_DIR:-$(dirname "$0")}"
 
 # Load required modules
-module load R
+# Pin to the spack/centos7-ivybridge build that the installed FACEC.so was
+# compiled against. On Rocky 8 nodes (e.g. saffo-2tb's acl4x), an unqualified
+# `module load R` can resolve to a different build, breaking ABI on FACEC.so.
+module load R/4.2.2-gcc-8.2.0-vp7tyde
 
-export R_LIBS_USER="${R_LIBS_USER:-${HOME}/Rlibs}"
+# Override unconditionally: the spack `R/4.2.2-gcc-8.2.0-vp7tyde` module sets
+# its own R_LIBS_USER (~/R/library), which is empty on this account. All 270
+# installed packages — including FACEC and its deps — live in ~/Rlibs.
+export R_LIBS_USER="${HOME}/Rlibs"
 
 # Prevent BLAS/OpenMP oversubscription when using R-level parallelism
 export OMP_NUM_THREADS=1
@@ -99,6 +105,7 @@ export NESTED_PARALLEL=1
 # arg17: use_lambda_cache (TRUE/FALSE) - default: TRUE
 # arg18: verbose_every (integer, sequential log interval) - default: 10
 # arg19: parallel_strategy (outer_priority|balanced|outer_only) - default: outer_priority
+# arg20: estimate_ate (TRUE/FALSE) - default: FALSE
 # ============================================================================
 
 # Optional job-array combo file mode
@@ -136,17 +143,63 @@ N_DEVIATED_SITES="${arg16:-0}"
 USE_LAMBDA_CACHE="${arg17:-TRUE}"
 VERBOSE_EVERY="${arg18:-10}"
 PARALLEL_STRATEGY="${arg19:-outer_priority}"
+ESTIMATE_ATE="${arg20:-FALSE}"
 
-# Create setting identifier — always includes ALL parameters for full traceability.
-# Format (facec):       n<N>_K<K>_p<P>_<config>_<estimand>_<outcome>_<alloc>_tf<transform>_ht<het>_ss<shift>_kf<folds>
-# Format (face):  n<N>_K<K>_p<P>_<config>_<estimand>_<outcome>_face_dev<dev>_nd<nd>_kf<folds>
+normalize_bool() {
+    case "$1" in
+        1|true|TRUE|True|t|T|yes|YES|Yes|y|Y) echo "TRUE" ;;
+        0|false|FALSE|False|f|F|no|NO|No|n|N) echo "FALSE" ;;
+        *) return 1 ;;
+    esac
+}
+
+if ! USE_LAMBDA_CACHE=$(normalize_bool "$USE_LAMBDA_CACHE"); then
+    echo "ERROR: use_lambda_cache must be true/false, yes/no, or 1/0."
+    exit 2
+fi
+if ! ESTIMATE_ATE=$(normalize_bool "$ESTIMATE_ATE"); then
+    echo "ERROR: estimate_ate must be true/false, yes/no, or 1/0."
+    exit 2
+fi
+if [[ ! "$PARALLEL_STRATEGY" =~ ^(outer_priority|balanced|outer_only)$ ]]; then
+    echo "ERROR: parallel_strategy must be one of: outer_priority, balanced, outer_only."
+    exit 2
+fi
+if [[ ! "$DGP_TYPE" =~ ^(facec|face)$ ]]; then
+    echo "ERROR: dgp_type must be one of: facec, face."
+    exit 2
+fi
+if [[ ! "$OUTCOME_TYPE" =~ ^(binary|continuous)$ ]]; then
+    echo "ERROR: outcome_type must be one of: binary, continuous."
+    exit 2
+fi
+if [[ ! "$ESTIMAND_TYPE" =~ ^(superpopulation|sample)$ ]]; then
+    echo "ERROR: estimand_type must be one of: superpopulation, sample."
+    exit 2
+fi
+if ! [[ "$N_FOLDS" =~ ^[0-9]+$ ]] || [[ "$N_FOLDS" -lt 3 ]]; then
+    echo "ERROR: n_folds must be an integer >= 3."
+    exit 2
+fi
+if ! [[ "$N_SIMS" =~ ^[0-9]+$ ]] || [[ "$N_SIMS" -lt 1 ]]; then
+    echo "ERROR: n_sims must be a positive integer."
+    exit 2
+fi
+if ! [[ "$VERBOSE_EVERY" =~ ^[0-9]+$ ]] || [[ "$VERBOSE_EVERY" -lt 1 ]]; then
+    echo "ERROR: verbose_every must be a positive integer."
+    exit 2
+fi
+
+# Create setting identifier from active DGP/output parameters.
+# Format (facec): n<N>_K<K>_p<P>_<config>_<estimand>_<outcome>_<alloc>_tf<transform>_ht<het>_ss<shift>_kf<folds>_ate<flag>
+# Format (face):  n<N>_K<K>_p<P>_<config>_<estimand>_<outcome>_face_dev<dev>_nd<nd>_kf<folds>_ate<flag>
 # Must match main.R and main.sh::build_setting_id()
 if [[ -n "${SETTING_ID_FROM_FILE:-}" ]]; then
     SETTING_ID="${SETTING_ID_FROM_FILE}"
 elif [[ "$DGP_TYPE" == "face" ]]; then
-    SETTING_ID="n${arg1}_K${arg2}_p${arg3}_${arg4}_${ESTIMAND_TYPE}_${OUTCOME_TYPE}_face_dev${ATE_DEVIATION}_nd${N_DEVIATED_SITES}_kf${N_FOLDS}"
+    SETTING_ID="n${arg1}_K${arg2}_p${arg3}_${arg4}_${ESTIMAND_TYPE}_${OUTCOME_TYPE}_face_dev${ATE_DEVIATION}_nd${N_DEVIATED_SITES}_kf${N_FOLDS}_ate${ESTIMATE_ATE}"
 else
-    SETTING_ID="n${arg1}_K${arg2}_p${arg3}_${arg4}_${ESTIMAND_TYPE}_${OUTCOME_TYPE}_${SITE_ALLOCATION}_tf${TRANSFORM_TYPE}_ht${HETEROGENEITY_TYPE}_ss${SHIFT_STRENGTH}_kf${N_FOLDS}"
+    SETTING_ID="n${arg1}_K${arg2}_p${arg3}_${arg4}_${ESTIMAND_TYPE}_${OUTCOME_TYPE}_${SITE_ALLOCATION}_tf${TRANSFORM_TYPE}_ht${HETEROGENEITY_TYPE}_ss${SHIFT_STRENGTH}_kf${N_FOLDS}_ate${ESTIMATE_ATE}"
 fi
 
 # Set directories with setting-specific paths
@@ -182,6 +235,7 @@ echo "  n_sims:              ${N_SIMS}"
 echo "  use_lambda_cache:    ${USE_LAMBDA_CACHE}"
 echo "  verbose_every:       ${VERBOSE_EVERY}"
 echo "  parallel_strategy:   ${PARALLEL_STRATEGY}"
+echo "  estimate_ate:        ${ESTIMATE_ATE}"
 echo "  dgp_type:            ${DGP_TYPE}"
 if [[ "$DGP_TYPE" == "face" ]]; then
 echo "  ate_deviation:       ${ATE_DEVIATION}"
@@ -197,9 +251,9 @@ echo "Log File:      ${LOG_FILE}"
 echo "=============================================="
 
 # Run the R script in background to allow signal handling
-# Pass all 19 arguments
+# Pass all 20 arguments
 # --no-restore prevents loading stale .RData that masks updated package functions
-R CMD BATCH --no-restore "--args $arg1 $arg2 $arg3 $arg4 ${SLURM_JOB_ID} ${ESTIMAND_TYPE} ${SITE_ALLOCATION} ${TRANSFORM_TYPE} ${OUTCOME_TYPE} ${HETEROGENEITY_TYPE} ${SHIFT_STRENGTH} ${N_FOLDS} ${N_SIMS} ${DGP_TYPE} ${ATE_DEVIATION} ${N_DEVIATED_SITES} ${USE_LAMBDA_CACHE} ${VERBOSE_EVERY} ${PARALLEL_STRATEGY}" main.R ${LOG_FILE} &
+R CMD BATCH --no-restore "--args $arg1 $arg2 $arg3 $arg4 ${SLURM_JOB_ID} ${ESTIMAND_TYPE} ${SITE_ALLOCATION} ${TRANSFORM_TYPE} ${OUTCOME_TYPE} ${HETEROGENEITY_TYPE} ${SHIFT_STRENGTH} ${N_FOLDS} ${N_SIMS} ${DGP_TYPE} ${ATE_DEVIATION} ${N_DEVIATED_SITES} ${USE_LAMBDA_CACHE} ${VERBOSE_EVERY} ${PARALLEL_STRATEGY} ${ESTIMATE_ATE}" main.R ${LOG_FILE} &
 
 # Wait for R process to complete
 wait $!

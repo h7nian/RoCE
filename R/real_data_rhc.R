@@ -86,17 +86,30 @@ load_rhc_raw <- function() {
 
 # Median-impute continuous variables; mode-impute binary/categorical. Both are
 # computed on the cohort as a whole so that the site split is independent of
-# per-site sample sizes.
-.rhc_impute_continuous <- function(x) {
+# per-site sample sizes. Both helpers fail fast when no valid value is available
+# to use as a fill, since silently returning all-NA / unchanged data would
+# defer the failure to a far less informative location downstream.
+.rhc_impute_continuous <- function(x, var_name = "<unknown>") {
   if (!is.numeric(x)) x <- suppressWarnings(as.numeric(x))
   med <- stats::median(x, na.rm = TRUE)
+  if (is.na(med)) {
+    stop(sprintf(
+      ".rhc_impute_continuous: variable '%s' has no non-NA values (n=%d); cannot compute a median for imputation.",
+      var_name, length(x)
+    ), call. = FALSE)
+  }
   x[is.na(x)] <- med
   x
 }
 
-.rhc_impute_mode <- function(x) {
+.rhc_impute_mode <- function(x, var_name = "<unknown>") {
   tab <- sort(table(x, useNA = "no"), decreasing = TRUE)
-  if (length(tab) == 0L) return(x)
+  if (length(tab) == 0L) {
+    stop(sprintf(
+      ".rhc_impute_mode: variable '%s' has no non-NA values (n=%d); cannot determine a mode for imputation.",
+      var_name, length(x)
+    ), call. = FALSE)
+  }
   mode_val <- names(tab)[1L]
   x[is.na(x) | x == ""] <- mode_val
   x
@@ -238,24 +251,34 @@ build_rhc_cohort <- function(raw = NULL,
   categorical_vars <- setdiff(.RHC_CATEGORICAL_VARS, site_var)
 
   # ---- Covariates: continuous ----
-  X_cont <- lapply(raw[, continuous_vars, drop = FALSE], .rhc_impute_continuous)
+  X_cont <- setNames(
+    lapply(continuous_vars, function(v) .rhc_impute_continuous(raw[[v]], var_name = v)),
+    continuous_vars
+  )
   X_cont <- as.data.frame(X_cont, stringsAsFactors = FALSE)
 
   # ---- Covariates: binary indicators (coded 0/1 in source) ----
-  X_bin <- lapply(raw[, binary_vars, drop = FALSE], function(x) {
-    # Harrell's mirror stores these as 0/1 integers; be defensive anyway.
-    if (is.numeric(x)) return(.rhc_impute_continuous(x))
-    ch <- toupper(as.character(x))
-    as.integer(ch %in% c("1", "YES", "TRUE"))
-  })
+  X_bin <- setNames(
+    lapply(binary_vars, function(v) {
+      x <- raw[[v]]
+      # Harrell's mirror stores these as 0/1 integers; be defensive anyway.
+      if (is.numeric(x)) return(.rhc_impute_continuous(x, var_name = v))
+      ch <- toupper(as.character(x))
+      as.integer(ch %in% c("1", "YES", "TRUE"))
+    }),
+    binary_vars
+  )
   X_bin <- as.data.frame(X_bin, stringsAsFactors = FALSE)
 
   # ---- Covariates: categorical → one-hot ----
   if (length(categorical_vars) > 0L) {
-    cat_frame <- lapply(raw[, categorical_vars, drop = FALSE], function(x) {
-      x <- .rhc_impute_mode(as.character(x))
-      factor(x)
-    })
+    cat_frame <- setNames(
+      lapply(categorical_vars, function(v) {
+        x <- .rhc_impute_mode(as.character(raw[[v]]), var_name = v)
+        factor(x)
+      }),
+      categorical_vars
+    )
     cat_frame <- as.data.frame(cat_frame, stringsAsFactors = TRUE)
     # Use stats::model.matrix with a contrast that drops the reference level,
     # giving clean one-hot encodings without the implicit intercept column.
@@ -488,7 +511,7 @@ run_rhc_experiment <- function(K               = 5L,
                                seed            = 42L,
                                verbose         = TRUE,
                                n_cores         = NULL,
-                               M_tau_inference = 3.0,
+                               M_tau_inference = M_TAU_INFERENCE_RHC,
                                site_var        = .RHC_SITE_VAR,
                                site_recode     = NULL) {
   outcome <- match.arg(outcome)

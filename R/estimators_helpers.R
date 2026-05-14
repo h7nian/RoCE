@@ -15,14 +15,25 @@
 #   5. calculate_dr_weights, calculate_weighted_site_aipw
 
 #' Safe matrix inversion with ridge stabilization
-#' @param mat square matrix
-#' @param ridge ridge term to stabilize inversion
-#' @return inverse of mat with ridge regularization
+#'
+#' Inverts `mat + ridge * I` via `solve()`. If `solve()` errors (typically
+#' because the ridge-regularized matrix is still numerically singular), emits
+#' a warning carrying the original error message and falls back to
+#' `qr.solve()`. The fallback is logged so callers can detect and audit
+#' degraded inversions instead of silently absorbing them.
+#'
+#' @param mat square numeric matrix
+#' @param ridge non-negative ridge term to stabilize inversion
+#' @return inverse of `mat + ridge * I` (full or qr-based)
 safe_solve <- function(mat, ridge = RIDGE_DEFAULT) {
   mat_reg <- mat + diag(ridge, nrow(mat))
   tryCatch({
     solve(mat_reg)
   }, error = function(e) {
+    warning(sprintf(
+      "safe_solve: solve() failed on %dx%d ridge-regularized matrix (ridge=%g); falling back to qr.solve(). Original error: %s",
+      nrow(mat_reg), ncol(mat_reg), ridge, conditionMessage(e)
+    ), call. = FALSE)
     qr.solve(mat_reg)
   })
 }
@@ -177,15 +188,13 @@ calculate_aipw_influence <- function(y, a, x, m_hat, pi_hat, w = NULL, A_val = 1
 #'
 #' Shared helper that encapsulates the repeated pattern:
 #'   \code{cv.glmnet(x_train, y_train) -> predict(x_predict) -> clip}
-#' with automatic fold count selection and error handling.
+#' with automatic fold count selection and contextual errors.
 #'
 #' @param x_train Training covariate matrix (n_train x p).
 #' @param y_train Training response vector (length n_train).
 #' @param x_predict Prediction covariate matrix (n_predict x p). Columns must
 #'   match \code{x_train}; number of rows may differ.
 #' @param family glmnet family string (\code{"binomial"}, \code{"gaussian"}, etc.).
-#' @param fallback_value Numeric scalar: if fitting fails, return
-#'   \code{rep(fallback_value, nrow(x_predict))}. \code{NULL} returns \code{NA}s.
 #' @param clip_fn Optional unary function applied element-wise to the
 #'   predictions (e.g., \code{clip_propensity}, \code{clip_outcome_pred}).
 #' @param nlambda Number of lambda grid points for \code{cv.glmnet}.
@@ -199,7 +208,6 @@ calculate_aipw_influence <- function(y, a, x, m_hat, pi_hat, w = NULL, A_val = 1
 #' @keywords internal
 fit_glmnet_cv <- function(x_train, y_train, x_predict,
                           family = "binomial",
-                          fallback_value = NULL,
                           clip_fn = NULL,
                           nlambda = LAMBDA_GRID_SIZE_FAST,
                           min_per_fold = 10L,
@@ -221,12 +229,17 @@ fit_glmnet_cv <- function(x_train, y_train, x_predict,
                        s = "lambda.min", type = "response"))
   }, error = function(e) {
     fold_msg <- if (!is.null(fold_id)) sprintf(" on fold %d", fold_id) else ""
-    warning(sprintf("%s: %s model failed%s (%s); using small-sample fallback prediction.",
-                    caller_name, model_name, fold_msg, conditionMessage(e)))
-    rep(if (!is.null(fallback_value)) fallback_value else NA_real_, n_predict)
+    stop(sprintf("%s: %s model failed%s: %s",
+                 caller_name, model_name, fold_msg, conditionMessage(e)),
+         call. = FALSE)
   })
 
   if (!is.null(clip_fn)) pred <- clip_fn(pred)
+  if (length(pred) != n_predict || any(!is.finite(pred))) {
+    stop(sprintf("%s: %s model produced invalid predictions (expected length %d, got %d; non-finite=%d).",
+                 caller_name, model_name, n_predict, length(pred),
+                 sum(!is.finite(pred))), call. = FALSE)
+  }
   pred
 }
 
@@ -248,7 +261,7 @@ fit_glmnet_cv <- function(x_train, y_train, x_predict,
 #' @param n_folds Number of cross-fitting folds (NULL = data-driven)
 #' @param A_val Treatment value to estimate potential outcome for (default 1)
 #' @return List with estimate, variance, se, phi_i, V_ot, varphi_ot, n,
-#'         prop_scores_range, n_treated. Returns NULL on total failure.
+#'         prop_scores_range, n_treated. Throws an error on estimation failure.
 fit_site_aipw <- function(site_data, family = "binomial", use_rcal = FALSE,
                           use_crossfit = TRUE, n_folds = NULL, A_val = 1L) {
   glm_spec <- resolve_glm_family(family)
@@ -259,47 +272,35 @@ fit_site_aipw <- function(site_data, family = "binomial", use_rcal = FALSE,
   
   treated_idx <- which(tr == A_val)
   if (length(treated_idx) == 0) {
-    return(list(
-      estimate = 0, variance = 1, se = 1, n = n,
-      phi_i = rep(0, n), V_ot = 1,
-      varphi_ot = rep(0, n),
-      prop_scores_range = c(NA, NA), n_treated = 0
-    ))
+    stop(sprintf("fit_site_aipw: no observations with A_val=%d; AIPW estimator is not identifiable for this site.",
+                 A_val), call. = FALSE)
   }
   
   # Try cross-fitting first (preferred for valid inference)
   if (isTRUE(use_crossfit)) {
     n_cv_folds <- if (is.null(n_folds)) get_cv_fold_count(n) else n_folds
-    cf_res <- tryCatch({
-      estimate_target_only_crossfit(site_data, n_folds = n_cv_folds, family = family, A_val = A_val)
-    }, error = function(e) {
-      warning(sprintf("fit_site_aipw: cross-fitted estimation failed (%s), falling back to non-cross-fitted estimator.",
-                      conditionMessage(e)))
-      NULL
-    })
-    if (!is.null(cf_res)) {
-      phi_i <- if (!is.null(cf_res$varphi_ot)) {
-        cf_res$varphi_ot + cf_res$estimate
-      } else {
-        rep(cf_res$estimate, n)
-      }
-      V_ot <- mean((phi_i - cf_res$estimate)^2)
-      return(list(
-        estimate = as.numeric(cf_res$estimate),
-        variance = as.numeric(cf_res$variance),
-        se = as.numeric(sqrt(cf_res$variance)),
-        n = n,
-        phi_i = phi_i,
-        V_ot = V_ot,
-        varphi_ot = as.numeric(cf_res$varphi_ot),
-        prop_scores_range = if (!is.null(cf_res$prop_scores)) range(cf_res$prop_scores) else c(NA, NA),
-        n_treated = length(treated_idx)
-      ))
+    cf_res <- estimate_target_only_crossfit(site_data, n_folds = n_cv_folds,
+                                            family = family, A_val = A_val)
+    phi_i <- if (!is.null(cf_res$varphi_ot)) {
+      cf_res$varphi_ot + cf_res$estimate
+    } else {
+      rep(cf_res$estimate, n)
     }
+    V_ot <- mean((phi_i - cf_res$estimate)^2)
+    return(list(
+      estimate = as.numeric(cf_res$estimate),
+      variance = as.numeric(cf_res$variance),
+      se = as.numeric(sqrt(cf_res$variance)),
+      n = n,
+      phi_i = phi_i,
+      V_ot = V_ot,
+      varphi_ot = as.numeric(cf_res$varphi_ot),
+      prop_scores_range = if (!is.null(cf_res$prop_scores)) range(cf_res$prop_scores) else c(NA, NA),
+      n_treated = length(treated_idx)
+    ))
   }
   
-  # Non-cross-fitted estimation (fallback or when use_crossfit=FALSE)
-  tryCatch({
+  # Non-cross-fitted estimation, used only when explicitly requested.
     X_matrix <- as.matrix(x)
     if (any(is.na(X_matrix)) || any(is.na(tr)) || any(is.na(y))) {
       stop(sprintf("fit_site_aipw: Missing values detected — X has %d NA(s), A has %d NA(s), Y has %d NA(s). Remove or impute before calling.",
@@ -309,7 +310,11 @@ fit_site_aipw <- function(site_data, family = "binomial", use_rcal = FALSE,
     
     # Step 1: Fit propensity score model P(A=1|X)
     prop_scores <- NULL
-    if (use_rcal && requireNamespace("RCAL", quietly = TRUE)) {
+    if (use_rcal) {
+      if (!requireNamespace("RCAL", quietly = TRUE)) {
+        stop("fit_site_aipw: use_rcal=TRUE but package 'RCAL' is not available.",
+             call. = FALSE)
+      }
       prop_scores <- tryCatch({
         ps_result <- RCAL::glm.regu.cv(
           fold = n_cv_folds, y = as.numeric(tr), x = X_matrix,
@@ -317,10 +322,12 @@ fit_site_aipw <- function(site_data, family = "binomial", use_rcal = FALSE,
         )
         if (!is.null(ps_result$sel.fit) && !any(is.na(ps_result$sel.fit[, 1]))) {
           ps_result$sel.fit[, 1]
-        } else { NULL }
+        } else {
+          stop("RCAL propensity fit did not return finite selected fitted values.")
+        }
       }, error = function(e) {
-        warning(sprintf("fit_site_aipw: RCAL propensity score model failed (%s), falling back to glmnet.", conditionMessage(e)))
-        NULL
+        stop(sprintf("fit_site_aipw: RCAL propensity score model failed: %s",
+                     conditionMessage(e)), call. = FALSE)
       })
     }
     if (is.null(prop_scores)) {
@@ -339,7 +346,11 @@ fit_site_aipw <- function(site_data, family = "binomial", use_rcal = FALSE,
     n_cv_folds <- get_cv_fold_count(length(y_treated))
     
     m1_pred <- NULL
-    if (use_rcal && requireNamespace("RCAL", quietly = TRUE)) {
+    if (use_rcal) {
+      if (!requireNamespace("RCAL", quietly = TRUE)) {
+        stop("fit_site_aipw: use_rcal=TRUE but package 'RCAL' is not available.",
+             call. = FALSE)
+      }
       or_result <- tryCatch({
         loss_type <- switch(family,
           "binomial" = "ml",
@@ -351,15 +362,21 @@ fit_site_aipw <- function(site_data, family = "binomial", use_rcal = FALSE,
           loss = loss_type, nrho = LAMBDA_GRID_SIZE_FAST
         )
       }, error = function(e) {
-        warning(sprintf("fit_site_aipw: RCAL outcome regression failed (%s), falling back to glmnet.", conditionMessage(e)))
-        NULL
+        stop(sprintf("fit_site_aipw: RCAL outcome regression failed: %s",
+                     conditionMessage(e)), call. = FALSE)
       })
       if (!is.null(or_result) && !is.null(or_result$sel.bet)) {
         beta_coef <- or_result$sel.bet[, 1]
         X_design <- cbind(1, X_matrix)
         if (ncol(X_design) == length(beta_coef)) {
           m1_pred <- as.numeric(X_design %*% beta_coef)
+        } else {
+          stop(sprintf("fit_site_aipw: RCAL outcome coefficient length %d does not match design columns %d.",
+                       length(beta_coef), ncol(X_design)), call. = FALSE)
         }
+      } else {
+        stop("fit_site_aipw: RCAL outcome regression did not return selected coefficients.",
+             call. = FALSE)
       }
     }
     if (is.null(m1_pred)) {
@@ -388,7 +405,8 @@ fit_site_aipw <- function(site_data, family = "binomial", use_rcal = FALSE,
     phi_i <- calculate_aipw_pseudo_outcome(as.numeric(y), tr, m1_pred, p_a, A_val = A_val)
     
     if (any(is.na(phi_i)) || any(is.infinite(phi_i))) {
-      phi_i[is.na(phi_i) | is.infinite(phi_i)] <- mean(y[treated_idx])
+      stop(sprintf("fit_site_aipw: AIPW pseudo-outcome produced %d non-finite value(s).",
+                   sum(is.na(phi_i) | is.infinite(phi_i))), call. = FALSE)
     }
     
     estimate <- mean(phi_i)
@@ -407,23 +425,6 @@ fit_site_aipw <- function(site_data, family = "binomial", use_rcal = FALSE,
       prop_scores_range = range(prop_scores),
       n_treated = length(treated_idx)
     ))
-    
-  }, error = function(e) {
-    # Fallback: simple mean of treated outcomes
-    est <- mean(y[treated_idx])
-    centered <- y[treated_idx] - est
-    theta_hat <- mean(centered^2)
-    var_est <- theta_hat / length(treated_idx)
-    phi_i <- rep(est, n)
-    phi_i[treated_idx] <- y[treated_idx]
-    return(list(
-      estimate = est, variance = var_est, se = sqrt(var_est), n = n,
-      phi_i = phi_i, V_ot = theta_hat,
-      varphi_ot = phi_i - est,
-      prop_scores_range = c(NA, NA), n_treated = length(treated_idx),
-      error = paste("Estimation failed:", e$message)
-    ))
-  })
 }
 # =============================================================================
 # 4. HETEROGENEITY ESTIMATION HELPER
@@ -516,9 +517,8 @@ select_dr_lambda_cv <- function(Z_source, Z_target,
       MAX_ITER_DEFAULT, TOL_DEFAULT, 1L
     )
   }, error = function(e) {
-    warning(sprintf("DR lambda CV failed: %s. Using default lambda=%.4f.",
-                    conditionMessage(e), COMPARISON_DR_LAMBDA_DEFAULT))
-    list(best_lambda = COMPARISON_DR_LAMBDA_DEFAULT)
+    stop(sprintf("select_dr_lambda: DR lambda CV failed: %s",
+                 conditionMessage(e)), call. = FALSE)
   })
 
   return(cv_result$best_lambda)
@@ -547,17 +547,25 @@ calculate_dr_weights <- function(Z_source, Z_target, lambda = COMPARISON_DR_LAMB
   alpha <- tryCatch({
     fit_initial_density_ratio(Z_source, A_dummy, mean_phi_target, lambda = lambda)
   }, error = function(e) {
-    warning(sprintf("calculate_dr_weights: density ratio fitting failed (%s). Using uniform weights.",
-                    conditionMessage(e)))
-    rep(0, length(mean_phi_target))
+    stop(sprintf("calculate_dr_weights: density ratio fitting failed: %s",
+                 conditionMessage(e)), call. = FALSE)
   })
   
   Z_int <- cbind(1, Z_source)
   eta <- as.numeric(Z_int %*% alpha)
   w <- exp(-eta)
   w <- w / mean(w)
+  n_below <- sum(w < DR_WEIGHT_LOWER)
+  n_above <- sum(w > DR_WEIGHT_UPPER)
   w <- pmax(pmin(w, DR_WEIGHT_UPPER), DR_WEIGHT_LOWER)
-  
+  if (n_below + n_above > 0L) {
+    warning(sprintf(
+      "calculate_dr_weights: clipped %d of %d density-ratio weights to [%g, %g] (below: %d, above: %d). A large clipped fraction signals an unreliable density-ratio model (covariate-shift extrapolation).",
+      n_below + n_above, length(w), DR_WEIGHT_LOWER, DR_WEIGHT_UPPER,
+      n_below, n_above
+    ), call. = FALSE)
+  }
+
   return(w)
 }
 
@@ -581,7 +589,11 @@ calculate_weighted_site_aipw <- function(y, a, X, weights = NULL, family = "bino
   
   treated_idx <- which(a == A_val)
   if (length(treated_idx) < MIN_TREATED_FOR_MODEL) {
-    return(list(estimate = NA, variance = Inf, psi = rep(0, n)))
+    warning(sprintf(
+      "calculate_weighted_site_aipw: only %d unit(s) with A == %s out of n=%d (need >= %d for nuisance fitting). Returning NA estimate, Inf variance, and zero influence function.",
+      length(treated_idx), format(A_val), n, MIN_TREATED_FOR_MODEL
+    ), call. = FALSE)
+    return(list(estimate = NA_real_, variance = Inf, psi = rep(0, n)))
   }
   
   glm_spec <- resolve_glm_family(family)
@@ -589,7 +601,7 @@ calculate_weighted_site_aipw <- function(y, a, X, weights = NULL, family = "bino
   # Fit propensity score via shared helper
   pi_hat <- fit_glmnet_cv(
     x_train = X, y_train = a, x_predict = X,
-    family = "binomial", fallback_value = mean(a),
+    family = "binomial",
     clip_fn = clip_propensity,
     caller_name = "calculate_weighted_site_aipw", model_name = "PS"
   )
@@ -604,7 +616,7 @@ calculate_weighted_site_aipw <- function(y, a, X, weights = NULL, family = "bino
   
   m_hat <- fit_glmnet_cv(
     x_train = X_treated, y_train = y_treated, x_predict = X,
-    family = glm_spec$glmnet_family, fallback_value = mean(y_treated),
+    family = glm_spec$glmnet_family,
     clip_fn = function(pred) clip_outcome_pred(pred, family),
     caller_name = "calculate_weighted_site_aipw", model_name = "OR"
   )

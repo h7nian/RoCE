@@ -72,7 +72,8 @@ estimate_sample_size_weighted <- function(data_split, family = "binomial",
                                           use_rcal = FALSE, use_crossfit = TRUE,
                                           n_folds = NULL, A_val = 1L,
                                           site_fits = NULL) {
-  
+  validate_algorithm_inputs(data_split, family = family, A_val = A_val)
+
   sites <- names(data_split)
   site_estimates <- list()
   total_n <- 0
@@ -195,6 +196,7 @@ estimate_inverse_variance_weighted <- function(data_split, family = "binomial",
                                                use_rcal = FALSE, use_crossfit = TRUE,
                                                n_folds = NULL, A_val = 1L,
                                                site_fits = NULL) {
+  validate_algorithm_inputs(data_split, family = family, A_val = A_val)
 
   sites <- names(data_split)
   site_results <- list()
@@ -361,57 +363,45 @@ estimate_inverse_variance_weighted <- function(data_split, family = "binomial",
 #' @return estimate with variance
 #' @export
 estimate_tilted_aipw <- function(data_split, family = "binomial", A_val = 1L) {
+  validate_algorithm_inputs(data_split, family = family, A_val = A_val)
   glm_spec <- resolve_glm_family(family)
 
   target_data <- data_split[["t"]]
   source_sites <- setdiff(names(data_split), "t")
-  
-  # Target-only estimate using unpenalized MLE for strict variance derivation
+
+  # Target-only estimate using unpenalized MLE for strict variance derivation.
+  # validate_algorithm_inputs() already guarantees at least one A == A_val unit
+  # in every site, so the inline emptiness checks live in the validator now.
   target_x <- as.matrix(target_data$W_outcome)
   target_y <- as.numeric(target_data$Y)
   target_a <- as.numeric(target_data$A)
   target_n <- target_data$n
 
-  if (sum(target_a == A_val) == 0) {
-    target_est <- list(
-      estimate = 0,
-      variance = 1,
-      varphi_ot = rep(0, target_n)
+  # Fit nuisance models and compute AIPW estimate
+  target_est <- tryCatch({
+    ps_fit_t <- fit_logit_mle(target_x, target_a)
+    or_fit_t <- fit_glm_mle(target_x[target_a == A_val, , drop = FALSE],
+                            target_y[target_a == A_val],
+                            family = glm_spec$family)
+    eta_t <- as.numeric(cbind(1, target_x) %*% or_fit_t$coefficients)
+    m_hat_t <- switch(glm_spec$link,
+                      "logit" = 1 / (1 + exp(-eta_t)),
+                      "identity" = eta_t,
+                      eta_t)
+    m_hat_t <- clip_outcome_pred(m_hat_t, glm_spec$family)
+    target_aipw <- calculate_aipw_influence(target_y, target_a, target_x, m_hat_t,
+                                            ps_fit_t$fitted, A_val = A_val,
+                                            family = glm_spec$family)
+    list(
+      estimate = target_aipw$estimate,
+      variance = target_aipw$variance,
+      varphi_ot = target_aipw$influence
     )
-  } else {
-    # Fit nuisance models and compute AIPW estimate
-    target_est <- tryCatch({
-      ps_fit_t <- fit_logit_mle(target_x, target_a)
-      or_fit_t <- fit_glm_mle(target_x[target_a == A_val, , drop = FALSE],
-                              target_y[target_a == A_val],
-                              family = glm_spec$family)
-      eta_t <- as.numeric(cbind(1, target_x) %*% or_fit_t$coefficients)
-      m_hat_t <- switch(glm_spec$link,
-                        "logit" = 1 / (1 + exp(-eta_t)),
-                        "identity" = eta_t,
-                        eta_t)
-      m_hat_t <- clip_outcome_pred(m_hat_t, glm_spec$family)
-      target_aipw <- calculate_aipw_influence(target_y, target_a, target_x, m_hat_t,
-                                              ps_fit_t$fitted, A_val = A_val,
-                                              family = glm_spec$family)
-      list(
-        estimate = target_aipw$estimate,
-        variance = target_aipw$variance,
-        varphi_ot = target_aipw$influence
-      )
-    }, error = function(e) {
-      # Fallback when AIPW fitting fails
-      arm_y <- target_y[target_a == A_val]
-      arm_mean <- mean(arm_y)
-      centered <- arm_y - arm_mean
-      list(
-        estimate = arm_mean,
-        variance = mean(centered^2) / max(1, length(arm_y)),
-        varphi_ot = rep(0, target_n)
-      )
-    })
-  }
-  
+  }, error = function(e) {
+    stop(sprintf("estimate_tilted_aipw: target-site AIPW nuisance fitting failed: %s",
+                 conditionMessage(e)), call. = FALSE)
+  })
+
   # Calculate source site estimates with unpenalized MLE nuisances
   source_estimates <- list()
   Z_target <- as.matrix(target_data$Z_site)
@@ -427,16 +417,11 @@ estimate_tilted_aipw <- function(data_split, family = "binomial", A_val = 1L) {
     tr_source <- source_data$A
     x_source <- as.matrix(source_data$W_outcome)
     n_source <- source_data$n
-    
+
+    # validate_algorithm_inputs() ensures every source site has >= 1 unit with
+    # A == A_val, so treated_idx is guaranteed non-empty here.
     treated_idx <- which(tr_source == A_val)
-    if (length(treated_idx) == 0) {
-      source_estimates[[site]] <- list(
-        estimate = 0,
-        n = n_source
-      )
-      next
-    }
-    
+
     # Fit nuisance models and compute weighted AIPW estimate
     source_estimates[[site]] <- tryCatch({
       X_matrix <- as.matrix(x_source)
@@ -511,21 +496,8 @@ estimate_tilted_aipw <- function(data_split, family = "binomial", A_val = 1L) {
       )
       
     }, error = function(e) {
-      # Fallback to simple mean if MLE fails
-      treated_mean <- mean(y_source[treated_idx])
-      treated_prop <- max(length(treated_idx) / n_source, VARIANCE_MIN)
-      arm_indicator <- as.numeric(tr_source == A_val)
-      influence <- (arm_indicator / treated_prop) *
-        (as.numeric(y_source) - treated_mean)
-      variance <- mean(influence^2) / n_source
-      list(
-        estimate = treated_mean,
-        variance = variance,
-        varphi_ot = influence,
-        weights = rep(1, n_source),
-        n = n_source,
-        target_if_component = rep(0, target_n)
-      )
+      stop(sprintf("estimate_tilted_aipw: source site '%s' nuisance fitting failed: %s",
+                   site, conditionMessage(e)), call. = FALSE)
     })
   }
   
@@ -616,7 +588,8 @@ estimate_tilted_aipw <- function(data_split, family = "binomial", A_val = 1L) {
 #' @return List with estimate, variance, se
 #' @export
 estimate_federated_dr <- function(data_split, dr_lambda = NULL, A_val = 1L, family = "binomial") {
-  
+  validate_algorithm_inputs(data_split, family = family, A_val = A_val)
+
   target_data <- data_split[["t"]]
   source_sites <- setdiff(names(data_split), "t")
   Z_target <- as.matrix(target_data$Z_site)
@@ -752,7 +725,8 @@ estimate_federated_dr <- function(data_split, dr_lambda = NULL, A_val = 1L, fami
 #' @return List with estimate, variance, se
 #' @export
 estimate_pooled_dr <- function(data_split, dr_lambda = NULL, A_val = 1L, family = "binomial") {
-  
+  validate_algorithm_inputs(data_split, family = family, A_val = A_val)
+
   target_data <- data_split[["t"]]
   source_sites <- setdiff(names(data_split), "t")
   Z_target <- as.matrix(target_data$Z_site)
@@ -884,62 +858,46 @@ estimate_pooled_dr <- function(data_split, dr_lambda = NULL, A_val = 1L, family 
 run_all_comparisons <- function(data_split, use_rcal = FALSE,
                                 use_crossfit = TRUE, n_folds = NULL,
                                 family = "binomial", A_val = 1L) {
-  
-  # Each method is wrapped in tryCatch to prevent a single failure from
-  # killing all comparison results.
-  safe_run <- function(method_name, expr) {
-    tryCatch(expr, error = function(e) {
-      warning(sprintf("Comparison method '%s' failed: %s", method_name,
-                      conditionMessage(e)))
-      NULL
-    })
-  }
 
-  precomputed_site_fits <- tryCatch({
-    .fit_site_aipw_all_sites(
-      data_split = data_split,
-      family = family,
-      use_rcal = use_rcal,
-      use_crossfit = use_crossfit,
-      n_folds = n_folds,
-      A_val = A_val
-    )
-  }, error = function(e) {
-    warning(sprintf("run_all_comparisons: shared site AIPW precompute failed (%s). Falling back to per-method fitting.",
-                    conditionMessage(e)))
-    NULL
-  })
-  
+  precomputed_site_fits <- .fit_site_aipw_all_sites(
+    data_split = data_split,
+    family = family,
+    use_rcal = use_rcal,
+    use_crossfit = use_crossfit,
+    n_folds = n_folds,
+    A_val = A_val
+  )
+
   results <- list(
     # Target-only (benchmark)
-    target_only = safe_run("target_only",
-      estimate_target_only(data_split, family, use_rcal = use_rcal,
-                           use_crossfit = use_crossfit, n_folds = n_folds, A_val = A_val)),
-    
+    target_only = estimate_target_only(
+      data_split, family, use_rcal = use_rcal,
+      use_crossfit = use_crossfit, n_folds = n_folds, A_val = A_val
+    ),
+
     # Naive methods (may have bias due to different estimands)
-    sample_size = safe_run("sample_size",
-      estimate_sample_size_weighted(data_split, family, use_rcal = use_rcal,
-                                    use_crossfit = use_crossfit, n_folds = n_folds,
-                                    A_val = A_val, site_fits = precomputed_site_fits)),
-    inverse_variance = safe_run("inverse_variance",
-      estimate_inverse_variance_weighted(data_split, family, use_rcal = use_rcal,
-                                          use_crossfit = use_crossfit, n_folds = n_folds,
-                                          A_val = A_val, site_fits = precomputed_site_fits)),
-    
+    sample_size = estimate_sample_size_weighted(
+      data_split, family, use_rcal = use_rcal,
+      use_crossfit = use_crossfit, n_folds = n_folds,
+      A_val = A_val, site_fits = precomputed_site_fits
+    ),
+    inverse_variance = estimate_inverse_variance_weighted(
+      data_split, family, use_rcal = use_rcal,
+      use_crossfit = use_crossfit, n_folds = n_folds,
+      A_val = A_val, site_fits = precomputed_site_fits
+    ),
+
     # DR-corrected methods (theoretically correct, lambda selected via CV)
-    federated_dr = safe_run("federated_dr",
-      estimate_federated_dr(data_split, dr_lambda = NULL, A_val = A_val, family = family)),
-    pooled_dr = safe_run("pooled_dr",
-      estimate_pooled_dr(data_split, dr_lambda = NULL, A_val = A_val, family = family)),
-    
+    federated_dr = estimate_federated_dr(
+      data_split, dr_lambda = NULL, A_val = A_val, family = family
+    ),
+    pooled_dr = estimate_pooled_dr(
+      data_split, dr_lambda = NULL, A_val = A_val, family = family
+    ),
+
     # Tilted AIPW
-    tilted_aipw = safe_run("tilted_aipw",
-      estimate_tilted_aipw(data_split, family, A_val = A_val))
+    tilted_aipw = estimate_tilted_aipw(data_split, family, A_val = A_val)
   )
-  
-  # Remove NULL entries (failed methods)
-  results <- Filter(Negate(is.null), results)
-  
+
   return(results)
 }
-

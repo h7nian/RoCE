@@ -106,9 +106,12 @@ phi_fun <- switch(
 # ============================================================================
 # Load FACEC Package (mirrors main.R)
 # ============================================================================
-if (requireNamespace("FACEC", quietly = TRUE)) {
+# quietly = FALSE so the actual loadNamespace error (e.g. ABI mismatch from a
+# wrong R module version) surfaces in the log instead of silently falling to
+# the misleading "neither found" branch.
+if (requireNamespace("FACEC", quietly = FALSE)) {
   library(FACEC)
-} else if (requireNamespace("devtools", quietly = TRUE)) {
+} else if (requireNamespace("devtools", quietly = FALSE)) {
   cat("FACEC not installed; loading via devtools::load_all()...\n")
   devtools::load_all(".")
 } else {

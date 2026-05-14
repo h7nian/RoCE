@@ -5,6 +5,7 @@
 #include "numerical_constants.hpp"
 #include <algorithm>
 #include <numeric>  // for std::iota
+#include <stdexcept>
 
 // ============================================================================
 // Shared utility functions used by density_ratio.cpp and outcome_model.cpp
@@ -286,6 +287,12 @@ inline void density_ratio_cd_update(VectorXd& gamma, std::vector<bool>& active,
     int p = gamma.size();
     int n_train = X_train.rows();
 
+    if (mean_grad_psi.size() != p) {
+        throw std::runtime_error(
+            "density_ratio_cd_update: mean_grad_psi length must match gamma length."
+        );
+    }
+
     for (int iter = 0; iter < cv_max_iter; iter++) {
         VectorXd gamma_old = gamma;
 
@@ -306,7 +313,7 @@ inline void density_ratio_cd_update(VectorXd& gamma, std::vector<bool>& active,
             // Compute gradient and Hessian-diagonal approximation for coordinate j
             // grad_j = mean_grad_psi(j) - E_s[ X_j * exp(-φ^T γ) * ψ' ] / n_total
             // hess_j = E_s[ X_j^2 * exp(-φ^T γ) * ψ' ] / n_total  (used for Newton-like step)
-            double grad_j = (j < mean_grad_psi.size()) ? mean_grad_psi(j) : 0.0;
+            double grad_j = mean_grad_psi(j);
             StableAccumulator grad_acc;
             StableAccumulator hess_acc;
 

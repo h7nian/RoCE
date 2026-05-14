@@ -271,7 +271,10 @@ compute_lambda_max_initial_dr <- function(Z_site, A, mean_phi, A_val = 1L) {
   n_total <- nrow(Z_site)
   treated_idx <- which(A == A_val)
   n_treated <- length(treated_idx)
-  if (n_treated == 0) return(1)  # fallback
+  if (n_treated == 0) {
+    stop(sprintf("compute_lambda_max_initial_dr: no observations with A_val=%d.",
+                 A_val), call. = FALSE)
+  }
 
   # mean_phi already includes intercept at position 1
   # X_treated with intercept prepended, shape (n_treated, p+1)
@@ -346,7 +349,8 @@ compute_lambda_max_refined_dr <- function(Z_site, A, mean_grad_psi, alpha_init,
                          eta_alpha)
       1.0 / (eta_safe^2)                              # inverse: |h'(η)| = 1/η²
     },
-    rep(1.0, length(eta_alpha))                       # fallback: identity
+    stop(sprintf("compute_lambda_max_calibrated_dr: unsupported link_int=%s.",
+                 link_int), call. = FALSE)
   )
 
   # grad_j = mean_grad_psi[j] - sum(X_treated[, j] * psi_prime) / n_total
@@ -402,7 +406,7 @@ compute_lambda_max_outcome <- function(W_outcome, Y, A, gamma_s,
     g_val <- pmin(pmax(g_val, -M_tau), M_tau)
   }
   weights <- exp(-g_val)
-  weights <- pmin(pmax(weights, 1e-10), 1e10)
+  weights <- pmin(pmax(weights, WEIGHT_MIN), WEIGHT_MAX)
 
   # h(0) = ψ'(0) for the GLM at β = 0: the response (mean) function, not its derivative.
   # The GLM loss gradient is ∇_j ℓ|_{β=0} = (1/n) Σ w_i (h(0) - Y_i) X_{ij}

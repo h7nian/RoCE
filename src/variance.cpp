@@ -10,10 +10,85 @@
 
 #include "optimization.hpp"
 #include "cv_utils.hpp"
+#include <limits>
 
 // Forward declaration for predict_glm_cpp (defined in outcome_model.cpp)
 VectorXd predict_glm_cpp(const MatrixXd& W_outcome, const VectorXd& beta,
                         int family_int, int link_int);
+
+namespace {
+
+struct ClipDiagnostics {
+    int n_obs = 0;
+    int weight_min_clipped = 0;
+    int weight_max_clipped = 0;
+    int ratio_min_clipped = 0;
+    int ratio_max_clipped = 0;
+    double max_abs_logit = 0.0;
+    double max_raw_weight = 0.0;
+};
+
+VectorXd inference_density_ratios(const VectorXd& density_logits,
+                                  double M_tau,
+                                  ClipDiagnostics& diag) {
+    int n = density_logits.size();
+    diag.n_obs = n;
+    VectorXd density_ratios(n);
+
+    for (int i = 0; i < n; i++) {
+        double raw_logit = density_logits(i);
+        diag.max_abs_logit = std::max(diag.max_abs_logit, std::abs(raw_logit));
+
+        double clipped_logit = truncation_function(raw_logit, M_tau);
+        double raw_weight = std::exp(-clipped_logit);
+        if (std::isfinite(raw_weight)) {
+            diag.max_raw_weight = std::max(diag.max_raw_weight, raw_weight);
+        } else {
+            diag.max_raw_weight = std::numeric_limits<double>::infinity();
+        }
+
+        if (!std::isfinite(raw_weight) || raw_weight > NumericalConstants::WEIGHT_MAX) {
+            diag.weight_max_clipped++;
+            density_ratios(i) = NumericalConstants::WEIGHT_MAX;
+        } else if (raw_weight < NumericalConstants::WEIGHT_MIN) {
+            diag.weight_min_clipped++;
+            density_ratios(i) = NumericalConstants::WEIGHT_MIN;
+        } else {
+            density_ratios(i) = raw_weight;
+        }
+    }
+
+    return density_ratios;
+}
+
+double clipped_ratio_term(double ratio_term, ClipDiagnostics& diag) {
+    if (ratio_term < NumericalConstants::RATIO_CLIP_MIN) {
+        diag.ratio_min_clipped++;
+        return NumericalConstants::RATIO_CLIP_MIN;
+    }
+    if (ratio_term > NumericalConstants::RATIO_CLIP_MAX) {
+        diag.ratio_max_clipped++;
+        return NumericalConstants::RATIO_CLIP_MAX;
+    }
+    return ratio_term;
+}
+
+List make_clip_diagnostics(const ClipDiagnostics& diag) {
+    bool any_clipped = (diag.weight_min_clipped + diag.weight_max_clipped +
+                        diag.ratio_min_clipped + diag.ratio_max_clipped) > 0;
+    return List::create(
+        Named("n_obs") = diag.n_obs,
+        Named("weight_min_clipped") = diag.weight_min_clipped,
+        Named("weight_max_clipped") = diag.weight_max_clipped,
+        Named("ratio_min_clipped") = diag.ratio_min_clipped,
+        Named("ratio_max_clipped") = diag.ratio_max_clipped,
+        Named("max_abs_logit") = diag.max_abs_logit,
+        Named("max_raw_weight") = diag.max_raw_weight,
+        Named("any_clipped") = any_clipped
+    );
+}
+
+} // namespace
 
 // C++ version of correction term calculation
 // Supports separate Z_site (for density ratio) and W_outcome (for predictions)
@@ -28,6 +103,10 @@ List calculate_correction_term_cpp(const MatrixXd& Z_site, const VectorXd& A_sou
                                   int family_int, int link_int,
                                   int A_val) {
     
+    if (A_val != 0 && A_val != 1) {
+        throw std::runtime_error("calculate_correction_term_cpp: A_val must be 0 or 1.");
+    }
+
     int n = Z_site.rows();
     
     if (W_outcome.rows() != n || W_outcome.cols() <= 0) {
@@ -40,28 +119,22 @@ List calculate_correction_term_cpp(const MatrixXd& Z_site, const VectorXd& A_sou
     // Calculate density ratios using Z_site and gamma_s
     VectorXd density_logits = Z_site_int * gamma_s;
     
-    // Clip density_logits using M_tau for consistent truncation with variance
-    VectorXd clipped_logits = density_logits.cwiseMax(-M_tau).cwiseMin(M_tau);
-    
-    VectorXd density_ratios = (-clipped_logits.array()).exp();
-    
-    // Ensure density ratios are within reasonable bounds
-    density_ratios = density_ratios.cwiseMax(NumericalConstants::WEIGHT_MIN).cwiseMin(NumericalConstants::WEIGHT_MAX);
+    ClipDiagnostics clip_diag;
+    VectorXd density_ratios = inference_density_ratios(density_logits, M_tau, clip_diag);
     
     // Calculate outcome predictions using W_outcome
     VectorXd outcome_preds = predict_glm_cpp(W_outcome, alpha_ts, family_int, link_int);
     
     // Calculate correction components with numerical stability
-    // Following eq:if_source_component / eq:dr_estimator in main.tex: w(X) = A / exp(φ(X)^T γ)
-    // Since density_ratios = exp(-g), we have: A / exp(g) = A * exp(-g) = A * density_ratios
+    // Following eq:if_source_component / eq:dr_estimator in main.tex:
+    // w_a(X) = I(A=a) / exp(φ(X)^T γ).
+    // Since density_ratios = exp(-g), the A_i == A_val branch multiplies by exp(-g).
     VectorXd correction_components(A_source.size());
     for (int i = 0; i < A_source.size(); i++) {
         if (A_source(i) == A_val) {
             // density_ratios = exp(-g), and this branch enforces A_i == A_val,
             // so ratio term is exactly 1/exp(g) for included units.
-            double ratio_term = density_ratios(i);
-            // Clip the ratio term to prevent extreme values
-            ratio_term = std::max(NumericalConstants::RATIO_CLIP_MIN, std::min(NumericalConstants::RATIO_CLIP_MAX, ratio_term));
+            double ratio_term = clipped_ratio_term(density_ratios(i), clip_diag);
             correction_components(i) = ratio_term * (Y_source(i) - outcome_preds(i));
         } else {
             correction_components(i) = 0.0;
@@ -72,7 +145,8 @@ List calculate_correction_term_cpp(const MatrixXd& Z_site, const VectorXd& A_sou
     double delta_ts = correction_components.mean();
     
     return List::create(Named("delta_ts") = delta_ts,
-                       Named("correction_components") = correction_components);
+                       Named("correction_components") = correction_components,
+                       Named("clip_diagnostics") = make_clip_diagnostics(clip_diag));
 }
 
 // C++ version of source variance calculation
@@ -88,6 +162,10 @@ List calculate_source_variance_cpp(const MatrixXd& Z_site, const VectorXd& A_sou
                                   int family_int, int link_int,
                                   int A_val) {
     
+    if (A_val != 0 && A_val != 1) {
+        throw std::runtime_error("calculate_source_variance_cpp: A_val must be 0 or 1.");
+    }
+
     int n = Z_site.rows();
     
     if (W_outcome.rows() != n || W_outcome.cols() <= 0) {
@@ -100,28 +178,21 @@ List calculate_source_variance_cpp(const MatrixXd& Z_site, const VectorXd& A_sou
     // Calculate density ratios using Z_site and gamma_s
     VectorXd density_logits = Z_site_int * gamma_s;
     
-    // Clip density_logits using M_tau for consistent truncation with training
-    VectorXd clipped_logits = density_logits.cwiseMax(-M_tau).cwiseMin(M_tau);
-    
-    VectorXd density_ratios = (-clipped_logits.array()).exp();
-    
-    // Ensure density ratios are within reasonable bounds
-    density_ratios = density_ratios.cwiseMax(NumericalConstants::WEIGHT_MIN).cwiseMin(NumericalConstants::WEIGHT_MAX);
+    ClipDiagnostics clip_diag;
+    VectorXd density_ratios = inference_density_ratios(density_logits, M_tau, clip_diag);
     
     // Calculate outcome predictions using W_outcome
     VectorXd outcome_preds = predict_glm_cpp(W_outcome, alpha_ts, family_int, link_int);
     
     // Calculate influence function components with numerical stability
-    // Following eq:if_source_component / eq:dr_estimator in main.tex: ξ̂_{t,s_j,i} = (A_i / exp(g)) * (Y_i - ψ(X_i)) - δ̂
-    // Since density_ratios = exp(-g), we have: A / exp(g) = A * exp(-g) = A * density_ratios
+    // Following eq:if_source_component / eq:dr_estimator in main.tex:
+    // ξ̂_{t,s_j,i} = I(A_i=a) exp(-g_i) * (Y_i - ψ(X_i)) - δ̂.
     VectorXd xi_components(A_source.size());
     for (int i = 0; i < A_source.size(); i++) {
         if (A_source(i) == A_val) {
             // density_ratios = exp(-g), and this branch enforces A_i == A_val,
             // so ratio term is exactly 1/exp(g) for included units.
-            double ratio_term = density_ratios(i);
-            // Clip the ratio term to prevent extreme values
-            ratio_term = std::max(NumericalConstants::RATIO_CLIP_MIN, std::min(NumericalConstants::RATIO_CLIP_MAX, ratio_term));
+            double ratio_term = clipped_ratio_term(density_ratios(i), clip_diag);
             xi_components(i) = ratio_term * (Y_source(i) - outcome_preds(i)) - delta_ts;
         } else {
             xi_components(i) = -delta_ts;
@@ -136,7 +207,8 @@ List calculate_source_variance_cpp(const MatrixXd& Z_site, const VectorXd& A_sou
     V_s = std::max(V_s, NumericalConstants::VAR_MIN);
     
     return List::create(Named("V_s") = V_s,
-                       Named("xi_components") = xi_components);
+                       Named("xi_components") = xi_components,
+                       Named("clip_diagnostics") = make_clip_diagnostics(clip_diag));
 }
 
 // C++ version of target variance calculation

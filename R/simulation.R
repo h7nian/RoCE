@@ -9,10 +9,50 @@
 #   2. summarize_results - Aggregate simulation results into summary statistics
 #   3. run_simulation_study - Full study orchestration with checkpointing
 
+.bind_sim_result_list <- function(rows) {
+  if (length(rows) == 0) {
+    return(data.frame())
+  }
+  keep <- vapply(rows, function(x) is.data.frame(x) && nrow(x) > 0,
+                 logical(1))
+  if (!any(keep)) {
+    return(data.frame())
+  }
+  do.call(rbind, rows[keep])
+}
+
+.abort_with_context <- function(fmt, ...) {
+  stop(sprintf(fmt, ...), call. = FALSE)
+}
+
+.warn_with_context <- function(fmt, ...) {
+  warning(sprintf(fmt, ...), call. = FALSE)
+}
+
+.require_method_result <- function(results, method_name, required = c("estimate", "se")) {
+  method_res <- results[[method_name]]
+  if (is.null(method_res)) {
+    .abort_with_context(
+      "Method '%s' did not return a result. Check earlier warnings from its fitting routine.",
+      method_name
+    )
+  }
+  missing <- required[vapply(required, function(nm) is.null(method_res[[nm]]), logical(1))]
+  if (length(missing) > 0L) {
+    .abort_with_context(
+      "Method '%s' returned an incomplete result; missing field(s): %s.",
+      method_name, paste(missing, collapse = ", ")
+    )
+  }
+  method_res
+}
+
 #' Run a single Monte Carlo simulation replicate
 #'
 #' Generates data, runs the requested estimators, and returns a data frame
-#' of per-method results (estimate, SE, bias, coverage, CI width).
+#' of per-method results (estimate, SE, bias, coverage, CI width).  Core method
+#' failures are fail-fast: they raise an error with the current simulation and
+#' method context instead of being converted to partial result rows.
 #'
 #' @param sim_id Integer simulation replicate ID (also used as RNG seed)
 #' @param n_total Integer total sample size across all sites
@@ -75,14 +115,14 @@ run_single_simulation <- function(sim_id, n_total = 1000, K = 3, p = 4,
                                  dgp_type = "facec",
                                  ate_deviation    = 0.0,
                                  n_deviated_sites = 0L) {
-  
+
   # Track timing for each stage
   sim_start_time <- Sys.time()
   stage_times <- list()
-  
+
   log_info(verbose, "\n[%s] Simulation %d (config=%s, dgp=%s, heterogeneity=%s)\n",
            format(Sys.time(), "%H:%M:%S"), sim_id, config, dgp_type, heterogeneity_type)
-  
+
   # Generate data
   data_gen_start <- Sys.time()
   set.seed(sim_id)
@@ -95,32 +135,33 @@ run_single_simulation <- function(sim_id, n_total = 1000, K = 3, p = 4,
                                    shift_strength   = shift_strength,
                                    dgp_type         = dgp_type,
                                    ate_deviation    = ate_deviation,
-                                   n_deviated_sites = as.integer(n_deviated_sites))
+                                   n_deviated_sites = as.integer(n_deviated_sites),
+                                   warn_ignored     = FALSE)
   data_split <- split_data_by_site(data)
   stage_times$data_gen <- as.numeric(difftime(Sys.time(), data_gen_start, units = "secs"))
-  
-  log_info(verbose, "    Data generated in %.2fs (n_t=%d, n_s=%s)\n", 
+
+  log_info(verbose, "    Data generated in %.2fs (n_t=%d, n_s=%s)\n",
            stage_times$data_gen, data_split$t$n,
            paste(sapply(setdiff(names(data_split), "t"), function(s) data_split[[s]]$n), collapse=","))
-  
+
   # Get true potential outcome from generated data
   # The interpretation depends on estimand_type:
   #   - "sample": sample-specific E_n[Y(1)] (varies across simulations)
   #   - "superpopulation": fixed E[Y(1)] (same for all simulations)
   true_potential_outcome <- data$mu1_true
-  
+
   # Find target sample indices (for logging)
   target_idx <- which(data$R == "t")
 
   if (estimand_type == "superpopulation") {
-    log_info(verbose, "  True potential outcome (superpop): %.4f, Sample-specific: %.4f\n", 
+    log_info(verbose, "  True potential outcome (superpop): %.4f, Sample-specific: %.4f\n",
              true_potential_outcome, data$mu1_realized)
   } else {
     log_info(verbose, "  True potential outcome (sample): %.4f\n", true_potential_outcome)
   }
-  log_info(verbose, "  Target sample size: %d, proportion: %.3f\n", 
+  log_info(verbose, "  Target sample size: %d, proportion: %.3f\n",
            length(target_idx), length(target_idx) / n_total)
-  
+
   # Initialize results as a list (avoid O(n²) rbind-in-loop)
   results_list <- list()
   crossfit_mu1_results <- list()
@@ -128,7 +169,7 @@ run_single_simulation <- function(sim_id, n_total = 1000, K = 3, p = 4,
   # Precompute fold partition once and reuse across one/two-round and ATE reruns
   precomputed_folds <- build_crossfit_folds(data_split, n_folds)
   target_only_ps_cache <- new.env(hash = TRUE, parent = emptyenv())
-  
+
   # Map outcome_type to GLM family for cross-fitting.
   # Use data$outcome_type rather than the argument so that the face DGP
   # (which always produces continuous outcomes) is handled correctly even when
@@ -142,84 +183,110 @@ run_single_simulation <- function(sim_id, n_total = 1000, K = 3, p = 4,
     stop(sprintf("Unsupported GLM family '%s'. Supported families: %s",
                  family, paste(VALID_GLM_FAMILIES, collapse = ", ")))
   }
-  
+
   # Run one-round cross-fitting algorithm (if requested)
   if ("one_round_crossfit" %in% methods) {
     one_round_start <- Sys.time()
     log_info(verbose, "    Running one-round cross-fitting (nlambda=%d)...\n", nlambda_init)
-    tryCatch({
-      one_round_cf_res <- run_crossfit(data_split, n_folds = n_folds,
-                  communication_mode = "one_round",
-                  lambda_selection = "cv",
-                  verbose = FALSE, n_cores = n_cores_internal,
-                  nlambda_init = nlambda_init,
-                  family = family,
-                  use_lambda_cache = use_lambda_cache,
-                  precomputed_folds = precomputed_folds,
-                  target_only_ps_cache = target_only_ps_cache)
-      stage_times$one_round <- as.numeric(difftime(Sys.time(), one_round_start, units = "secs"))
-      
-      log_info(verbose, "    [OK] One-round done in %.2fs: est=%.4f, bias=%.4f, SE=%.4f\n", 
-               stage_times$one_round,
-               one_round_cf_res$estimate, one_round_cf_res$estimate - true_potential_outcome,
-               one_round_cf_res$se)
-      crossfit_mu1_results[["one_round_crossfit"]] <- one_round_cf_res
-      
-      results_list[[length(results_list) + 1]] <- data.frame(
-        sim_id = sim_id,
-        method = "one_round_crossfit",
-        estimate = one_round_cf_res$estimate,
-        se = one_round_cf_res$se,
-        bias = one_round_cf_res$estimate - true_potential_outcome,
-        coverage = (true_potential_outcome >= one_round_cf_res$ci_lower) &
-                  (true_potential_outcome <= one_round_cf_res$ci_upper),
-        ci_width = one_round_cf_res$ci_upper - one_round_cf_res$ci_lower,
-        n_total = n_total,
-        K = K,
-        p = p,
-        config = config,
-        heterogeneity_type = heterogeneity_type,
-        estimand_type = estimand_type,
-        stringsAsFactors = FALSE
-      )
-    }, error = function(e) {
-      stage_times$one_round <- as.numeric(difftime(Sys.time(), one_round_start, units = "secs"))
-      log_info(verbose, "    [!!] One-round failed (%.2fs): %s\n", stage_times$one_round, e$message)
-    })
+    one_round_cf_res <- run_crossfit(data_split, n_folds = n_folds,
+                communication_mode = "one_round",
+                lambda_selection = "cv",
+                verbose = FALSE, n_cores = n_cores_internal,
+                nlambda_init = nlambda_init,
+                family = family,
+                use_lambda_cache = use_lambda_cache,
+                precomputed_folds = precomputed_folds,
+                target_only_ps_cache = target_only_ps_cache)
+    stage_times$one_round <- as.numeric(difftime(Sys.time(), one_round_start, units = "secs"))
+
+    log_info(verbose, "    [OK] One-round done in %.2fs: est=%.4f, bias=%.4f, SE=%.4f\n",
+             stage_times$one_round,
+             one_round_cf_res$estimate, one_round_cf_res$estimate - true_potential_outcome,
+             one_round_cf_res$se)
+    crossfit_mu1_results[["one_round_crossfit"]] <- one_round_cf_res
+
+    results_list[[length(results_list) + 1]] <- data.frame(
+      sim_id = sim_id,
+      method = "one_round_crossfit",
+      estimate = one_round_cf_res$estimate,
+      se = one_round_cf_res$se,
+      bias = one_round_cf_res$estimate - true_potential_outcome,
+      coverage = (true_potential_outcome >= one_round_cf_res$ci_lower) &
+                (true_potential_outcome <= one_round_cf_res$ci_upper),
+      ci_width = one_round_cf_res$ci_upper - one_round_cf_res$ci_lower,
+      n_total = n_total,
+      K = K,
+      p = p,
+      config = config,
+      heterogeneity_type = heterogeneity_type,
+      estimand_type = estimand_type,
+      stringsAsFactors = FALSE
+    )
   }
-  
+
   # Run two-round cross-fitting algorithm
   # Note: n_folds >= 3 is required for proper two-level cross-fitting calibration
   if ("two_round_crossfit" %in% methods) {
     two_round_start <- Sys.time()
     log_info(verbose, "    Running two-round cross-fitting (nlambda=%d)...\n", nlambda_init)
-    tryCatch({
-      two_round_cf_res <- run_crossfit(data_split, n_folds = n_folds,
-                  communication_mode = "two_round",
-                  lambda_selection = "cv",
-                  verbose = FALSE, n_cores = n_cores_internal,
-                  nlambda_init = nlambda_init,
-                  family = family,
-                  use_lambda_cache = use_lambda_cache,
-                  precomputed_folds = precomputed_folds,
-                  target_only_ps_cache = target_only_ps_cache)
-      stage_times$two_round <- as.numeric(difftime(Sys.time(), two_round_start, units = "secs"))
-      
-      log_info(verbose, "    [OK] Two-round done in %.2fs: est=%.4f, bias=%.4f, SE=%.4f\n", 
-               stage_times$two_round,
-               two_round_cf_res$estimate, two_round_cf_res$estimate - true_potential_outcome,
-               two_round_cf_res$se)
-      crossfit_mu1_results[["two_round_crossfit"]] <- two_round_cf_res
-      
+    two_round_cf_res <- run_crossfit(data_split, n_folds = n_folds,
+                communication_mode = "two_round",
+                lambda_selection = "cv",
+                verbose = FALSE, n_cores = n_cores_internal,
+                nlambda_init = nlambda_init,
+                family = family,
+                use_lambda_cache = use_lambda_cache,
+                precomputed_folds = precomputed_folds,
+                target_only_ps_cache = target_only_ps_cache)
+    stage_times$two_round <- as.numeric(difftime(Sys.time(), two_round_start, units = "secs"))
+
+    log_info(verbose, "    [OK] Two-round done in %.2fs: est=%.4f, bias=%.4f, SE=%.4f\n",
+             stage_times$two_round,
+             two_round_cf_res$estimate, two_round_cf_res$estimate - true_potential_outcome,
+             two_round_cf_res$se)
+    crossfit_mu1_results[["two_round_crossfit"]] <- two_round_cf_res
+
+    results_list[[length(results_list) + 1]] <- data.frame(
+      sim_id = sim_id,
+      method = "two_round_crossfit",
+      estimate = two_round_cf_res$estimate,
+      se = two_round_cf_res$se,
+      bias = two_round_cf_res$estimate - true_potential_outcome,
+      coverage = (true_potential_outcome >= two_round_cf_res$ci_lower) &
+                (true_potential_outcome <= two_round_cf_res$ci_upper),
+      ci_width = two_round_cf_res$ci_upper - two_round_cf_res$ci_lower,
+      n_total = n_total,
+      K = K,
+      p = p,
+      config = config,
+      heterogeneity_type = heterogeneity_type,
+      estimand_type = estimand_type,
+      stringsAsFactors = FALSE
+    )
+  }
+
+  # Run comparison methods
+  comp_start <- Sys.time()
+  log_info(verbose, "    Running comparison methods...\n")
+  comparison_results <- run_all_comparisons(data_split, family = family)
+  stage_times$comparison <- as.numeric(difftime(Sys.time(), comp_start, units = "secs"))
+
+  for (method_name in c("target_only", "sample_size", "inverse_variance", "federated_dr", "pooled_dr", "tilted_aipw")) {
+    if (method_name %in% methods) {
+      method_res <- .require_method_result(comparison_results, method_name)
+
+      # Calculate confidence interval
+      ci_lower <- method_res$estimate - Z_ALPHA_05 * method_res$se
+      ci_upper <- method_res$estimate + Z_ALPHA_05 * method_res$se
+
       results_list[[length(results_list) + 1]] <- data.frame(
         sim_id = sim_id,
-        method = "two_round_crossfit",
-        estimate = two_round_cf_res$estimate,
-        se = two_round_cf_res$se,
-        bias = two_round_cf_res$estimate - true_potential_outcome,
-        coverage = (true_potential_outcome >= two_round_cf_res$ci_lower) &
-                  (true_potential_outcome <= two_round_cf_res$ci_upper),
-        ci_width = two_round_cf_res$ci_upper - two_round_cf_res$ci_lower,
+        method = method_name,
+        estimate = method_res$estimate,
+        se = method_res$se,
+        bias = method_res$estimate - true_potential_outcome,
+        coverage = (true_potential_outcome >= ci_lower) & (true_potential_outcome <= ci_upper),
+        ci_width = ci_upper - ci_lower,
         n_total = n_total,
         K = K,
         p = p,
@@ -228,54 +295,9 @@ run_single_simulation <- function(sim_id, n_total = 1000, K = 3, p = 4,
         estimand_type = estimand_type,
         stringsAsFactors = FALSE
       )
-    }, error = function(e) {
-      stage_times$two_round <- as.numeric(difftime(Sys.time(), two_round_start, units = "secs"))
-      log_info(verbose, "    [!!] Two-round failed (%.2fs): %s\n", stage_times$two_round, e$message)
-    })
-  }
-  
-  # Run comparison methods
-  comp_start <- Sys.time()
-  log_info(verbose, "    Running comparison methods...\n")
-  comparison_results <- tryCatch({
-    run_all_comparisons(data_split, family = family)
-  }, error = function(e) {
-    log_info(verbose, "    [!!] All comparisons failed: %s\n", e$message)
-    list()  # Return empty list so individual method checks below gracefully skip
-  })
-  stage_times$comparison <- as.numeric(difftime(Sys.time(), comp_start, units = "secs"))
-  
-  for (method_name in c("target_only", "sample_size", "inverse_variance", "federated_dr", "pooled_dr", "tilted_aipw")) {
-    if (method_name %in% methods) {
-      tryCatch({
-        method_res <- comparison_results[[method_name]]
-        
-        # Calculate confidence interval
-        ci_lower <- method_res$estimate - Z_ALPHA_05 * method_res$se
-        ci_upper <- method_res$estimate + Z_ALPHA_05 * method_res$se
-        
-        results_list[[length(results_list) + 1]] <- data.frame(
-          sim_id = sim_id,
-          method = method_name,
-          estimate = method_res$estimate,
-          se = method_res$se,
-          bias = method_res$estimate - true_potential_outcome,
-          coverage = (true_potential_outcome >= ci_lower) & (true_potential_outcome <= ci_upper),
-          ci_width = ci_upper - ci_lower,
-          n_total = n_total,
-          K = K,
-          p = p,
-          config = config,
-          heterogeneity_type = heterogeneity_type,
-          estimand_type = estimand_type,
-          stringsAsFactors = FALSE
-        )
-      }, error = function(e) {
-        log_info(verbose, "    [!!] %s failed: %s\n", method_name, e$message)
-      })
     }
   }
-  
+
   # Run oracle DR estimator (uses known true parameters)
   # Not available for the FACE paper DGP (gamma_params and alpha1_true are NULL).
   if ("oracle_dr" %in% methods) {
@@ -284,8 +306,7 @@ run_single_simulation <- function(sim_id, n_total = 1000, K = 3, p = 4,
       log_info(verbose, "    [--] Oracle DR skipped: true parameters not available for dgp_type='%s'\n",
                data$dgp_type %||% dgp_type)
     } else {
-    log_info(verbose, "    Running oracle DR estimator...\n")
-    tryCatch({
+      log_info(verbose, "    Running oracle DR estimator...\n")
       target_propensity_true <- NULL
       if (!is.null(data$p_treat_true)) {
         target_propensity_true <- data$p_treat_true[target_idx]
@@ -294,14 +315,14 @@ run_single_simulation <- function(sim_id, n_total = 1000, K = 3, p = 4,
                                        outcome_type = data$outcome_type,
                                        target_propensity_true = target_propensity_true)
       stage_times$oracle <- as.numeric(difftime(Sys.time(), oracle_start, units = "secs"))
-      
+
       ci_lower <- oracle_res$estimate - Z_ALPHA_05 * oracle_res$se
       ci_upper <- oracle_res$estimate + Z_ALPHA_05 * oracle_res$se
-      
+
       log_info(verbose, "    [OK] Oracle DR done in %.2fs: est=%.4f, bias=%.4f\n",
                stage_times$oracle, oracle_res$estimate,
                oracle_res$estimate - true_potential_outcome)
-      
+
       results_list[[length(results_list) + 1]] <- data.frame(
         sim_id = sim_id,
         method = "oracle_dr",
@@ -318,119 +339,62 @@ run_single_simulation <- function(sim_id, n_total = 1000, K = 3, p = 4,
         estimand_type = estimand_type,
         stringsAsFactors = FALSE
       )
-    }, error = function(e) {
-      log_info(verbose, "    [!!] Oracle DR failed: %s\n", e$message)
-    })
     }  # end else (gamma_params guard)
   }
-  
+
   # ATE estimation: rerun key methods with A_val=0 and compute difference
   if (isTRUE(estimate_ate)) {
     log_info(verbose, "    Running ATE estimation (mu0 arm)...\n")
     ate_start <- Sys.time()
-    
+
     # Get mu0 true value
     mu0_true <- data$mu0_true
-    
+
     # Cross-fitted ATE: rerun cross-fitting algorithms with A_val=0 for mu0
     ate_true <- data$mu1_true - mu0_true
     for (ate_method in c("two_round_crossfit", "one_round_crossfit")) {
       if (ate_method %in% methods) {
-        tryCatch({
-          comm_mode <- if (ate_method == "two_round_crossfit") "two_round" else "one_round"
-          mu0_res <- run_crossfit(data_split, n_folds = n_folds,
-                                  communication_mode = comm_mode,
-                                  lambda_selection = "cv",
-                                  verbose = FALSE, n_cores = n_cores_internal,
-                                  nlambda_init = nlambda_init, family = family, A_val = 0L,
-                                  use_lambda_cache = use_lambda_cache,
-                                  precomputed_folds = precomputed_folds,
-                                  target_only_ps_cache = target_only_ps_cache)
-          
-          # Find the corresponding mu1 estimate from results_list
-          mu1_method_label <- ate_method
-          mu1_row <- which(sapply(results_list, function(x) x$method[1] == mu1_method_label))
-          if (length(mu1_row) > 0) {
-            mu1_est <- results_list[[mu1_row[1]]]$estimate[1]
-            mu1_se <- results_list[[mu1_row[1]]]$se[1]
-            
-            ate_est <- mu1_est - mu0_res$estimate
-            mu1_cf <- crossfit_mu1_results[[ate_method]]
-            mu1_phi <- if (!is.null(mu1_cf) && !is.null(mu1_cf$all_phi_agg)) mu1_cf$all_phi_agg else NULL
-            mu0_phi <- if (!is.null(mu0_res$all_phi_agg)) mu0_res$all_phi_agg else NULL
+        comm_mode <- if (ate_method == "two_round_crossfit") "two_round" else "one_round"
+        mu0_res <- run_crossfit(data_split, n_folds = n_folds,
+                                communication_mode = comm_mode,
+                                lambda_selection = "cv",
+                                verbose = FALSE, n_cores = n_cores_internal,
+                                nlambda_init = nlambda_init, family = family, A_val = 0L,
+                                use_lambda_cache = use_lambda_cache,
+                                precomputed_folds = precomputed_folds,
+                                target_only_ps_cache = target_only_ps_cache)
 
-            if (!is.null(mu1_phi) && !is.null(mu0_phi) && length(mu1_phi) == length(mu0_phi)) {
-              # Joint IF variance: Var(ATE) = E[(Phi_mu1 - Phi_mu0)^2] / N
-              ate_var <- mean((mu1_phi - mu0_phi)^2) / length(mu1_phi)
-            } else {
-              # Fallback: conservative independence approximation
-              ate_var <- mu1_se^2 + mu0_res$se^2
-            }
-            ate_se <- sqrt(max(ate_var, 0))
-            ci_lower <- ate_est - Z_ALPHA_05 * ate_se
-            ci_upper <- ate_est + Z_ALPHA_05 * ate_se
-            
-            results_list[[length(results_list) + 1]] <- data.frame(
-              sim_id = sim_id,
-              method = paste0(ate_method, "_ate"),
-              estimate = ate_est,
-              se = ate_se,
-              bias = ate_est - ate_true,
-              coverage = (ate_true >= ci_lower) & (ate_true <= ci_upper),
-              ci_width = ci_upper - ci_lower,
-              n_total = n_total,
-              K = K,
-              p = p,
-              config = config,
-              heterogeneity_type = heterogeneity_type,
-              estimand_type = estimand_type,
-              stringsAsFactors = FALSE
-            )
-            log_info(verbose, "    [OK] %s ATE: est=%.4f, true=%.4f, bias=%.4f\n",
-                     ate_method, ate_est, ate_true, ate_est - ate_true)
-          }
-        }, error = function(e) {
-          log_info(verbose, "    [!!] ATE %s failed: %s\n", ate_method, e$message)
-        })
-      }
-    }
-    
-    # Target-only ATE: joint IF variance (not assuming independence)
-    tryCatch({
-      target_data <- data_split[["t"]]
-      mu0_cf <- estimate_target_only_crossfit(target_data, n_folds = n_folds,
-                                               family = family,
-                                               A_val = 0)
-      # Find the mu1 target-only estimate from results_list
-      mu1_target_row <- which(sapply(results_list, function(x) x$method[1] == "target_only"))
-      if (length(mu1_target_row) > 0) {
-        mu1_est <- results_list[[mu1_target_row[1]]]$estimate[1]
-        
-        ate_est <- mu1_est - mu0_cf$estimate
-        ate_true <- data$mu1_true - mu0_true
-        
-        # Use joint IF variance: Var(ATE) = E[(psi1_i - psi0_i)^2] / n
-        # varphi_ot from each arm is already centered (mean zero).
-        # comparison_results[["target_only"]]$varphi_ot holds mu1 IFs.
-        mu1_psi <- comparison_results[["target_only"]]$varphi_ot
-        mu0_psi <- mu0_cf$varphi_ot
-        
-        if (!is.null(mu1_psi) && !is.null(mu0_psi) &&
-            length(mu1_psi) == length(mu0_psi)) {
-          # Joint IF: accounts for covariance between mu1 and mu0 estimates
-          ate_var <- mean((mu1_psi - mu0_psi)^2) / length(mu1_psi)
-        } else {
-          # Fallback: conservative (independence) approximation
-          mu1_se <- results_list[[mu1_target_row[1]]]$se[1]
-          ate_var <- mu1_se^2 + mu0_cf$variance
+        # Find the corresponding successful mu1 estimate from results_list
+        mu1_method_label <- ate_method
+        mu1_row <- which(sapply(results_list, function(x) {
+          x$method[1] == mu1_method_label && is.finite(x$estimate[1])
+        }))
+        if (length(mu1_row) == 0L) {
+          .abort_with_context("mu1 estimate for %s is unavailable; cannot compute ATE.",
+                              ate_method)
         }
-        ate_se <- sqrt(ate_var)
+        mu1_est <- results_list[[mu1_row[1]]]$estimate[1]
+        mu1_se <- results_list[[mu1_row[1]]]$se[1]
+
+        ate_est <- mu1_est - mu0_res$estimate
+        mu1_cf <- crossfit_mu1_results[[ate_method]]
+        mu1_phi <- if (!is.null(mu1_cf) && !is.null(mu1_cf$all_phi_agg)) mu1_cf$all_phi_agg else NULL
+        mu0_phi <- if (!is.null(mu0_res$all_phi_agg)) mu0_res$all_phi_agg else NULL
+
+        if (!is.null(mu1_phi) && !is.null(mu0_phi) && length(mu1_phi) == length(mu0_phi)) {
+          # Joint IF variance: Var(ATE) = E[(Phi_mu1 - Phi_mu0)^2] / N
+          ate_var <- mean((mu1_phi - mu0_phi)^2) / length(mu1_phi)
+        } else {
+          # Fallback: conservative independence approximation
+          ate_var <- mu1_se^2 + mu0_res$se^2
+        }
+        ate_se <- sqrt(max(ate_var, 0))
         ci_lower <- ate_est - Z_ALPHA_05 * ate_se
         ci_upper <- ate_est + Z_ALPHA_05 * ate_se
-        
+
         results_list[[length(results_list) + 1]] <- data.frame(
           sim_id = sim_id,
-          method = "target_only_ate",
+          method = paste0(ate_method, "_ate"),
           estimate = ate_est,
           se = ate_se,
           bias = ate_est - ate_true,
@@ -444,16 +408,69 @@ run_single_simulation <- function(sim_id, n_total = 1000, K = 3, p = 4,
           estimand_type = estimand_type,
           stringsAsFactors = FALSE
         )
-        log_info(verbose, "    [OK] Target-only ATE: est=%.4f, true=%.4f, bias=%.4f\n",
-                 ate_est, ate_true, ate_est - ate_true)
+        log_info(verbose, "    [OK] %s ATE: est=%.4f, true=%.4f, bias=%.4f\n",
+                 ate_method, ate_est, ate_true, ate_est - ate_true)
       }
-    }, error = function(e) {
-      log_info(verbose, "    [!!] ATE estimation failed: %s\n", e$message)
-    })
-    
+    }
+
+    # Target-only ATE: joint IF variance (not assuming independence)
+    target_data <- data_split[["t"]]
+    mu0_cf <- estimate_target_only_crossfit(target_data, n_folds = n_folds,
+                                             family = family,
+                                             A_val = 0)
+    # Find the successful mu1 target-only estimate from results_list
+    mu1_target_row <- which(sapply(results_list, function(x) {
+      x$method[1] == "target_only" && is.finite(x$estimate[1])
+    }))
+    if (length(mu1_target_row) == 0L) {
+      .abort_with_context("mu1 target-only estimate is unavailable; cannot compute target-only ATE.")
+    }
+    mu1_est <- results_list[[mu1_target_row[1]]]$estimate[1]
+
+    ate_est <- mu1_est - mu0_cf$estimate
+    ate_true <- data$mu1_true - mu0_true
+
+    # Use joint IF variance: Var(ATE) = E[(psi1_i - psi0_i)^2] / n
+    # varphi_ot from each arm is already centered (mean zero).
+    # comparison_results[["target_only"]]$varphi_ot holds mu1 IFs.
+    mu1_psi <- comparison_results[["target_only"]]$varphi_ot
+    mu0_psi <- mu0_cf$varphi_ot
+
+    if (!is.null(mu1_psi) && !is.null(mu0_psi) &&
+        length(mu1_psi) == length(mu0_psi)) {
+      # Joint IF: accounts for covariance between mu1 and mu0 estimates
+      ate_var <- mean((mu1_psi - mu0_psi)^2) / length(mu1_psi)
+    } else {
+      # Fallback: conservative (independence) approximation
+      mu1_se <- results_list[[mu1_target_row[1]]]$se[1]
+      ate_var <- mu1_se^2 + mu0_cf$variance
+    }
+    ate_se <- sqrt(ate_var)
+    ci_lower <- ate_est - Z_ALPHA_05 * ate_se
+    ci_upper <- ate_est + Z_ALPHA_05 * ate_se
+
+    results_list[[length(results_list) + 1]] <- data.frame(
+      sim_id = sim_id,
+      method = "target_only_ate",
+      estimate = ate_est,
+      se = ate_se,
+      bias = ate_est - ate_true,
+      coverage = (ate_true >= ci_lower) & (ate_true <= ci_upper),
+      ci_width = ci_upper - ci_lower,
+      n_total = n_total,
+      K = K,
+      p = p,
+      config = config,
+      heterogeneity_type = heterogeneity_type,
+      estimand_type = estimand_type,
+      stringsAsFactors = FALSE
+    )
+    log_info(verbose, "    [OK] Target-only ATE: est=%.4f, true=%.4f, bias=%.4f\n",
+             ate_est, ate_true, ate_est - ate_true)
+
     stage_times$ate <- as.numeric(difftime(Sys.time(), ate_start, units = "secs"))
   }
-  
+
   # Print total simulation time summary
   sim_total_time <- as.numeric(difftime(Sys.time(), sim_start_time, units = "secs"))
   log_info(verbose, "    [OK] Comparison methods done in %.2fs\n", stage_times$comparison)
@@ -463,9 +480,9 @@ run_single_simulation <- function(sim_id, n_total = 1000, K = 3, p = 4,
            100 * (stage_times$one_round %||% 0) / sim_total_time,
            100 * (stage_times$two_round %||% 0) / sim_total_time,
            100 * (stage_times$comparison %||% 0) / sim_total_time)
-  
+
   # Combine results from list into a data.frame (single rbind at the end)
-  results <- if (length(results_list) > 0) do.call(rbind, results_list) else data.frame()
+  results <- .bind_sim_result_list(results_list)
 
   # Stamp dgp_type onto every row so downstream summaries can group by it
   if (nrow(results) > 0) results$dgp_type <- dgp_type
@@ -488,18 +505,19 @@ run_single_simulation <- function(sim_id, n_total = 1000, K = 3, p = 4,
 summarize_results <- function(results) {
   # Handle empty or invalid results
   if (is.null(results) || nrow(results) == 0) {
-    cat("[WARN] No results to summarize (empty data frame)\n")
+    .warn_with_context("No results to summarize (empty data frame).")
     return(data.frame())
   }
-  
+
   # Check required columns exist
   required_cols <- c("method", "config", "heterogeneity_type", "n_total", "K", "bias", "se", "coverage", "ci_width")
   missing_cols <- setdiff(required_cols, names(results))
   if (length(missing_cols) > 0) {
-    cat(sprintf("[WARN] Missing columns in results: %s\n", paste(missing_cols, collapse = ", ")))
+    .warn_with_context("Missing columns in results: %s",
+                       paste(missing_cols, collapse = ", "))
     return(data.frame())
   }
-  
+
   # Determine grouping columns (include estimand_type and dgp_type if present)
   group_cols <- c("method", "config", "heterogeneity_type", "n_total", "K")
   if ("estimand_type" %in% names(results)) {
@@ -509,7 +527,7 @@ summarize_results <- function(results) {
     group_cols <- c(group_cols, "dgp_type")
   }
   group_formula <- as.formula(paste("~ ", paste(group_cols, collapse = " + ")))
-  
+
   # Calculate summary statistics by method and configuration
   # For bias and se, we need mean, sd, and rmse
   bias_stats <- aggregate(
@@ -521,21 +539,21 @@ summarize_results <- function(results) {
       rmse = sqrt(mean(x^2, na.rm = TRUE))  # RMSE for bias
     )
   )
-  
+
   # For se (IF-based), we only need mean
   se_stats <- aggregate(
     update(group_formula, se ~ .),
     data = results,
     FUN = function(x) mean(x, na.rm = TRUE)
   )
-  
+
   # For coverage (IF-based), we only need mean (proportion of TRUE values)
   coverage_stats <- aggregate(
     update(group_formula, coverage ~ .),
     data = results,
     FUN = function(x) mean(x, na.rm = TRUE)
   )
-  
+
   # For CI width (IF-based), we need mean and sd
   ci_width_stats <- aggregate(
     update(group_formula, ci_width ~ .),
@@ -545,7 +563,13 @@ summarize_results <- function(results) {
       sd = sd(x, na.rm = TRUE)
     )
   )
-  
+
+  n_success_stats <- aggregate(
+    update(group_formula, estimate ~ .),
+    data = results,
+    FUN = length
+  )
+
   # Build base summary data frame
   summary_df <- data.frame(
     method = bias_stats$method,
@@ -559,9 +583,10 @@ summarize_results <- function(results) {
     se_mean = se_stats$se,
     coverage = coverage_stats$coverage,
     ci_width_mean = ci_width_stats$ci_width[, "mean"],
-    ci_width_sd = ci_width_stats$ci_width[, "sd"]
+    ci_width_sd = ci_width_stats$ci_width[, "sd"],
+    n_success = n_success_stats$estimate
   )
-  
+
   # Add estimand_type column if present in results
   if ("estimand_type" %in% names(bias_stats)) {
     summary_df$estimand_type <- bias_stats$estimand_type
@@ -643,6 +668,25 @@ run_simulation_study <- function(n_sims = 500,
 
   parallel_strategy <- match.arg(parallel_strategy)
 
+  validate_simulation_params(
+    estimand_type      = estimand_type,
+    site_allocation    = site_allocation,
+    transform_type     = transform_type,
+    outcome_type       = outcome_type,
+    heterogeneity_type = heterogeneity_type,
+    shift_strength     = shift_strength,
+    n_folds            = n_folds,
+    n_sims             = n_sims,
+    n_total            = n_total_vec,
+    K                  = K_vec,
+    p                  = p_vec,
+    config             = configs,
+    dgp_type           = dgp_type,
+    ate_deviation      = ate_deviation,
+    n_deviated_sites   = n_deviated_sites,
+    warn_ignored       = TRUE
+  )
+
   # Resolve checkpoint config (NULL disables checkpointing)
   ckpt_file         <- checkpoint_config$file
   ckpt_interval     <- checkpoint_config$setting_interval %||% 1L
@@ -697,7 +741,7 @@ run_simulation_study <- function(n_sims = 500,
     if (checkpoint$current_setting_idx >= total_settings &&
         is.null(checkpoint$sim_results)) {
       cat("  Checkpoint indicates all settings complete. Finalizing.\n")
-      final_results <- do.call(rbind, all_results)
+      final_results <- .bind_sim_result_list(all_results)
       if (use_checkpoint) cleanup_checkpoint(ckpt_file, preempt_file, saved_file)
       return(final_results)
     }
@@ -748,6 +792,9 @@ run_simulation_study <- function(n_sims = 500,
     }
 
     cl <- parallel::makeCluster(n_cores_outer)
+    on.exit({
+      if (!is.null(cl)) parallel::stopCluster(cl)
+    }, add = TRUE)
     doParallel::registerDoParallel(cl)
 
     parallel::clusterEvalQ(cl, {
@@ -762,6 +809,8 @@ run_simulation_study <- function(n_sims = 500,
 
     parallel::clusterExport(cl, c(
       "run_single_simulation",
+      ".bind_sim_result_list", ".abort_with_context",
+      ".warn_with_context", ".require_method_result",
       "n_cores_internal_parallel", "nlambda_init", "estimand_type",
       "site_allocation", "transform_type", "outcome_type",
       "heterogeneity_type", "shift_strength", "n_folds",
@@ -784,7 +833,10 @@ run_simulation_study <- function(n_sims = 500,
       )
       checkpoint_saved <- save_checkpoint(state, ckpt_file)
       if (checkpoint_saved) signal_checkpoint_saved(saved_file)
-      if (!is.null(cl)) parallel::stopCluster(cl)
+      if (!is.null(cl)) {
+        parallel::stopCluster(cl)
+        cl <- NULL
+      }
       cat("  Checkpoint saved. Exiting for requeue.\n")
       quit(save = "no", status = 0)
     }
@@ -814,8 +866,7 @@ run_simulation_study <- function(n_sims = 500,
     setting_start_time <- Sys.time()
     completed_sims_timing <- numeric(0)
 
-    tryCatch({
-      if (n_cores_outer > 1) {
+    if (n_cores_outer > 1) {
         # --- Parallel execution (batched) ---
         batch_size <- n_cores_outer * 2
         first_batch <- ceiling(sim_start_idx / batch_size)
@@ -869,7 +920,8 @@ run_simulation_study <- function(n_sims = 500,
           batch_elapsed <- as.numeric(
             difftime(Sys.time(), batch_start_time, units = "secs"))
           n_success <- sum(vapply(batch_results,
-                                 function(r) nrow(r) > 0, logical(1)))
+                                  function(r) is.data.frame(r) && nrow(r) > 0,
+                                  logical(1)))
           cat(sprintf("    Batch done: %.1fs (%.2fs/sim) | %d/%d succeeded\n",
                       batch_elapsed, batch_elapsed / length(batch_ids),
                       n_success, length(batch_ids)))
@@ -890,7 +942,7 @@ run_simulation_study <- function(n_sims = 500,
             save_checkpoint(state, ckpt_file, sim_level = TRUE)
           }
         }
-      } else {
+    } else {
         # --- Sequential execution ---
         n_cores_internal <- min(params$K,
                                max(1, parallel::detectCores() - 1))
@@ -954,21 +1006,16 @@ run_simulation_study <- function(n_sims = 500,
             save_checkpoint(state, ckpt_file, sim_level = TRUE)
           }
         }
-      }
+    }
 
-      setting_results <- do.call(rbind, sim_results)
-      all_results[[i]] <- setting_results
+    setting_results <- .bind_sim_result_list(sim_results)
+    all_results[[i]] <- setting_results
 
-      setting_elapsed <- as.numeric(
-        difftime(Sys.time(), setting_start_time, units = "secs"))
-      cat(sprintf("  Setting %d/%d done: %d rows, %.1f min (%.2f s/sim)\n",
-                  i, total_settings, nrow(setting_results),
-                  setting_elapsed / 60, setting_elapsed / n_sims))
-
-    }, error = function(e) {
-      cat(sprintf("  [ERROR] Setting %d failed: %s\n", i, e$message))
-      all_results[[i]] <<- NULL
-    })
+    setting_elapsed <- as.numeric(
+      difftime(Sys.time(), setting_start_time, units = "secs"))
+    cat(sprintf("  Setting %d/%d done: %d rows, %.1f min (%.2f s/sim)\n",
+                i, total_settings, nrow(setting_results),
+                setting_elapsed / 60, setting_elapsed / n_sims))
 
     # Setting-level checkpoint
     if (use_checkpoint && (i %% ckpt_interval == 0 || i == total_settings)) {
@@ -980,9 +1027,12 @@ run_simulation_study <- function(n_sims = 500,
     }
   }
 
-  if (!is.null(cl)) parallel::stopCluster(cl)
+  if (!is.null(cl)) {
+    parallel::stopCluster(cl)
+    cl <- NULL
+  }
 
-  final_results <- do.call(rbind, all_results)
+  final_results <- .bind_sim_result_list(all_results)
 
   if (is.null(final_results) || nrow(final_results) == 0) {
     cat("\n[WARN] No simulation results collected!\n")

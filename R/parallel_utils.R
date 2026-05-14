@@ -19,7 +19,10 @@ setup_parallel <- function(n_cores = NULL) {
   
   # Load parallel package
   if (!requireNamespace("parallel", quietly = TRUE)) {
-    warning("parallel package not available, using sequential processing")
+    warning(sprintf(
+      "setup_parallel: 'parallel' namespace not available; falling back to sequential processing (requested n_cores=%s).",
+      format(n_cores)
+    ), call. = FALSE)
     return(1)
   }
   

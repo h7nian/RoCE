@@ -45,9 +45,14 @@ set -euo pipefail
 
 cd "${SLURM_SUBMIT_DIR:-$(dirname "$0")}"
 
-module load R
+# Pin to the spack/centos7-ivybridge build that FACEC.so is compiled against;
+# unqualified `module load R` can resolve to a different build on Rocky 8 nodes.
+module load R/4.2.2-gcc-8.2.0-vp7tyde
 
-export R_LIBS_USER="${R_LIBS_USER:-${HOME}/Rlibs}"
+# Override unconditionally: the spack `R/4.2.2-gcc-8.2.0-vp7tyde` module sets
+# its own R_LIBS_USER (~/R/library), which is empty on this account. All 270
+# installed packages — including FACEC and its deps — live in ~/Rlibs.
+export R_LIBS_USER="${HOME}/Rlibs"
 
 # Prevent BLAS/OpenMP oversubscription when using R-level parallelism.
 export OMP_NUM_THREADS=1
@@ -133,7 +138,7 @@ fi
 # ----------------------------------------------------------------------------
 echo ""
 echo "[$(date)] Sanity check: FACEC package loadable?"
-Rscript -e 'if (!requireNamespace("FACEC", quietly = TRUE)) {
+Rscript -e 'if (!requireNamespace("FACEC", quietly = FALSE)) {
   stop("FACEC is not installed; run ./test.sh --compile-only first.")
 } else {
   cat(sprintf("FACEC %s loaded.\n", as.character(utils::packageVersion("FACEC"))))

@@ -34,7 +34,7 @@
 #' @param n_folds Total number of folds
 #' @param A_val Treatment value
 #' @param M_tau Truncation parameter
-#' @param data_split Original data split (for fallback)
+#' @param data_split Original data split used for source metadata
 #' @param combine_cache Environment for caching combine_folds() results (or NULL)
 #' @param get_fold_inputs Function(s, k2) returning list(mean_phi, mean_grad_psi_init, alpha_init)
 #'   for the given source site and secondary fold. Encapsulates the algorithm-specific
@@ -76,14 +76,14 @@ process_source_site <- function(s, source_folds, target_folds, k1, n_folds,
     source_calib <- materialize_fold(source_folds[[s]], k2)
     
     if (source_calib$n == 0) {
-      warning(sprintf("%s: source site '%s' fold k2=%d has 0 calibration obs. Skipping.", label, s, k2))
-      next
+      stop(sprintf("%s: source site '%s' fold k2=%d has 0 calibration observations.",
+                   label, s, k2))
     }
     
     training_folds <- setdiff(1:n_folds, c(k1, k2))
     if (length(training_folds) == 0) {
-      warning(sprintf("%s: source site '%s' fold k1=%d, k2=%d leaves 0 training folds. Skipping.", label, s, k1, k2))
-      next
+      stop(sprintf("%s: source site '%s' fold k1=%d, k2=%d leaves 0 training folds.",
+                   label, s, k1, k2))
     }
     
     # Use cache if available, otherwise compute directly
@@ -96,9 +96,8 @@ process_source_site <- function(s, source_folds, target_folds, k1, n_folds,
     }
     
     if (source_train$n == 0) {
-      warning(sprintf("%s: source site '%s' training folds {%s} have 0 obs. Skipping.",
-                      label, s, paste(training_folds, collapse = ",")))
-      next
+      stop(sprintf("%s: source site '%s' training folds {%s} have 0 observations.",
+                   label, s, paste(training_folds, collapse = ",")))
     }
     
     # Get algorithm-specific inputs via callback
@@ -153,20 +152,8 @@ process_source_site <- function(s, source_folds, target_folds, k1, n_folds,
   
   # Average calibrated parameters across secondary folds
   if (length(gamma_cal_list) == 0 || length(alpha_cal_list) == 0) {
-    current_source <- data_split[[s]]
-    p_site <- if (!is.null(current_source$Z_site)) ncol(current_source$Z_site) else 0
-    p_outcome <- if (!is.null(current_source$W_outcome)) ncol(current_source$W_outcome) else 0
-    
-    fallback_k2 <- secondary_folds[1]
-    fallback_alpha <- tryCatch(get_fold_inputs(s, fallback_k2)$alpha_init, error = function(e) NULL)
-    if (!is.null(fallback_alpha)) {
-      gamma_final_k1 <- rep(0, p_site + 1)
-      alpha_final_k1 <- fallback_alpha
-    } else {
-      gamma_final_k1 <- rep(0, p_site + 1)
-      alpha_final_k1 <- rep(0, p_outcome + 1)
-    }
-    warning(sprintf("All calibration folds failed for source site '%s' (fold k1=%d). Using fallback parameters.", s, k1))
+    stop(sprintf("process_source_site: all calibration folds failed for source site '%s' (outer fold k1=%d). Cannot form method-aligned nuisance estimates.",
+                 s, k1))
   } else {
     gamma_final_k1 <- colMeans(do.call(rbind, gamma_cal_list))
     alpha_final_k1 <- colMeans(do.call(rbind, alpha_cal_list))
@@ -176,11 +163,8 @@ process_source_site <- function(s, source_folds, target_folds, k1, n_folds,
   source_main_fold <- materialize_fold(source_folds[[s]], k1)
   
   if (source_main_fold$n == 0) {
-    warning(sprintf("%s: source site '%s' main fold k1=%d has 0 obs. Returning zero estimates.", label, s, k1))
-    return(list(
-      mu_ts = 0, gamma_s = gamma_final_k1, alpha_ts = alpha_final_k1,
-      delta_ts = 0, mu_pred_ts = 0, n_s = 1
-    ))
+    stop(sprintf("%s: source site '%s' main fold k1=%d has 0 observations; cannot compute source correction term.",
+                 label, s, k1))
   }
   
   correction_result <- calculate_correction_term_cpp(
@@ -205,6 +189,10 @@ process_source_site <- function(s, source_folds, target_folds, k1, n_folds,
     delta_ts = delta_ts_k1,
     mu_pred_ts = mu_pred_ts_k1,
     n_s = source_main_fold$n,
+    correction_components = correction_result$correction_components,
+    correction_clip_diagnostics = correction_result$clip_diagnostics,
+    n_calibrated_folds = length(gamma_cal_list),
+    calibrated_fold_keys = names(gamma_cal_list),
     # Per-k2 calibrated parameters for Version A inner-fold variance computation
     per_k2_gamma = gamma_cal_list,
     per_k2_alpha = alpha_cal_list
@@ -242,9 +230,10 @@ partition_into_folds <- function(data, n_folds, seed = NULL) {
       fold_ids[treated_idx] <- sample(rep(1:n_folds, length.out = length(treated_idx)))
       fold_ids[control_idx] <- sample(rep(1:n_folds, length.out = length(control_idx)))
     } else {
-      warning("Too few treated or control units for stratified fold assignment; ",
-              "using simple random assignment. n_treated=", length(treated_idx),
-              ", n_control=", length(control_idx), ", n_folds=", n_folds)
+      warning(sprintf(
+        "assign_folds: too few treated or control units for stratified fold assignment (n_treated=%d, n_control=%d, n_folds=%d); falling back to simple random assignment.",
+        length(treated_idx), length(control_idx), n_folds
+      ), call. = FALSE)
       fold_ids <- sample(rep(1:n_folds, length.out = n))
     }
     fold_ids
@@ -373,6 +362,10 @@ build_crossfit_folds <- function(data_split, n_folds) {
 #'        Minimum 3 required for proper two-level cross-fitting calibration.
 #' @param communication_mode character, "two_round" or "one_round"
 #' @param lambda_selection method for lambda selection ("cv" or numeric value)
+#' @param lambda_rule rule used when \code{lambda_selection = "cv"} for
+#'        aggregation weights: \code{"min"} selects the variance minimizer
+#'        (paper default), while \code{"1se"} selects the largest lambda within
+#'        5% of the minimum for extra stability.
 #' @param verbose print progress messages
 #' @param M_tau truncation parameter for calibrated losses during training (default 10.0)
 #' @param M_tau_inference truncation parameter for the inference step (correction term
@@ -395,6 +388,7 @@ build_crossfit_folds <- function(data_split, n_folds) {
 run_crossfit <- function(data_split, n_folds = N_FOLDS_DEFAULT,
                          communication_mode = c("two_round", "one_round"),
                          lambda_selection = "cv",
+                         lambda_rule = c("min", "1se"),
                          verbose = TRUE, M_tau = M_TAU_DEFAULT,
                          M_tau_inference = M_TAU_INFERENCE_DEFAULT,
                          n_cores = NULL,
@@ -405,6 +399,7 @@ run_crossfit <- function(data_split, n_folds = N_FOLDS_DEFAULT,
                          target_only_ps_cache = NULL) {
 
   communication_mode <- match.arg(communication_mode)
+  lambda_rule <- match.arg(lambda_rule)
 
   # ---- SHARED SETUP ----
   glm_spec <- resolve_glm_family(family)
@@ -515,10 +510,10 @@ run_crossfit <- function(data_split, n_folds = N_FOLDS_DEFAULT,
           source_train <- combine_folds(source_folds[[s]], training_folds)
 
           if (source_train$n == 0) {
-            warning(sprintf("Two-round: source site '%s' training folds {%s} have 0 obs for k2=%d. Using zero initial params.",
-                            s, paste(training_folds, collapse = ","), k2))
-            source_initial_params[[s]][[paste0("k2_", k2)]] <- rep(0, ncol(source_train$W_outcome) + 1)
-            next
+            stop(sprintf(
+              "Two-round: source site '%s' training folds {%s} have 0 observations for k2=%d; cannot fit the initial outcome nuisance required by main.tex eq:alpha_init.",
+              s, paste(training_folds, collapse = ","), k2
+            ))
           }
 
           alpha_init_k1_k2 <- fit_initial_outcome(
@@ -562,16 +557,13 @@ run_crossfit <- function(data_split, n_folds = N_FOLDS_DEFAULT,
           target_fold_k2 <- target_fold_cache[[k2_key]]
 
           if (target_fold_k2$n == 0) {
-            warning(sprintf("Two-round: target fold k2=%d has 0 obs for source site '%s'. Using zero summaries.", k2, s))
-            target_summaries[[s]][[k2_key]] <- list(
-              mean_grad_psi_init = rep(0, length(alpha_init_k1_k2)),
-              mean_phi = mean_phi_cache[[k2_key]]
-            )
-            next
+            stop(sprintf("Two-round: target fold k2=%d has 0 observations for source site '%s'.",
+                         k2, s))
           }
 
-          mean_grad_psi_init <- mean_glm_gradient_cpp(
-            target_fold_k2$W_outcome, alpha_init_k1_k2, family_int, link_int
+          mean_grad_psi_init <- .mean_glm_gradient_site_basis(
+            target_fold_k2$W_outcome, target_fold_k2$Z_site,
+            alpha_init_k1_k2, family_int, link_int
           )
           target_summaries[[s]][[k2_key]] <- list(
             mean_grad_psi_init = mean_grad_psi_init,
@@ -605,14 +597,8 @@ run_crossfit <- function(data_split, n_folds = N_FOLDS_DEFAULT,
         target_calib_k2 <- materialize_fold(target_folds, k2)
 
         if (target_train$n == 0 || target_calib_k2$n == 0) {
-          warning(sprintf("One-round: target train (n=%d) or calib k2=%d (n=%d) is empty. Using zero models/summaries.",
-                          target_train$n, k2, target_calib_k2$n))
-          target_initial_models[[k2_key]] <- rep(0, ncol(target_train$W_outcome) + 1)
-          target_summaries[[k2_key]] <- list(
-            mean_grad_psi_init = rep(0, ncol(target_train$W_outcome) + 1),
-            mean_phi = rep(0, ncol(target_train$Z_site) + 1)
-          )
-          next
+          stop(sprintf("One-round: target train (n=%d) or calibration fold k2=%d (n=%d) is empty.",
+                       target_train$n, k2, target_calib_k2$n))
         }
 
         alpha_init_k1_k2 <- fit_initial_outcome(
@@ -629,8 +615,9 @@ run_crossfit <- function(data_split, n_folds = N_FOLDS_DEFAULT,
 
         target_initial_models[[k2_key]] <- alpha_init_k1_k2
 
-        mean_grad_psi_init <- mean_glm_gradient_cpp(
-          target_calib_k2$W_outcome, alpha_init_k1_k2, family_int, link_int
+        mean_grad_psi_init <- .mean_glm_gradient_site_basis(
+          target_calib_k2$W_outcome, target_calib_k2$Z_site,
+          alpha_init_k1_k2, family_int, link_int
         )
         mean_phi <- c(1, colMeans(target_calib_k2$Z_site))
 
@@ -740,9 +727,11 @@ run_crossfit <- function(data_split, n_folds = N_FOLDS_DEFAULT,
     n_folds = n_folds, M_tau = M_tau,
     M_tau_inference = M_tau_inference,
     lambda_selection = lambda_selection, verbose = verbose,
+    lambda_rule = lambda_rule,
     final_target_estimate = final_target_estimate,
     target_estimates = target_estimates,
     source_estimates = source_estimates,
+    source_estimates_matrix = source_estimates_matrix,
     crossfit_type = communication_mode,
     algorithm_label = paste0(communication_mode, "_two_layer_crossfit"),
     family_int = family_int,
@@ -798,7 +787,8 @@ combine_folds <- function(fold_list, fold_indices) {
 #' Stabilized lambda selection for weight optimization in cross-fitting
 #'
 #' Selects the regularization lambda for the aggregation weight optimization
-#' (eq:final_opt in main.tex). Uses two improvements over naive grid search:
+#' (eq:final_opt in main.tex). Uses a data-adaptive grid and a configurable
+#' selection rule over the evaluated grid:
 #'
 #' \enumerate{
 #'   \item \strong{Data-adaptive lambda grid.}
@@ -813,13 +803,11 @@ combine_folds <- function(fold_list, fold_indices) {
 #'     under-regularized (\eqn{\eta} unconstrained) to over-regularized
 #'     (\eqn{\eta \approx 0}, i.e.\ target-only).
 #'
-#'   \item \strong{One-standard-error (1-SE) rule for stabilized selection.}
-#'     Instead of picking the \eqn{\lambda} that minimizes estimated variance
-#'     (which can overfit noisy variance component estimates), we select the
-#'     \emph{largest} (most regularized) \eqn{\lambda} whose variance is within
-#'     a relative tolerance of the minimum. This is analogous to glmnet's 1-SE
-#'     rule but uses a relative threshold (5\%) because we lack replicate
-#'     variance estimates for a proper SE calculation.
+#'   \item \strong{Selection rule.}
+#'     \code{"min"} selects the variance minimizer, matching main.tex.
+#'     \code{"1se"} selects the \emph{largest} (most regularized) \eqn{\lambda}
+#'     whose variance is within a 5\% relative tolerance of the minimum,
+#'     analogous to glmnet's 1-SE rule.
 #' }
 #'
 #' @param n_folds number of cross-fitting folds used in main algorithm
@@ -832,13 +820,16 @@ combine_folds <- function(fold_list, fold_indices) {
 #' @param verbose print progress
 #' @param crossfit_type type of cross-fitting algorithm ("one_round" or "two_round")
 #' @param lambda_grid lambda values to test (default NULL for data-adaptive grid)
+#' @param lambda_rule selection rule: "min" or "1se"
 #' @return selected lambda value
 select_lambda_cv_crossfit <- function(n_folds, fold_target_estimate,
                                      fold_source_estimates, variances_k1, C_ot_k1,
                                      n_samples_k1, C_cross_k1, verbose = FALSE,
                                      crossfit_type = "one_round",
-                                     lambda_grid = NULL) {
+                                     lambda_grid = NULL,
+                                     lambda_rule = c("min", "1se")) {
 
+  lambda_rule <- match.arg(lambda_rule)
   K <- length(fold_source_estimates)
 
   # ==========================================================================
@@ -914,52 +905,45 @@ select_lambda_cv_crossfit <- function(n_folds, fold_target_estimate,
       tol         = WEIGHT_OPT_TOL
     ),
     error = function(e) {
-      warning(sprintf(
-        "select_lambda_cv_crossfit: batch C++ evaluation failed: %s. Using Inf for all lambdas.",
+      stop(sprintf(
+        "select_lambda_cv_crossfit: batch C++ evaluation failed: %s",
         conditionMessage(e)
       ))
-      rep(Inf, length(lambda_grid))
     }
   )
 
   # ==========================================================================
-  # STEP 3: Stabilized selection via one-standard-error rule
+  # STEP 3: Select lambda over the evaluated grid
   # ==========================================================================
-  # Among all lambdas whose variance is within RELATIVE_TOLERANCE of the
-  # minimum, pick the LARGEST (most regularized). This guards against
-  # overfitting noisy variance component estimates by preferring more
-  # regularization when the variance gain is marginal.
-  #
-  # 5% tolerance means we accept ≤ 2.47% SE inflation in exchange for
-  # substantially more stable weights. This is analogous to glmnet's
-  # lambda.1se but uses a relative threshold because we lack replicate
-  # variance estimates for a proper SE calculation.
+  # "min" matches main.tex. "1se" preserves the earlier conservative behavior:
+  # among lambdas within RELATIVE_TOLERANCE of the minimum, pick the largest.
   # ==========================================================================
   RELATIVE_TOLERANCE <- 0.05
 
   valid <- which(is.finite(cv_variances) & cv_variances > 0)
 
   if (length(valid) == 0) {
-    fallback <- if (!is.na(lambda_natural)) lambda_natural else lambda_grid[length(lambda_grid) %/% 2]
-    warning(sprintf("select_lambda_cv_crossfit: all %d lambdas produced invalid variance. Fallback lambda=%.4f.",
-                    length(lambda_grid), fallback))
-    return(fallback)
+    stop(sprintf("select_lambda_cv_crossfit: all %d lambdas produced invalid variance; cannot select aggregation lambda.",
+                 length(lambda_grid)))
   }
 
   min_var <- min(cv_variances[valid])
   min_var_idx <- valid[which.min(cv_variances[valid])]
 
-  # Lambdas within tolerance of minimum → pick the most regularized
-  within_tol <- valid[cv_variances[valid] <= min_var * (1 + RELATIVE_TOLERANCE)]
-  best_idx <- within_tol[which.max(lambda_grid[within_tol])]
+  if (identical(lambda_rule, "min")) {
+    best_idx <- min_var_idx
+  } else {
+    within_tol <- valid[cv_variances[valid] <= min_var * (1 + RELATIVE_TOLERANCE)]
+    best_idx <- within_tol[which.max(lambda_grid[within_tol])]
+  }
   best_lambda <- lambda_grid[best_idx]
 
   if (verbose) {
     cat(sprintf("  Min variance: %.6f at lambda=%.4f\n",
                 min_var, lambda_grid[min_var_idx]))
-    cat(sprintf("  Selected:     lambda=%.4f (var=%.6f, +%.1f%% vs min, 1-SE rule)\n",
+    cat(sprintf("  Selected:     lambda=%.4f (var=%.6f, +%.1f%% vs min, rule=%s)\n",
                 best_lambda, cv_variances[best_idx],
-                100 * (cv_variances[best_idx] / min_var - 1)))
+                100 * (cv_variances[best_idx] / min_var - 1), lambda_rule))
   }
 
   return(best_lambda)

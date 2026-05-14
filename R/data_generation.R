@@ -630,14 +630,15 @@ calculate_superpopulation_truth <- function(p, K = 3, config,
 generate_simulation_data <- function(n_total, K = 3, p = 4, config = "C1",
                                    estimand_type = "superpopulation",
                                    site_allocation = "model",
-                                   transform_type = "strong",
+                                   transform_type = "mild",
                                    outcome_type = "binary",
                                    heterogeneity_type = "none",
                                    shift_strength = 1.0,
                                    # FACE paper DGP parameters (only used when dgp_type = "face")
                                    dgp_type = "facec",
                                    ate_deviation   = 0.0,
-                                   n_deviated_sites = 0L) {
+                                   n_deviated_sites = 0L,
+                                   warn_ignored = TRUE) {
   # Validate all parameters via centralized function (single source of truth)
   validate_simulation_params(
     estimand_type    = estimand_type,
@@ -646,10 +647,14 @@ generate_simulation_data <- function(n_total, K = 3, p = 4, config = "C1",
     outcome_type     = outcome_type,
     heterogeneity_type = heterogeneity_type,
     shift_strength   = shift_strength,
+    n_total          = n_total,
+    K                = K,
+    p                = p,
     config           = config,
     dgp_type         = dgp_type,
     ate_deviation    = ate_deviation,
-    n_deviated_sites = n_deviated_sites
+    n_deviated_sites = n_deviated_sites,
+    warn_ignored     = warn_ignored
   )
 
   # ---- FACE paper DGP (Han et al., JASA 2023, Section 5.1) ----

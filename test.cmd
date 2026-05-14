@@ -8,7 +8,7 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=16g
 #SBATCH --job-name=FACEC_test
-#SBATCH -p msismall,amdsmall,agsmall
+#SBATCH -p preempt,saffo-2tb,msismall,msilarge,msilong,amdsmall,agsmall,amdlarge,amd512,amd2tb
 #SBATCH --nice=5
 
 # ============================================================================
@@ -25,9 +25,15 @@
 cd "${SLURM_SUBMIT_DIR:-$(dirname "$0")}"
 
 # Load R module
-module load R
+# Pin to the spack/centos7-ivybridge build that FACEC.so is compiled against;
+# unqualified `module load R` can resolve to a different build on Rocky 8 nodes.
+module load R/4.2.2-gcc-8.2.0-vp7tyde
 
-export R_LIBS_USER="${R_LIBS_USER:-${HOME}/Rlibs}"
+# Override unconditionally: the spack `R/4.2.2-gcc-8.2.0-vp7tyde` module sets
+# its own R_LIBS_USER (~/R/library), which is empty on this account. All 270
+# installed packages — including FACEC's compile-time deps Rcpp, RcppEigen,
+# glmnet, doParallel — live in ~/Rlibs, so we force that path.
+export R_LIBS_USER="${HOME}/Rlibs"
 
 # Prevent BLAS/OpenMP oversubscription during compilation and tests
 export OMP_NUM_THREADS=1
@@ -68,7 +74,9 @@ echo "=============================================="
 # ============================================================================
 echo ""
 echo "[$(date)] Building FACEC package (R CMD INSTALL --preclean)"
-R CMD INSTALL --preclean --no-docs --no-help --no-demo .
+# -l explicitly targets ~/Rlibs so the install lands where everything else
+# is and R CMD INSTALL can resolve Rcpp/RcppEigen/glmnet/doParallel.
+R CMD INSTALL --preclean --no-docs --no-help --no-demo -l "${R_LIBS_USER}" .
 INSTALL_EXIT=$?
 
 if [[ ${INSTALL_EXIT} -ne 0 ]]; then

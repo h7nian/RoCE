@@ -36,6 +36,9 @@
 #'   - numeric: fixed lambda value
 #' @param lambda_grid Optional lambda grid passed to
 #'   \code{select_lambda_cv_crossfit} when \code{lambda_selection = "cv"}.
+#' @param lambda_rule Rule used when \code{lambda_selection = "cv"}:
+#'   \code{"min"} selects the variance minimizer and \code{"1se"} selects the
+#'   largest lambda within 5\% of the minimum.
 #' @return List with estimate, variance, se, method
 #' @export
 estimate_oracle_dr <- function(data_split, alpha1_true, gamma_params,
@@ -43,7 +46,9 @@ estimate_oracle_dr <- function(data_split, alpha1_true, gamma_params,
                                 alpha0_true = NULL,
                                 target_propensity_true = NULL,
                                 lambda_selection = "cv",
-                                lambda_grid = NULL) {
+                                lambda_grid = NULL,
+                                lambda_rule = c("min", "1se")) {
+  lambda_rule <- match.arg(lambda_rule)
   target_data <- data_split[["t"]]
   source_sites <- setdiff(names(data_split), "t")
   K <- length(source_sites)
@@ -96,8 +101,8 @@ estimate_oracle_dr <- function(data_split, alpha1_true, gamma_params,
       ps_fit <- stats::glm(ind_a ~ Z_target, family = stats::binomial())
       pmax(pmin(ps_fit$fitted.values, POSITIVITY_UPPER), POSITIVITY_LOWER)
     }, error = function(e) {
-      warning(sprintf("estimate_oracle_dr: propensity GLM failed (%s), using marginal treatment rate.", conditionMessage(e)))
-      rep(pmax(mean(ind_a), POSITIVITY_LOWER), length(ind_a))
+      stop(sprintf("estimate_oracle_dr: target propensity GLM failed: %s",
+                   conditionMessage(e)), call. = FALSE)
     })
   }
   # varphi_ot_i = I(A=a)/pi_a * (Y - m(X)) + m(X) - M_t  (per-obs, length n_t)
@@ -144,8 +149,8 @@ estimate_oracle_dr <- function(data_split, alpha1_true, gamma_params,
     gamma_true <- gamma_params[[gamma_key]]
 
     if (is.null(gamma_true)) {
-      warning(sprintf("Oracle DR: gamma for %s not found, skipping", gamma_key))
-      next
+      stop(sprintf("estimate_oracle_dr: gamma for %s not found; cannot compute oracle source-assisted estimate.",
+                   gamma_key), call. = FALSE)
     }
 
     eta_dr <- as.numeric(Z_source_int %*% gamma_true)
@@ -183,16 +188,9 @@ estimate_oracle_dr <- function(data_split, alpha1_true, gamma_params,
 
   K_valid <- length(valid_sites)
 
-  # ---------- Fallback: target-only ----------
   if (K_valid == 0) {
-    fb_var <- max(V_ot / n_t, VARIANCE_MIN)
-    return(list(
-      estimate = M_t,
-      variance = fb_var,
-      se = sqrt(fb_var),
-      method = "oracle_dr",
-      oracle_propensity = if (used_true_propensity) "true" else "estimated"
-    ))
+    stop("estimate_oracle_dr: no valid source sites remained; refusing to silently return target-only oracle estimate.",
+         call. = FALSE)
   }
 
   # ---------- Construct variance components (same interface as cross-fit) ---
@@ -230,7 +228,8 @@ estimate_oracle_dr <- function(data_split, alpha1_true, gamma_params,
       C_cross_k1 = C_cross,
       verbose = FALSE,
       crossfit_type = "oracle",
-      lambda_grid = lambda_grid
+      lambda_grid = lambda_grid,
+      lambda_rule = lambda_rule
     )
   } else if (is.numeric(lambda_selection) && length(lambda_selection) == 1L && is.finite(lambda_selection)) {
     lambda_selection
@@ -262,6 +261,7 @@ estimate_oracle_dr <- function(data_split, alpha1_true, gamma_params,
     method   = "oracle_dr",
     oracle_propensity = if (used_true_propensity) "true" else "estimated",
     lambda_used = as.numeric(lambda_reg),
+    aggregation_lambda_rule = lambda_rule,
     weights  = as.numeric(eta),
     n        = n_t + sum(source_n_s)
   ))

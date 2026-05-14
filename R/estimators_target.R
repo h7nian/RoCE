@@ -63,18 +63,9 @@ estimate_target_only_crossfit <- function(target_data, n_folds = 3,
   x <- as.matrix(target_data$W_outcome)
   n <- target_data$n
   
-  # Handle edge case: no treated units
   if (sum(tr == A_val) == 0) {
-    return(list(
-      estimate = 0,
-      mu_hat_ot = 0,
-      V_ot = 1,
-      variance = 1 / max(1, n),
-      varphi_ot = rep(0, n),
-      prop_scores = rep(0.5, n),
-      m_pred = rep(0, n),
-      method = "crossfit_fallback"
-    ))
+    stop(sprintf("estimate_target_only_crossfit: no observations with A_val=%d in target data.",
+                 A_val), call. = FALSE)
   }
   
   # Assign folds with stratification by treatment to ensure each fold has
@@ -109,38 +100,41 @@ estimate_target_only_crossfit <- function(target_data, n_folds = 3,
     tr_train <- tr[train_idx]
     
     # Train propensity score model on training fold
-    ps_fit <- if (length(unique(tr_train)) < 2) {
-      rep(mean(tr_train), length(val_idx))
-    } else {
-      fit_glmnet_cv(
-        x_train = X_train, y_train = as.numeric(tr_train), x_predict = X_val,
-        family = "binomial", fallback_value = mean(tr_train),
-        caller_name = "estimate_target_only_crossfit", model_name = "PS",
-        fold_id = k
-      )
+    if (length(unique(tr_train)) < 2) {
+      stop(sprintf(
+        "estimate_target_only_crossfit: fold %d training data has only one treatment class; propensity model is not identifiable.",
+        k
+      ), call. = FALSE)
     }
+    ps_fit <- fit_glmnet_cv(
+      x_train = X_train, y_train = as.numeric(tr_train), x_predict = X_val,
+      family = "binomial",
+      caller_name = "estimate_target_only_crossfit", model_name = "PS",
+      fold_id = k
+    )
     
     prop_scores_oof[val_idx] <- clip_propensity(ps_fit)
     
-    # Train outcome model on training fold (only on treated)
+    # Train outcome model on training fold (only on the requested treatment arm)
     treated_train_idx <- which(tr_train == A_val)
-    if (length(treated_train_idx) >= MIN_TREATED_FOR_MODEL) {
-      X_treated_train <- X_train[treated_train_idx, , drop = FALSE]
-      y_treated_train <- y_train[treated_train_idx]
-      
-      or_fit <- fit_glmnet_cv(
-        x_train = X_treated_train, y_train = y_treated_train, x_predict = X_val,
-        family = glm_spec$glmnet_family, fallback_value = mean(y_treated_train),
-        clip_fn = function(pred) clip_outcome_pred(pred, family),
-        caller_name = "estimate_target_only_crossfit", model_name = "OR",
-        fold_id = k
-      )
-      
-      m_pred_oof[val_idx] <- or_fit
-    } else {
-      # Too few treated units in training fold
-      m_pred_oof[val_idx] <- mean(y[tr == A_val])
+    if (length(treated_train_idx) < MIN_TREATED_FOR_MODEL) {
+      stop(sprintf(
+        "estimate_target_only_crossfit: fold %d has only %d training observations with A_val=%d; need at least %d for outcome model.",
+        k, length(treated_train_idx), A_val, MIN_TREATED_FOR_MODEL
+      ), call. = FALSE)
     }
+    X_treated_train <- X_train[treated_train_idx, , drop = FALSE]
+    y_treated_train <- y_train[treated_train_idx]
+
+    or_fit <- fit_glmnet_cv(
+      x_train = X_treated_train, y_train = y_treated_train, x_predict = X_val,
+      family = glm_spec$glmnet_family,
+      clip_fn = function(pred) clip_outcome_pred(pred, family),
+      caller_name = "estimate_target_only_crossfit", model_name = "OR",
+      fold_id = k
+    )
+
+    m_pred_oof[val_idx] <- or_fit
   }
   
   # Compute AIPW estimator with cross-fitted nuisance
@@ -150,7 +144,8 @@ estimate_target_only_crossfit <- function(target_data, n_folds = 3,
   # Handle any NA or Inf values
   bad_idx <- is.na(phi_i) | is.infinite(phi_i)
   if (any(bad_idx)) {
-    phi_i[bad_idx] <- mean(y[tr == A_val])
+    stop(sprintf("estimate_target_only_crossfit: AIPW pseudo-outcome produced %d non-finite value(s).",
+                 sum(bad_idx)), call. = FALSE)
   }
   
   mu_hat_ot <- mean(phi_i)
@@ -219,14 +214,10 @@ estimate_target_only_from_complement <- function(target_folds, k1, n_folds,
   tr_eval <- eval_data$A
   n_eval <- eval_data$n
 
-  # Edge case: no treated units in training data
   treated_train_idx <- which(tr_train == A_val)
   if (length(treated_train_idx) == 0) {
-    return(list(
-      estimate = 0, V_ot = 1, variance = 1 / max(1, n_eval),
-      varphi_ot = rep(0, n_eval), prop_scores = rep(0.5, n_eval),
-      m_pred = rep(0, n_eval), method = "complement_fallback"
-    ))
+    stop(sprintf("estimate_target_only_from_complement: no training observations with A_val=%d after excluding fold(s) %s.",
+                 A_val, paste(exclude_folds, collapse = ",")), call. = FALSE)
   }
 
   cache_key <- paste0(
@@ -240,16 +231,18 @@ estimate_target_only_from_complement <- function(target_folds, k1, n_folds,
   if (!is.null(propensity_cache) && exists(cache_key, envir = propensity_cache, inherits = FALSE)) {
     prop_scores_eval <- get(cache_key, envir = propensity_cache, inherits = FALSE)
   } else {
-    prop_scores_eval <- if (length(unique(tr_train)) < 2) {
-      rep(mean(tr_train), n_eval)
-    } else {
-      fit_glmnet_cv(
-        x_train = x_train, y_train = as.numeric(tr_train), x_predict = x_eval,
-        family = "binomial", fallback_value = mean(tr_train),
-        clip_fn = clip_propensity,
-        caller_name = "estimate_complement_fold_aipw", model_name = "PS"
-      )
+    if (length(unique(tr_train)) < 2) {
+      stop(sprintf(
+        "estimate_target_only_from_complement: training data after excluding fold(s) %s has only one treatment class; propensity model is not identifiable.",
+        paste(exclude_folds, collapse = ",")
+      ), call. = FALSE)
     }
+    prop_scores_eval <- fit_glmnet_cv(
+      x_train = x_train, y_train = as.numeric(tr_train), x_predict = x_eval,
+      family = "binomial",
+      clip_fn = clip_propensity,
+      caller_name = "estimate_complement_fold_aipw", model_name = "PS"
+    )
     if (!is.null(propensity_cache)) {
       assign(cache_key, prop_scores_eval, envir = propensity_cache)
     }
@@ -260,16 +253,19 @@ estimate_target_only_from_complement <- function(target_folds, k1, n_folds,
   X_treated_train <- x_train[treated_train_idx, , drop = FALSE]
   y_treated_train <- y_train[treated_train_idx]
 
-  m_pred_eval <- if (length(treated_train_idx) >= MIN_TREATED_FOR_MODEL) {
-    fit_glmnet_cv(
-      x_train = X_treated_train, y_train = y_treated_train, x_predict = x_eval,
-      family = glm_spec$glmnet_family, fallback_value = mean(y_treated_train),
-      clip_fn = function(pred) clip_outcome_pred(pred, family),
-      caller_name = "estimate_complement_fold_aipw", model_name = "OR"
-    )
-  } else {
-    rep(mean(y_treated_train), n_eval)
+  if (length(treated_train_idx) < MIN_TREATED_FOR_MODEL) {
+    stop(sprintf(
+      "estimate_target_only_from_complement: only %d training observations with A_val=%d after excluding fold(s) %s; need at least %d.",
+      length(treated_train_idx), A_val, paste(exclude_folds, collapse = ","),
+      MIN_TREATED_FOR_MODEL
+    ), call. = FALSE)
   }
+  m_pred_eval <- fit_glmnet_cv(
+    x_train = X_treated_train, y_train = y_treated_train, x_predict = x_eval,
+    family = glm_spec$glmnet_family,
+    clip_fn = function(pred) clip_outcome_pred(pred, family),
+    caller_name = "estimate_complement_fold_aipw", model_name = "OR"
+  )
   m_pred_eval <- clip_outcome_pred(m_pred_eval, family)
 
   # --- AIPW pseudo-outcomes on fold k1 ---
@@ -278,7 +274,8 @@ estimate_target_only_from_complement <- function(target_folds, k1, n_folds,
 
   bad_idx <- is.na(phi_i) | is.infinite(phi_i)
   if (any(bad_idx)) {
-    phi_i[bad_idx] <- mean(y_eval[tr_eval == A_val])
+    stop(sprintf("estimate_target_only_from_complement: AIPW pseudo-outcome produced %d non-finite value(s).",
+                 sum(bad_idx)), call. = FALSE)
   }
 
   mu_hat_ot <- mean(phi_i)

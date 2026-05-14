@@ -33,8 +33,8 @@
 // SAMPLE SIZE NORMALIZATION:
 // The gradient contribution from source data is normalized by n (total sample size), NOT n_treated.
 // This matches the empirical expectation definition in main.tex:
-//   Ẽ_{s_j}[I(A=1) f(X)] = (1/n_s) * Σ_{i=1}^{n_s} I(A_i=1) * f(X_i)
-// The indicator function I(A_i=1) zeros out contributions from untreated units,
+//   Ẽ_{s_j}[I(A=a) f(X)] = (1/n_s) * Σ_{i=1}^{n_s} I(A_i=a) * f(X_i)
+// The indicator function I(A_i=a) zeros out contributions from the other arm,
 // but the normalizing constant is the full sample size n_s.
 // [[Rcpp::export]]
 List fit_unified_density_ratio_cpp(const MatrixXd& Z_site, const VectorXd& A_source, 
@@ -46,6 +46,10 @@ List fit_unified_density_ratio_cpp(const MatrixXd& Z_site, const VectorXd& A_sou
                                    int family_int, int link_int,
                                    const VectorXd& warm_start) {
     
+    if (A_val != 0 && A_val != 1) {
+        throw std::runtime_error("fit_unified_density_ratio_cpp: A_val must be 0 or 1.");
+    }
+
     int n = Z_site.rows();
     int p_site = Z_site.cols() + 1; // +1 for intercept
     
@@ -54,10 +58,16 @@ List fit_unified_density_ratio_cpp(const MatrixXd& Z_site, const VectorXd& A_sou
     }
     int p_outcome = W_outcome.cols() + 1;
     
-    // DIMENSION CHECK: mean_grad_psi should have length p_site (for γ updates)
-    // If dimensions mismatch, we need to handle appropriately
-    int mean_grad_psi_size = mean_grad_psi.size();
-    bool grad_dim_mismatch = (mean_grad_psi_size != p_site);
+    if (mean_grad_psi.size() != p_site) {
+        throw std::runtime_error(
+            "fit_unified_density_ratio_cpp: mean_grad_psi length must match "
+            "ncol(Z_site) + 1. Compute E_t[h'(W alpha) * Z_tilde] when W_outcome "
+            "and Z_site differ."
+        );
+    }
+    if (alpha_init.size() != p_outcome) {
+        throw std::runtime_error("fit_unified_density_ratio_cpp: alpha_init length must match ncol(W_outcome) + 1.");
+    }
     
     // Add intercept term to Z_site (for γ)
     MatrixXd Z_site_int = prepend_intercept(Z_site);
@@ -66,9 +76,7 @@ List fit_unified_density_ratio_cpp(const MatrixXd& Z_site, const VectorXd& A_sou
     std::vector<int> treated_idx = filter_treated_indices(A_source, A_val);
     
     if (treated_idx.empty()) {
-        return List::create(Named("gamma") = VectorXd::Zero(p_site),
-                           Named("converged") = false,
-                           Named("iterations") = 0);
+        throw std::runtime_error("fit_unified_density_ratio_cpp: no observations with A_val in this fold.");
     }
     
     int n_treated = treated_idx.size();
@@ -117,17 +125,9 @@ List fit_unified_density_ratio_cpp(const MatrixXd& Z_site, const VectorXd& A_sou
         
         // Coordinate descent: update γ_j one by one
         for (int j = 0; j < p_site; j++) {
-            // First term: mean_grad_psi[j] represents Ẽ_t[∇_α ψ(φ(X); α̂_init)][j]
-            // FIXED: Handle dimension mismatch between mean_grad_psi and p_site
-            // When mean_grad_psi dimension differs (e.g., from W_outcome vs Z_site mismatch),
-            // use 0 for out-of-bounds indices to avoid undefined behavior
-            double grad_j = 0.0;
-            if (!grad_dim_mismatch) {
-                grad_j = mean_grad_psi(j);
-            } else if (j < mean_grad_psi_size) {
-                grad_j = mean_grad_psi(j);
-            }
-            // If j >= mean_grad_psi_size, grad_j stays 0 (conservative fallback)
+            // First term: mean_grad_psi[j] represents
+            // E_t[h'(W(X)^T alpha_init) * Z_tilde_j(X)], matching γ's basis.
+            double grad_j = mean_grad_psi(j);
             
             // Second term: -Ẽ_{s_j}[I(A=1) φ_site(X)_j exp(-φ_site(X)^T γ) ψ'(η)]
             // where η = φ_outcome(X)^T α (using W_outcome features)
@@ -140,7 +140,7 @@ List fit_unified_density_ratio_cpp(const MatrixXd& Z_site, const VectorXd& A_sou
                 double exp_neg_g = std::exp(-current_g);
                 
                 if (std::isnan(exp_neg_g) || std::isinf(exp_neg_g)) {
-                    exp_neg_g = 1.0;
+                    throw std::runtime_error("fit_unified_density_ratio_cpp: non-finite density-ratio weight encountered after logit clipping.");
                 }
                 exp_neg_g = std::max(NumericalConstants::WEIGHT_MIN, std::min(NumericalConstants::WEIGHT_MAX, exp_neg_g));
                 
@@ -314,9 +314,13 @@ List select_lambda_cv_density_ratio_cpp(const MatrixXd& Z_site, const VectorXd& 
 
     auto lambda_order = CVUtils::sort_lambda_descending(lambda_grid);
     auto treated_idx = CVUtils::filter_treated(A_source, A_val);
-    if (treated_idx.empty()) return CVUtils::make_early_return(lambda_grid, n_lambda, true);
+    if (treated_idx.empty()) {
+        throw std::runtime_error("select_lambda_cv_density_ratio_cpp: no observations with A_val.");
+    }
     int n_treated = treated_idx.size();
-    if (n_treated < n_folds) return CVUtils::make_early_return(lambda_grid, n_lambda, false);
+    if (n_treated < n_folds) {
+        throw std::runtime_error("select_lambda_cv_density_ratio_cpp: not enough A_val observations for requested CV folds.");
+    }
 
     // Pre-compute treated data with intercept
     MatrixXd X_treated_int = prepend_intercept(subset_rows(Z_site, treated_idx));

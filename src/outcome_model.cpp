@@ -34,6 +34,10 @@ List fit_unified_outcome_cpp(const MatrixXd& W_outcome, const VectorXd& Y_source
                              const MatrixXd& Z_site,
                              const VectorXd& warm_start) {
     
+    if (A_val != 0 && A_val != 1) {
+        throw std::runtime_error("fit_unified_outcome_cpp: A_val must be 0 or 1.");
+    }
+
     int n = W_outcome.rows();
     int p_outcome = W_outcome.cols() + 1; // +1 for intercept
     
@@ -41,49 +45,49 @@ List fit_unified_outcome_cpp(const MatrixXd& W_outcome, const VectorXd& Y_source
         throw std::runtime_error("fit_unified_outcome_cpp: Z_site must be non-empty and match W_outcome rows.");
     }
     
-    // Filter to treatment group only
-    std::vector<int> treated_idx;
+    // Filter to the requested treatment arm A == A_val. This may be treatment
+    // or control, so use arm_* names instead of treated_*.
+    std::vector<int> arm_idx;
     for (int i = 0; i < n; i++) {
         if (A_source(i) == A_val) {
-            treated_idx.push_back(i);
+            arm_idx.push_back(i);
         }
     }
     
-    if (treated_idx.empty()) {
-        return List::create(Named("alpha") = VectorXd::Zero(p_outcome),
-                           Named("converged") = false,
-                           Named("iterations") = 0,
-                           Named("family") = family_int,
-                           Named("link") = link_int);
+    if (arm_idx.empty()) {
+        throw std::runtime_error("fit_unified_outcome_cpp: no observations with A_val in this fold.");
     }
     
-    int n_treated = treated_idx.size();
-    MatrixXd X_treated(n_treated, W_outcome.cols());
-    VectorXd Y_treated(n_treated);
+    int n_arm = arm_idx.size();
+    MatrixXd X_arm(n_arm, W_outcome.cols());
+    VectorXd Y_arm(n_arm);
     
-    for (int i = 0; i < n_treated; i++) {
-        X_treated.row(i) = W_outcome.row(treated_idx[i]);
-        Y_treated(i) = Y_source(treated_idx[i]);
+    for (int i = 0; i < n_arm; i++) {
+        X_arm.row(i) = W_outcome.row(arm_idx[i]);
+        Y_arm(i) = Y_source(arm_idx[i]);
     }
     
-    // Calculate density ratio weights for treated units
-    // Following main.tex: w(X_i; γ̂) = I(A=1)/exp(g(Z_i; γ̂))
+    // Calculate density ratio weights for units in the requested arm
+    // Following main.tex: w_a(X_i; γ̂) = I(A=a)/exp(g(Z_i; γ̂))
     // CRITICAL: Use Z_site (not W_outcome) for density ratio calculation!
-    MatrixXd Z_treated_for_dr = prepend_intercept(subset_rows(Z_site, treated_idx));
-    VectorXd weights = compute_density_ratio_weights(Z_treated_for_dr, gamma_s, calibrated, M_tau);
+    MatrixXd Z_arm_for_dr = prepend_intercept(subset_rows(Z_site, arm_idx));
+    VectorXd weights = compute_density_ratio_weights(Z_arm_for_dr, gamma_s, calibrated, M_tau);
     
-    // Use raw (unnormalized) weights to match the paper's empirical expectation
-    // Ẽ_{s_j}[w(X;γ̂) loss(Y, ψ(φ^Tα))], where the 1/n normalization is handled
-    // inside fit_general_glm_cpp. Normalizing weights would change the effective
-    // regularization strength relative to the data-fit term.
+    // fit_general_glm_cpp averages over the arm-only matrix passed below.
+    // Scale weights by n_arm / n_source so the data-fit term equals the
+    // paper's full-source expectation:
+    //   (1/n_source) Σ I(A=a) w_i loss_i.
+    // Without this factor, the same lambda would be too weak whenever the
+    // treatment arm is a fraction of the source sample.
     // Only guard against degenerate case where all weights are zero.
     double weight_sum = weights.sum();
     if (weight_sum <= 0) {
-        weights.setOnes();
+        throw std::runtime_error("fit_unified_outcome_cpp: density-ratio weights sum to zero; cannot fit method-aligned weighted outcome loss.");
     }
+    weights *= static_cast<double>(n_arm) / static_cast<double>(n);
     
     // Use general GLM fitting with unnormalized weights
-    List result = fit_general_glm_cpp(X_treated, Y_treated, weights, family_int, link_int, lambda, max_iter, tol, warm_start);
+    List result = fit_general_glm_cpp(X_arm, Y_arm, weights, family_int, link_int, lambda, max_iter, tol, warm_start);
     
     return result;
 }
@@ -205,34 +209,40 @@ List select_lambda_cv_general_refined_outcome_cpp(const MatrixXd& W_outcome, con
     }
 
     auto lambda_order = CVUtils::sort_lambda_descending(lambda_grid);
-    auto treated_idx = CVUtils::filter_treated(A_source, A_val);
-    if (treated_idx.empty()) return CVUtils::make_early_return(lambda_grid, n_lambda, true);
-    int n_treated = treated_idx.size();
-    if (n_treated < n_folds) return CVUtils::make_early_return(lambda_grid, n_lambda, false);
+    auto arm_idx = CVUtils::filter_treated(A_source, A_val);
+    if (arm_idx.empty()) {
+        throw std::runtime_error("select_lambda_cv_general_refined_outcome_cpp: no observations with A_val.");
+    }
+    int n_arm = arm_idx.size();
+    if (n_arm < n_folds) {
+        throw std::runtime_error("select_lambda_cv_general_refined_outcome_cpp: not enough A_val observations for requested CV folds.");
+    }
 
     // Pre-compute outcome features with intercept
-    MatrixXd X_treated_int = prepend_intercept(subset_rows(W_outcome, treated_idx));
-    VectorXd Y_treated = subset_elements(Y_source, treated_idx);
+    MatrixXd X_arm_int = prepend_intercept(subset_rows(W_outcome, arm_idx));
+    VectorXd Y_arm = subset_elements(Y_source, arm_idx);
 
     // Pre-compute weights from density ratio (refined = not calibrated)
-    MatrixXd Z_treated_for_dr = prepend_intercept(subset_rows(Z_site, treated_idx));
-    VectorXd weights_all = compute_density_ratio_weights(Z_treated_for_dr, gamma_s, false);
+    MatrixXd Z_arm_for_dr = prepend_intercept(subset_rows(Z_site, arm_idx));
+    VectorXd weights_all = compute_density_ratio_weights(Z_arm_for_dr, gamma_s, false);
 
-    auto folds = CVUtils::create_fold_splits(n_treated, n_folds);
+    auto folds = CVUtils::create_fold_splits(n_arm, n_folds);
 
     // Pre-allocate fold data
     std::vector<MatrixXd> X_train_folds(n_folds), X_val_folds(n_folds);
     std::vector<VectorXd> Y_train_folds(n_folds), Y_val_folds(n_folds);
     std::vector<VectorXd> w_train_folds(n_folds), w_val_folds(n_folds);
     for (int fold = 0; fold < n_folds; fold++) {
-        X_train_folds[fold] = CVUtils::slice_rows(X_treated_int, folds.train[fold]);
-        Y_train_folds[fold] = CVUtils::slice_elements(Y_treated, folds.train[fold]);
-        // Use raw (unnormalized) weights to match fit_unified_outcome_cpp / fit_general_glm_cpp.
-        // Normalizing here would shift the effective λ relative to the final fit.
-        w_train_folds[fold] = CVUtils::slice_elements(weights_all, folds.train[fold]);
-        X_val_folds[fold] = CVUtils::slice_rows(X_treated_int, folds.val[fold]);
-        Y_val_folds[fold] = CVUtils::slice_elements(Y_treated, folds.val[fold]);
-        w_val_folds[fold] = CVUtils::slice_elements(weights_all, folds.val[fold]);
+        X_train_folds[fold] = CVUtils::slice_rows(X_arm_int, folds.train[fold]);
+        Y_train_folds[fold] = CVUtils::slice_elements(Y_arm, folds.train[fold]);
+        // Scale by treated-fold size / full source size. glm_cd_update divides
+        // by the arm-fold size, yielding a full-source empirical mean.
+        double train_scale = static_cast<double>(folds.train[fold].size()) / static_cast<double>(n);
+        double val_scale = static_cast<double>(folds.val[fold].size()) / static_cast<double>(n);
+        w_train_folds[fold] = CVUtils::slice_elements(weights_all, folds.train[fold]) * train_scale;
+        X_val_folds[fold] = CVUtils::slice_rows(X_arm_int, folds.val[fold]);
+        Y_val_folds[fold] = CVUtils::slice_elements(Y_arm, folds.val[fold]);
+        w_val_folds[fold] = CVUtils::slice_elements(weights_all, folds.val[fold]) * val_scale;
     }
 
     // CV loop: outer=fold, inner=lambda
@@ -284,33 +294,40 @@ List select_lambda_cv_calibrated_outcome_cpp(const MatrixXd& W_outcome, const Ve
     }
 
     auto lambda_order = CVUtils::sort_lambda_descending(lambda_grid);
-    auto treated_idx = CVUtils::filter_treated(A_source, A_val);
-    if (treated_idx.empty()) return CVUtils::make_early_return(lambda_grid, n_lambda, true);
-    int n_treated = treated_idx.size();
-    if (n_treated < n_folds) return CVUtils::make_early_return(lambda_grid, n_lambda, false);
+    auto arm_idx = CVUtils::filter_treated(A_source, A_val);
+    if (arm_idx.empty()) {
+        throw std::runtime_error("select_lambda_cv_calibrated_outcome_cpp: no observations with A_val.");
+    }
+    int n_arm = arm_idx.size();
+    if (n_arm < n_folds) {
+        throw std::runtime_error("select_lambda_cv_calibrated_outcome_cpp: not enough A_val observations for requested CV folds.");
+    }
 
     // Pre-compute outcome features with intercept
-    MatrixXd X_treated_int = prepend_intercept(subset_rows(W_outcome, treated_idx));
-    VectorXd Y_treated = subset_elements(Y_source, treated_idx);
+    MatrixXd X_arm_int = prepend_intercept(subset_rows(W_outcome, arm_idx));
+    VectorXd Y_arm = subset_elements(Y_source, arm_idx);
 
     // Pre-compute truncated weights (calibrated = true)
-    MatrixXd Z_treated_for_dr = prepend_intercept(subset_rows(Z_site, treated_idx));
-    VectorXd weights_all = compute_density_ratio_weights(Z_treated_for_dr, gamma_init, true, M_tau);
+    MatrixXd Z_arm_for_dr = prepend_intercept(subset_rows(Z_site, arm_idx));
+    VectorXd weights_all = compute_density_ratio_weights(Z_arm_for_dr, gamma_init, true, M_tau);
 
-    auto folds = CVUtils::create_fold_splits(n_treated, n_folds);
+    auto folds = CVUtils::create_fold_splits(n_arm, n_folds);
 
     // Pre-allocate fold data
     std::vector<MatrixXd> X_train_folds(n_folds), X_val_folds(n_folds);
     std::vector<VectorXd> Y_train_folds(n_folds), Y_val_folds(n_folds);
     std::vector<VectorXd> w_train_folds(n_folds), w_val_folds(n_folds);
     for (int fold = 0; fold < n_folds; fold++) {
-        X_train_folds[fold] = CVUtils::slice_rows(X_treated_int, folds.train[fold]);
-        Y_train_folds[fold] = CVUtils::slice_elements(Y_treated, folds.train[fold]);
-        // Use raw (unnormalized) weights to match fit_unified_outcome_cpp / fit_general_glm_cpp.
-        w_train_folds[fold] = CVUtils::slice_elements(weights_all, folds.train[fold]);
-        X_val_folds[fold] = CVUtils::slice_rows(X_treated_int, folds.val[fold]);
-        Y_val_folds[fold] = CVUtils::slice_elements(Y_treated, folds.val[fold]);
-        w_val_folds[fold] = CVUtils::slice_elements(weights_all, folds.val[fold]);
+        X_train_folds[fold] = CVUtils::slice_rows(X_arm_int, folds.train[fold]);
+        Y_train_folds[fold] = CVUtils::slice_elements(Y_arm, folds.train[fold]);
+        // Scale by treated-fold size / full source size. glm_cd_update divides
+        // by the arm-fold size, yielding a full-source empirical mean.
+        double train_scale = static_cast<double>(folds.train[fold].size()) / static_cast<double>(n);
+        double val_scale = static_cast<double>(folds.val[fold].size()) / static_cast<double>(n);
+        w_train_folds[fold] = CVUtils::slice_elements(weights_all, folds.train[fold]) * train_scale;
+        X_val_folds[fold] = CVUtils::slice_rows(X_arm_int, folds.val[fold]);
+        Y_val_folds[fold] = CVUtils::slice_elements(Y_arm, folds.val[fold]);
+        w_val_folds[fold] = CVUtils::slice_elements(weights_all, folds.val[fold]) * val_scale;
     }
 
     // CV loop — use specified GLM family/link for calibrated outcome

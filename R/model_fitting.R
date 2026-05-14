@@ -9,8 +9,8 @@
 # These functions support estimation of the POTENTIAL OUTCOME MEAN:
 #   μ^a_t = E_t[Y(a)]  where a ∈ {0, 1}
 #
-# By default, we estimate μ¹_t = E_t[Y(1)] (treatment effect for treated).
-# Set A_val = 0 to estimate μ⁰_t = E_t[Y(0)] (outcome for control).
+# By default, we estimate μ¹_t = E_t[Y(1)] (treated potential outcome mean).
+# Set A_val = 0 to estimate μ⁰_t = E_t[Y(0)] (control potential outcome mean).
 # ATE = μ¹_t - μ⁰_t requires running the algorithm twice.
 #
 # ============================================================================
@@ -27,8 +27,11 @@
 # - alpha / alpha_init → α (outcome model parameters)
 # - gamma / gamma_s → γ (site/treatment model / density ratio parameters)
 # - alpha_ot → α_{ot} (target-only outcome model parameters)
-# - X / W_outcome → φ(X) (basis expansion of covariates for outcome model)
-# - Z_site → φ(X) (basis expansion for site/treatment model)
+# - X / W_outcome → W(X) (basis expansion for outcome model)
+# - Z_site → Z(X) (basis expansion for site/treatment / density-ratio model)
+#   main.tex uses a single φ(X); the code allows W(X) and Z(X) to differ.
+#   Calibrated density-ratio target summaries therefore use
+#   E_t[h'(W(X)^T α) * Z̃(X)] so the moment has the same dimension as γ.
 # - A_val → a ∈ {0,1} (treatment indicator value)
 # - delta_ts → δ_{t,s_j} (correction term from source site)
 # - mu_pred_ts → Ẽ_t[ψ(φ(X); α_{t,s_j})] (outcome model prediction on target)
@@ -53,6 +56,26 @@
 # Dependencies: constants.R, numerical_utils.R
 # All loaded automatically by the R package system (see DESCRIPTION Collate field).
 
+.validate_A_val <- function(A_val, caller) {
+  if (length(A_val) != 1L || is.na(A_val) || !is.numeric(A_val) || !(A_val %in% c(0, 1))) {
+    stop(sprintf("%s: A_val must be a scalar 0 or 1.", caller))
+  }
+  as.integer(A_val)
+}
+
+.validate_lambda_scalar <- function(lambda, caller, arg = "lambda", allow_zero = TRUE) {
+  if (length(lambda) != 1L || is.na(lambda) || !is.numeric(lambda) || !is.finite(lambda)) {
+    stop(sprintf("%s: %s must be a finite numeric scalar.", caller, arg))
+  }
+  lambda <- as.numeric(lambda)
+  if (allow_zero) {
+    if (lambda < 0) stop(sprintf("%s: %s must be non-negative.", caller, arg))
+  } else {
+    if (lambda <= 0) stop(sprintf("%s: %s must be positive.", caller, arg))
+  }
+  lambda
+}
+
 # ============================================================================
 # R-BASED GLM FITTING (using glmnet)
 # ============================================================================
@@ -75,7 +98,9 @@
 #' @param Y Outcome vector (n x 1)
 #' @param A Treatment indicator vector (n x 1), binary \{0, 1\}
 #' @param A_val Treatment value to fit (default 1 for treated group)
-#' @param lambda L1 regularization parameter. If NULL, selected via CV.
+#' @param lambda L1 regularization parameter on the full-source empirical
+#'        objective scale. Internally this is converted to glmnet's
+#'        treatment-arm-only scale after filtering to \code{A == A_val}.
 #' @param nlambda Number of lambda values in glmnet path (default 100).
 #'        Lower values (e.g., 20) speed up CV with minimal precision loss.
 #' @param family GLM family: "gaussian" or "binomial".
@@ -85,44 +110,51 @@
 #'
 #' @details
 #' The function:
-#' 1. Filters data to the specified treatment group (A = A_val)
+#' 1. Filters data to the specified treatment arm (A = A_val)
 #' 2. Uses cv.glmnet for lambda selection if lambda is NULL
-#' 3. Fits a GLM with L1 penalty using the specified family
-#' 4. Returns coefficients including the intercept
+#' 3. Converts between glmnet's arm-only loss scale and the paper's
+#'    full-source empirical loss scale
+#' 4. Fits a GLM with L1 penalty using the specified family
+#' 5. Returns coefficients including the intercept
 #'
 #' @seealso \code{\link{fit_unified_outcome}} for C++ accelerated outcome fitting
 #' @export
 fit_initial_outcome <- function(W_outcome, Y, A, A_val = 1L, lambda = NULL, 
                                 nlambda = LAMBDA_GRID_SIZE_STANDARD, family = "binomial") {
   
+  A_val <- .validate_A_val(A_val, "fit_initial_outcome")
+  if (!is.null(lambda)) {
+    lambda <- .validate_lambda_scalar(lambda, "fit_initial_outcome")
+  }
+
   # Resolve GLM family for glmnet
   glm_spec <- resolve_glm_family(family)
   glmnet_family <- glm_spec$glmnet_family
   
-  # Filter to treatment group
-  treated_idx <- which(A == A_val)
-  if (length(treated_idx) == 0) {
-    warning(sprintf("fit_initial_outcome: No observations with A=%d (n=%d). Returning zero coefficients.",
-                    A_val, nrow(W_outcome)))
-    return(rep(0, ncol(W_outcome) + 1))
+  # Filter to treatment arm
+  arm_idx <- which(A == A_val)
+  if (length(arm_idx) == 0) {
+    stop(sprintf("fit_initial_outcome: no observations with A_val=%d (n=%d). Outcome model is not identifiable for this fold.",
+                 A_val, nrow(W_outcome)))
   }
   
-  X_treated <- W_outcome[treated_idx, , drop = FALSE]
-  Y_treated <- Y[treated_idx]
+  X_arm <- W_outcome[arm_idx, , drop = FALSE]
+  Y_arm <- Y[arm_idx]
   
   # Ensure minimum sample size for CV
-  n_treated <- length(Y_treated)
+  n_arm <- length(Y_arm)
+  arm_fraction <- n_arm / nrow(W_outcome)
   
   # ---------- Standard path: glmnet L1-regularized GLM -----------------------
   if (is.null(lambda)) {
     # Use cross-validation to select lambda
-    lambda_use <- tryCatch({
+    lambda_fit <- tryCatch({
       # Adaptive number of folds based on sample size
-      n_cv_folds <- get_cv_fold_count(n_treated)
+      n_cv_folds <- get_cv_fold_count(n_arm)
       
       cv_fit <- glmnet::cv.glmnet(
-        x = X_treated,
-        y = Y_treated,
+        x = X_arm,
+        y = Y_arm,
         family = glmnet_family,
         alpha = 1,  # Lasso penalty
         standardize = TRUE,
@@ -136,32 +168,86 @@ fit_initial_outcome <- function(W_outcome, Y, A, A_val = 1L, lambda = NULL,
       # breaking the doubly-robust bias cancellation.
       cv_fit$lambda.min
     }, error = function(e) {
-      # Fallback lambda if CV fails
-      warning(sprintf("cv.glmnet failed (family=%s, n_treated=%d, nlambda=%d): %s. Using LAMBDA_DEFAULT=%.4f.",
-                      glmnet_family, n_treated, nlambda, conditionMessage(e), LAMBDA_DEFAULT))
-      LAMBDA_DEFAULT
+      stop(sprintf("fit_initial_outcome: cv.glmnet failed (family=%s, n_arm=%d, nlambda=%d): %s",
+                   glmnet_family, n_arm, nlambda, conditionMessage(e)))
     })
+    lambda_use <- lambda_fit * arm_fraction
   } else {
-    lambda_use <- lambda
+    lambda_use <- as.numeric(lambda)
+    lambda_fit <- lambda_use / arm_fraction
   }
   
   # Fit final model with selected lambda
   fit <- glmnet(
-    x = X_treated,
-    y = Y_treated,
+    x = X_arm,
+    y = Y_arm,
     family = glmnet_family,
     alpha = 1,
-    lambda = lambda_use,
+    lambda = lambda_fit,
     standardize = TRUE
   )
   
   # Extract coefficients (includes intercept as first element)
-  alpha <- as.vector(coef(fit, s = lambda_use))
+  alpha <- as.vector(coef(fit, s = lambda_fit))
   
-  # Return both alpha and the selected lambda (for caching)
+  # Return the full-source-scale lambda for caching across folds whose arm
+  # prevalence may differ. lambda_fit records the glmnet-scale value used here.
   attr(alpha, "lambda_used") <- lambda_use
+  attr(alpha, "lambda_fit") <- lambda_fit
   
   return(alpha)
+}
+
+#' Mean GLM gradient expressed on the density-ratio basis
+#'
+#' Computes the target-site summary used in the calibrated density-ratio
+#' moment when the outcome basis \code{W_outcome} and site basis \code{Z_site}
+#' differ:
+#' \deqn{E_t[h'(W(X)^T\alpha) \tilde Z(X)]}
+#' where \eqn{\tilde Z(X)} includes the intercept. This is the dual-basis
+#' counterpart of \code{mean_glm_gradient_cpp()}, which returns the same
+#' quantity on the outcome basis \eqn{\tilde W(X)}.
+#'
+#' @param W_outcome Outcome-model features used with \code{alpha}.
+#' @param Z_site Site/density-ratio features used with \code{gamma}.
+#' @param alpha Outcome-model parameters, including intercept.
+#' @param family_int Integer GLM family code, accepted for API symmetry.
+#' @param link_int Integer link code.
+#' @return Numeric vector of length \code{ncol(Z_site) + 1}.
+#' @keywords internal
+.mean_glm_gradient_site_basis <- function(W_outcome, Z_site, alpha,
+                                          family_int = FAMILY_BINOMIAL,
+                                          link_int = LINK_LOGIT) {
+  W_mat <- as.matrix(W_outcome)
+  Z_mat <- as.matrix(Z_site)
+  alpha <- as.numeric(alpha)
+  link_int <- as.integer(link_int)
+
+  if (nrow(W_mat) != nrow(Z_mat)) {
+    stop(sprintf(".mean_glm_gradient_site_basis: row mismatch between W_outcome (%d) and Z_site (%d).",
+                 nrow(W_mat), nrow(Z_mat)))
+  }
+  if (length(alpha) != ncol(W_mat) + 1L) {
+    stop(sprintf(".mean_glm_gradient_site_basis: alpha has length %d, expected %d for W_outcome.",
+                 length(alpha), ncol(W_mat) + 1L))
+  }
+  if (nrow(W_mat) == 0L) {
+    stop(".mean_glm_gradient_site_basis: cannot compute a mean gradient on zero observations.")
+  }
+
+  eta <- drop(cbind(1, W_mat) %*% alpha)
+  h_prime <- switch(
+    as.character(link_int),
+    "0" = rep(1, length(eta)),
+    "1" = {
+      eta_clipped <- pmax(pmin(eta, LOGISTIC_CLIP), -LOGISTIC_CLIP)
+      mu <- 1 / (1 + exp(-eta_clipped))
+      mu * (1 - mu)
+    },
+    stop(sprintf(".mean_glm_gradient_site_basis: unsupported link_int=%s.", link_int))
+  )
+
+  colMeans(cbind(1, Z_mat) * as.numeric(abs(h_prime)))
 }
 
 #' Calculate true potential outcome mean for binary outcomes
@@ -211,7 +297,7 @@ fit_initial_density_ratio <- function(Z_site, A, mean_phi, lambda = LAMBDA_DEFAU
   # Handle lambda = NULL case: use CV selection
   if (is.null(lambda)) {
     lmax <- compute_lambda_max_initial_dr(Z_site, A, mean_phi, A_val)
-    lambda_min_ratio <- if (nrow(Z_site) > ncol(Z_site)) 1e-4 else 0.01
+    lambda_min_ratio <- if (nrow(Z_site) > ncol(Z_site)) LAMBDA_MIN_RATIO_LOW_DIM else LAMBDA_MIN_RATIO_HIGH_DIM
     lambda_grid <- build_lambda_grid(lambda_max = lmax,
                                      lambda_min_ratio = lambda_min_ratio)
     cv_result <- select_lambda_cv_initial_density_ratio_cpp(
@@ -282,7 +368,7 @@ fit_unified_density_ratio <- function(Z_site, A, mean_grad_psi, alpha_init,
                                            family_int = family_int, link_int = link_int,
                                            W_outcome = W_outcome,
                                            calibrated = calibrated, M_tau = M_tau)
-    lambda_min_ratio <- if (nrow(Z_site) > ncol(Z_site)) 1e-4 else 0.01
+    lambda_min_ratio <- if (nrow(Z_site) > ncol(Z_site)) LAMBDA_MIN_RATIO_LOW_DIM else LAMBDA_MIN_RATIO_HIGH_DIM
     lambda_grid <- build_lambda_grid(lambda_max = lmax,
                                      lambda_min_ratio = lambda_min_ratio)
     if (calibrated) {
@@ -391,7 +477,7 @@ fit_unified_outcome <- function(W_outcome, Y, A, A_val = 1, gamma_s, lambda = NU
                                         family_int = family_int, link_int = link_int,
                                         Z_site = Z_site,
                                         calibrated = calibrated, M_tau = M_tau)
-    lambda_min_ratio <- if (nrow(W_outcome) > ncol(W_outcome)) 1e-4 else 0.01
+    lambda_min_ratio <- if (nrow(W_outcome) > ncol(W_outcome)) LAMBDA_MIN_RATIO_LOW_DIM else LAMBDA_MIN_RATIO_HIGH_DIM
     lambda_grid <- build_lambda_grid(lambda_max = lmax,
                                      lambda_min_ratio = lambda_min_ratio)
     
@@ -526,23 +612,31 @@ optimize_weights <- function(estimates, variances, C_ot, n_samples,
                                     cross_matrix, numeric(0))
 
   if (!isTRUE(cpp_result$converged)) {
-    warning("optimize_weights: optimizer did not converge. Falling back to target-only aggregation (all source weights = 0).")
-    return(rep(0, K))
+    stop("optimize_weights: optimizer did not converge; cannot solve main.tex eq:final_opt for aggregation weights.")
   }
   
   # Validate output
   weights <- cpp_result$weights
   bad_idx <- which(is.na(weights) | is.infinite(weights))
   if (length(bad_idx) > 0) {
-    warning(sprintf("optimize_weights: %d/%d weights were NA/Inf (indices: %s). Replaced with 0.",
-                    length(bad_idx), length(weights), paste(bad_idx, collapse = ",")))
-    weights[bad_idx] <- 0
+    stop(sprintf(
+      "optimize_weights: %d/%d optimized weights were NA/Inf (indices: %s); refusing to replace them silently.",
+      length(bad_idx), length(weights), paste(bad_idx, collapse = ",")
+    ))
   }
   
   # NOTE: The optimization problem (eq:final_opt in main.tex) is unconstrained.
   # Clipping to [0,1] is a numerical safeguard but changes the theoretical optimum.
   if (isTRUE(clip_weights)) {
-    weights <- pmax(pmin(weights, 1.0), 0.0)  # Clip weights to [0, 1]
+    n_below <- sum(weights < 0.0)
+    n_above <- sum(weights > 1.0)
+    weights <- pmax(pmin(weights, 1.0), 0.0)
+    if (n_below + n_above > 0L) {
+      warning(sprintf(
+        "optimize_weights: clipped %d of %d aggregation weights to [0, 1] (below 0: %d, above 1: %d). The unconstrained eq:final_opt optimum is outside the simplex; downstream variance based on the clipped weights may not match the theoretical optimum.",
+        n_below + n_above, length(weights), n_below, n_above
+      ), call. = FALSE)
+    }
   }
   
   return(weights)
