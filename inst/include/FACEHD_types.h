@@ -1,5 +1,5 @@
-#ifndef FACEC_TYPES_H
-#define FACEC_TYPES_H
+#ifndef FACEHD_TYPES_H
+#define FACEHD_TYPES_H
 
 #include <RcppEigen.h>
 
@@ -7,4 +7,4 @@
 using Eigen::MatrixXd;
 using Eigen::VectorXd;
 
-#endif // FACEC_TYPES_H
+#endif // FACEHD_TYPES_H
