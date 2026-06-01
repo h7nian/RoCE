@@ -1,61 +1,58 @@
 # helper-load.R - Auto-loaded by testthat before any test files
 #
-# Loads the FACEC code so all exported functions, constants, and compiled C++
+# Loads the FACEHD code so all exported functions, constants, and compiled C++
 # code are available in the test environment. Internal (non-exported) objects
 # are attached for convenience. Shared synthetic-data factories used across
 # multiple test files are defined here as well, so they live on the same
-# search path as the FACEC internals they call.
+# search path as the FACEHD internals they call.
 #
 # By default, prefer the *local* source tree via devtools::load_all() when the
-# repo is present, even if an installed FACEC package exists. This avoids the
+# repo is present, even if an installed FACEHD package exists. This avoids the
 # common pitfall of running tests against an outdated installed version.
-# To force testing the installed package, set FACEC_TEST_INSTALLED=1.
+# To force testing the installed package, set FACEHD_TEST_INSTALLED=1.
 
-force_installed <- Sys.getenv("FACEC_TEST_INSTALLED", "0") %in% c("1", "TRUE", "true", "True")
+force_installed <- Sys.getenv("FACEHD_TEST_INSTALLED", "0") %in% c("1", "TRUE", "true", "True")
 
-is_facec_repo <- function(path) {
+is_facehd_repo <- function(path) {
   desc <- file.path(path, "DESCRIPTION")
   if (!file.exists(desc)) return(FALSE)
-  hdr <- tryCatch(readLines(desc, n = 20L, warn = FALSE), error = function(e) character(0))
-  any(grepl("^Package:\\s*FACEC\\s*$", hdr))
+  hdr <- readLines(desc, n = 20L)
+  any(grepl("^Package:\\s*FACEHD\\s*$", hdr))
 }
 
-repo_root <- if (is_facec_repo(getwd())) {
+repo_root <- if (is_facehd_repo(getwd())) {
   normalizePath(getwd(), mustWork = FALSE)
 } else {
   normalizePath(file.path(dirname(getwd()), ".."), mustWork = FALSE)
 }
 
-if (!force_installed && is_facec_repo(repo_root) && requireNamespace("devtools", quietly = TRUE)) {
+if (!force_installed && is_facehd_repo(repo_root) && requireNamespace("devtools", quietly = TRUE)) {
   # IMPORTANT: helpers=FALSE prevents devtools from sourcing testthat helper
   # files (including this one), which would otherwise recurse indefinitely.
   devtools::load_all(repo_root, helpers = FALSE)
-} else if (requireNamespace("FACEC", quietly = TRUE)) {
-  library(FACEC)
-} else if (requireNamespace("devtools", quietly = TRUE) && is_facec_repo(repo_root)) {
+} else if (requireNamespace("FACEHD", quietly = TRUE)) {
+  library(FACEHD)
+} else if (requireNamespace("devtools", quietly = TRUE) && is_facehd_repo(repo_root)) {
   devtools::load_all(repo_root, helpers = FALSE)
 } else {
-  stop("Tests require either the FACEC source tree + devtools, or an installed FACEC package.")
+  stop("Tests require either the FACEHD source tree + devtools, or an installed FACEHD package.")
 }
 
 # Attach non-exported package internals in an isolated search-path environment.
 # This keeps test convenience (unqualified access to internal helpers/C++ bindings)
 # while avoiding .GlobalEnv pollution and mask/conflict noise.
-pkg_env <- asNamespace("FACEC")
-exported <- getNamespaceExports("FACEC")
+pkg_env <- asNamespace("FACEHD")
+exported <- getNamespaceExports("FACEHD")
 all_public_names <- ls(pkg_env, all.names = FALSE)
 internal_names <- setdiff(all_public_names, exported)
 
-if ("FACEC_test_internals" %in% search()) {
-  detach("FACEC_test_internals", character.only = TRUE)
+if ("FACEHD_test_internals" %in% search()) {
+  detach("FACEHD_test_internals", character.only = TRUE)
 }
 
 test_internal_env <- new.env(parent = emptyenv())
 for (nm in internal_names) {
-  obj <- tryCatch(get(nm, envir = pkg_env), error = function(e) NULL)
-  if (!is.null(obj)) {
-    assign(nm, obj, envir = test_internal_env)
-  }
+  assign(nm, get(nm, envir = pkg_env), envir = test_internal_env)
 }
 
 # ============================================================================
@@ -65,7 +62,7 @@ for (nm in internal_names) {
 # testthat's helper-file discovery order and target environment vary by
 # version; defining them in the same file that drives the package load and
 # the internals attach guarantees they end up on the same search path as
-# FACEC internals like MIN_TREATED_FOR_MODEL.
+# FACEHD internals like MIN_TREATED_FOR_MODEL.
 #
 # IMPORTANT: do not call generate_simulation_data with p < 4. The function
 # transform_covariates() in R/data_generation.R indexes X[, 4] unconditionally
@@ -89,6 +86,7 @@ assign("make_small_data_split", function(n_per_site = 40L, K = 1L, p = 4L,
       n_total, K, p,
       config       = "C1",
       outcome_type = outcome_type,
+      dgp_type     = "facehd",   # estimator smoke factory: pin to the FACE-HD DGP
       warn_ignored = FALSE
     )
     data_split <- split_data_by_site(data)
@@ -144,4 +142,4 @@ assign("get_smoke_result", function(mode = c("two_round", "one_round")) {
   cache[[key]]
 }, envir = test_internal_env)
 
-attach(test_internal_env, name = "FACEC_test_internals", warn.conflicts = FALSE)
+attach(test_internal_env, name = "FACEHD_test_internals", warn.conflicts = FALSE)

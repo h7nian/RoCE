@@ -1,0 +1,2 @@
+"n_total","K","p","config","method","n_success","bias_mean","bias_sd","rmse","se_mean","coverage","ci_width_mean","bias_over_se","se_over_emp_sd","normal_coverage_with_bias","normal_coverage_centered"
+5000,5,50,"C2","one_round_crossfit",1,0.00958365561002805,NA,0.00958365561002805,0.0106773176395614,1,0.0418543160500691,0.897571462566485,NA,NA,NA

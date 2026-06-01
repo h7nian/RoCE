@@ -1,0 +1,7 @@
+"item","expected","implementation","status"
+"aggregation_objective","eq:final_opt variance + cross-site covariance + discrepancy-weighted L1 penalty","optimize_weights() includes V_ot, V_t, V_s, C_ot, C_cross and lambda*|eta|*(mu_ot-mu_ts)^2","checked"
+"aggregation_lambda_cv","FACE-style inner validation: train weights on inner-training summaries and score on validation variance","select_aggregation_lambda_inner_cv() optimizes eta on components[-m] and scores .validation_aggregation_objective() on components[[m]]","checked"
+"aggregation_lambda_grid","glmnet-style path starts at KKT lambda_max and descends geometrically",".aggregation_lambda_max() and .aggregation_lambda_grid() build the path","checked"
+"two_level_calibration","SMMAL-style outer k1, secondary k2, plug-ins trained without k1/k2, fold-summed calibrated loss","process_source_site() loops k2 != k1, uses training_folds=setdiff(1:n_folds,c(k1,k2)), then fit_unified_* with calibrated=TRUE","checked"
+"calibrated_gamma_cv","calibrated gamma loss uses calibrated density-ratio CV when lambda=NULL","fit_unified_density_ratio(calibrated=TRUE) calls select_lambda_cv_calibrated_density_ratio_cpp()","checked"
+"calibrated_alpha_cv","calibrated alpha loss uses calibrated outcome CV when lambda=NULL","fit_unified_outcome(calibrated=TRUE) calls select_lambda_cv_calibrated_outcome_cpp()","checked"

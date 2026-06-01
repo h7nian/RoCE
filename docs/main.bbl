@@ -1,79 +1,169 @@
-\begin{thebibliography}{10}
-\providecommand{\natexlab}[1]{#1}
-\providecommand{\url}[1]{\texttt{#1}}
-\expandafter\ifx\csname urlstyle\endcsname\relax
-  \providecommand{\doi}[1]{doi: #1}\else
-  \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
+\begin{thebibliography}{xx}
 
-\bibitem[B{\"u}hlmann and Van De~Geer(2011)]{buhlmann2011statistics}
-Peter B{\"u}hlmann and Sara Van De~Geer.
-\newblock \emph{Statistics for high-dimensional data: methods, theory and
-  applications}.
-\newblock Springer Science \& Business Media, 2011.
+\harvarditem{Bang \harvardand\ Robins}{2005}{bang2005doubly}
+Bang, H. \harvardand\ Robins, J.~M.  \harvardyearleft 2005\harvardyearright ,
+  `Doubly robust estimation in missing data and causal inference models', {\em
+  Biometrics} {\bf 61}(4),~962--973.
 
-\bibitem[Chernozhukov et~al.(2018)Chernozhukov, Chetverikov, Demirer, Duflo,
-  Hansen, Newey, and Robins]{chernozhukov2018double}
-Victor Chernozhukov, Denis Chetverikov, Mert Demirer, Esther Duflo, Christian
-  Hansen, Whitney Newey, and James Robins.
-\newblock Double/debiased machine learning for treatment and structural
-  parameters.
-\newblock \emph{The Econometrics Journal}, 21\penalty0 (1):\penalty0 C1--C68,
-  2018.
+\harvarditem[Belloni et~al.]{Belloni, Chernozhukov \harvardand\
+  Hansen}{2014}{belloni2014inference}
+Belloni, A., Chernozhukov, V. \harvardand\ Hansen, C.  \harvardyearleft
+  2014\harvardyearright , `Inference on treatment effects after selection among
+  high-dimensional controls', {\em The Review of Economic Studies} {\bf
+  81}(2),~608--650.
 
-\bibitem[Han et~al.(2023)Han, Shen, and Zubizarreta]{Han2023multiply}
-Larry Han, Zhu Shen, and Jos{\'e}~R. Zubizarreta.
-\newblock Multiply robust federated estimation of targeted average treatment
-  effects.
-\newblock In \emph{Advances in Neural Information Processing Systems},
-  volume~36, 2023.
+\harvarditem{B{\"u}hlmann \harvardand\ Van
+  De~Geer}{2011}{buhlmann2011statistics}
+B{\"u}hlmann, P. \harvardand\ Van De~Geer, S.  \harvardyearleft
+  2011\harvardyearright , {\em Statistics for high-dimensional data: methods,
+  theory and applications}, Springer Science \& Business Media.
 
-\bibitem[Han et~al.(2025)Han, Hou, Cho, Duan, and Cai]{han2025federated}
-Larry Han, Jue Hou, Kelly Cho, Rui Duan, and Tianxi Cai.
-\newblock Federated adaptive causal estimation (face) of target treatment
-  effects.
-\newblock \emph{Journal of the American Statistical Association}, 120\penalty0
-  (551):\penalty0 1503--1516, 2025.
+\harvarditem[Chernozhukov et~al.]{Chernozhukov, Chetverikov, Demirer, Duflo,
+  Hansen, Newey \harvardand\ Robins}{2018}{chernozhukov2018double}
+Chernozhukov, V., Chetverikov, D., Demirer, M., Duflo, E., Hansen, C., Newey,
+  W. \harvardand\ Robins, J.  \harvardyearleft 2018\harvardyearright ,
+  `Double/debiased machine learning for treatment and structural parameters',
+  {\em The Econometrics Journal} {\bf 21}(1),~C1--C68.
 
-\bibitem[Hastie et~al.(2009)Hastie, Tibshirani, and
-  Friedman]{hastie2009elements}
-Trevor Hastie, Robert Tibshirani, and Jerome Friedman.
-\newblock \emph{The Elements of Statistical Learning: Data Mining, Inference,
-  and Prediction}.
-\newblock Springer, New York, 2nd edition, 2009.
+\harvarditem{Cole \harvardand\ Stuart}{2010}{cole2010generalizing}
+Cole, S.~R. \harvardand\ Stuart, E.~A.  \harvardyearleft 2010\harvardyearright
+  , `Generalizing evidence from randomized clinical trials to target
+  populations: The actg 320 trial', {\em American Journal of Epidemiology} {\bf
+  172}(1),~107--115.
 
-\bibitem[Hou et~al.(2025)Hou, Mukherjee, and Cai]{hou2025efficient}
-Jue Hou, Rajarshi Mukherjee, and Tianxi Cai.
-\newblock Efficient and robust semi-supervised estimation of average treatment
-  effect with partially annotated treatment and response.
-\newblock \emph{Journal of Machine Learning Research}, 26\penalty0
-  (40):\penalty0 1--77, 2025.
+\harvarditem[Dahabreh et~al.]{Dahabreh, Robertson, Tchetgen~Tchetgen, Stuart
+  \harvardand\ Hern{\'a}n}{2019}{dahabreh2019generalizing}
+Dahabreh, I.~J., Robertson, S.~E., Tchetgen~Tchetgen, E.~J., Stuart, E.~A.
+  \harvardand\ Hern{\'a}n, M.~A.  \harvardyearleft 2019\harvardyearright ,
+  `Generalizing causal inferences from individuals in randomized trials to all
+  trial-eligible individuals', {\em Biometrics} {\bf 75}(2),~685--694.
 
-\bibitem[Negahban et~al.(2012)Negahban, Ravikumar, Wainwright, and
-  Yu]{negahban2012unified}
-Sahand~N Negahban, Pradeep Ravikumar, Martin~J Wainwright, and Bin Yu.
-\newblock A unified framework for high-dimensional analysis of m-estimators
-  with decomposable regularizers.
-\newblock \emph{Statistical Science}, 27\penalty0 (4):\penalty0 538--557, 2012.
+\harvarditem[Han et~al.]{Han, Hou, Cho, Duan \harvardand\
+  Cai}{2025}{han2025federated}
+Han, L., Hou, J., Cho, K., Duan, R. \harvardand\ Cai, T.  \harvardyearleft
+  2025\harvardyearright , `Federated adaptive causal estimation ({FACE}) of
+  target treatment effects', {\em Journal of the American Statistical
+  Association} {\bf 120}(551),~1503--1516.
 
-\bibitem[Smucler et~al.(2019)Smucler, Rotnitzky, and
-  Robins]{smucler2019unifying}
-Ezequiel Smucler, Andrea Rotnitzky, and James~M Robins.
-\newblock A unifying approach for doubly-robust l1 regularized estimation of
-  causal contrasts.
-\newblock \emph{arXiv preprint arXiv:1904.03737}, 2019.
+\harvarditem[Han et~al.]{Han, Shen \harvardand\
+  Zubizarreta}{2023}{Han2023multiply}
+Han, L., Shen, Z. \harvardand\ Zubizarreta, J.  \harvardyearleft
+  2023\harvardyearright , Multiply robust federated estimation of targeted
+  average treatment effects, {\em in} `Advances in Neural Information
+  Processing Systems', Vol.~36.
+\newline\harvardurl{https://proceedings.neurips.cc/paper\_files/paper/2023/hash/def4492b32f0248a0e4d92cc46bbdaad-Abstract-Conference.html}
 
-\bibitem[Tan(2020)]{tan2020model}
-Zhiqiang Tan.
-\newblock Model-assisted inference for treatment effects using regularized
-  calibrated estimation with high-dimensional data.
-\newblock \emph{The Annals of Statistics}, 48\penalty0 (2):\penalty0 811--837,
-  2020.
+\harvarditem[Hastie et~al.]{Hastie, Tibshirani \harvardand\
+  Friedman}{2009}{hastie2009elements}
+Hastie, T., Tibshirani, R. \harvardand\ Friedman, J.  \harvardyearleft
+  2009\harvardyearright , {\em The Elements of Statistical Learning: Data
+  Mining, Inference, and Prediction}, 2nd edn, Springer, New York.
 
-\bibitem[Tong et~al.(2025)Tong, Hu, Hripcsak, Ning, and Chen]{Tong2025disc2o}
-Jiayi Tong, Jie Hu, George Hripcsak, Yang Ning, and Yong Chen.
-\newblock {DisC2o-HD}: Distributed causal inference with covariates shift for
-  analyzing real-world high-dimensional data.
-\newblock \emph{Journal of Machine Learning Research}, 26, 2025.
-\newblock Paper 23-1254.
+\harvarditem{Hern{\'a}n \harvardand\ Robins}{2016}{hernan2016using}
+Hern{\'a}n, M.~A. \harvardand\ Robins, J.~M.  \harvardyearleft
+  2016\harvardyearright , `Using big data to emulate a target trial when a
+  randomized trial is not available', {\em American Journal of Epidemiology}
+  {\bf 183}(8),~758--764.
+
+\harvarditem[Hou et~al.]{Hou, Mukherjee \harvardand\
+  Cai}{2025}{hou2025efficient}
+Hou, J., Mukherjee, R. \harvardand\ Cai, T.  \harvardyearleft
+  2025\harvardyearright , `Efficient and robust semi-supervised estimation of
+  average treatment effect with partially annotated treatment and response',
+  {\em Journal of Machine Learning Research} {\bf 26}(40),~1--77.
+
+\harvarditem[Kairouz et~al.]{Kairouz, McMahan
+  et~al.}{2021}{kairouz2021advances}
+Kairouz, P., McMahan, H.~B. et~al.  \harvardyearleft 2021\harvardyearright ,
+  `Advances and open problems in federated learning', {\em Foundations and
+  Trends in Machine Learning} {\bf 14}(1--2),~1--210.
+
+\harvarditem[Khellaf et~al.]{Khellaf, Bellet \harvardand\
+  Josse}{2024}{khellaf2024federated}
+Khellaf, R., Bellet, A. \harvardand\ Josse, J.  \harvardyearleft
+  2024\harvardyearright , `Federated causal inference: Multi-study {ATE}
+  estimation beyond meta-analysis', {\em arXiv preprint arXiv:2410.16870} .
+
+\harvarditem[Khellaf et~al.]{Khellaf, Bellet \harvardand\
+  Josse}{2025}{khellaf2025federated}
+Khellaf, R., Bellet, A. \harvardand\ Josse, J.  \harvardyearleft
+  2025\harvardyearright , `Federated causal inference from multi-site
+  observational data via propensity score aggregation', {\em arXiv preprint
+  arXiv:2505.17961} .
+
+\harvarditem[Koga et~al.]{Koga, Chaudhuri \harvardand\
+  Page}{2024}{koga2024differentially}
+Koga, T., Chaudhuri, K. \harvardand\ Page, D.  \harvardyearleft
+  2024\harvardyearright , Differentially private multi-site treatment effect
+  estimation, {\em in} `Proceedings of the 2024 {IEEE} Conference on Safe and
+  Trustworthy Machine Learning ({SaTML})', pp.~472--489.
+
+\harvarditem[McMahan et~al.]{McMahan, Moore, Ramage, Hampson \harvardand\
+  Arcas}{2017}{mcmahan2017communication}
+McMahan, B., Moore, E., Ramage, D., Hampson, S. \harvardand\ Arcas, B. A.~y.
+  \harvardyearleft 2017\harvardyearright , Communication-efficient learning of
+  deep networks from decentralized data, {\em in} `Proceedings of the 20th
+  International Conference on Artificial Intelligence and Statistics', Vol.~54
+  of {\em Proceedings of Machine Learning Research}, PMLR, pp.~1273--1282.
+\newline\harvardurl{https://proceedings.mlr.press/v54/mcmahan17a.html}
+
+\harvarditem[Negahban et~al.]{Negahban, Ravikumar, Wainwright \harvardand\
+  Yu}{2012}{negahban2012unified}
+Negahban, S.~N., Ravikumar, P., Wainwright, M.~J. \harvardand\ Yu, B.
+  \harvardyearleft 2012\harvardyearright , `A unified framework for
+  high-dimensional analysis of m-estimators with decomposable regularizers',
+  {\em Statistical Science} {\bf 27}(4),~538--557.
+
+\harvarditem{Pearl \harvardand\ Bareinboim}{2014}{pearl2014external}
+Pearl, J. \harvardand\ Bareinboim, E.  \harvardyearleft 2014\harvardyearright ,
+  `External validity: From do-calculus to transportability across populations',
+  {\em Statistical Science} {\bf 29}(4),~579--595.
+
+\harvarditem[Robins et~al.]{Robins, Rotnitzky \harvardand\
+  Zhao}{1994}{robins1994estimation}
+Robins, J.~M., Rotnitzky, A. \harvardand\ Zhao, L.~P.  \harvardyearleft
+  1994\harvardyearright , `Estimation of regression coefficients when some
+  regressors are not always observed', {\em Journal of the American Statistical
+  Association} {\bf 89}(427),~846--866.
+
+\harvarditem[Sherman et~al.]{Sherman, Anderson, Dal~Pan, Gray, Gross, Hunter,
+  LaVange, Marinac-Dabic, Marks, Robb, Shuren, Temple, Woodcock, Yue
+  \harvardand\ Califf}{2016}{sherman2016real}
+Sherman, R.~E., Anderson, S.~A., Dal~Pan, G.~J., Gray, G.~W., Gross, T.,
+  Hunter, N.~L., LaVange, L., Marinac-Dabic, D., Marks, P.~W., Robb, M.~A.,
+  Shuren, J., Temple, R., Woodcock, J., Yue, L.~Q. \harvardand\ Califf, R.~M.
+  \harvardyearleft 2016\harvardyearright , `Real-world evidence: What is it and
+  what can it tell us?', {\em New England Journal of Medicine} {\bf
+  375}(23),~2293--2297.
+
+\harvarditem[Smucler et~al.]{Smucler, Rotnitzky \harvardand\
+  Robins}{2019}{smucler2019unifying}
+Smucler, E., Rotnitzky, A. \harvardand\ Robins, J.~M.  \harvardyearleft
+  2019\harvardyearright , `A unifying approach for doubly-robust {$\ell_1$}
+  regularized estimation of causal contrasts', {\em arXiv preprint
+  arXiv:1904.03737} .
+
+\harvarditem{Tan}{2020}{tan2020model}
+Tan, Z.  \harvardyearleft 2020\harvardyearright , `Model-assisted inference for
+  treatment effects using regularized calibrated estimation with
+  high-dimensional data', {\em The Annals of Statistics} {\bf 48}(2),~811--837.
+
+\harvarditem[Tong et~al.]{Tong, Hu, Hripcsak, Ning \harvardand\
+  Chen}{2025}{Tong2025disc2o}
+Tong, J., Hu, J., Hripcsak, G., Ning, Y. \harvardand\ Chen, Y.
+  \harvardyearleft 2025\harvardyearright , `{DisC2o-HD}: Distributed causal
+  inference with covariates shift for analyzing real-world high-dimensional
+  data', {\em Journal of Machine Learning Research} {\bf 26}(3),~1--50.
+\newline\harvardurl{https://jmlr.org/papers/v26/23-1254.html}
+
+\harvarditem{Tsiatis}{2006}{tsiatis2006semiparametric}
+Tsiatis, A.~A.  \harvardyearleft 2006\harvardyearright , {\em Semiparametric
+  Theory and Missing Data}, Springer Series in Statistics, Springer, New York.
+
+\harvarditem[Wang et~al.]{Wang, Tong, Peng, Chen \harvardand\
+  Ning}{2024}{wang2024communication}
+Wang, X., Tong, J., Peng, S., Chen, Y. \harvardand\ Ning, Y.  \harvardyearleft
+  2024\harvardyearright , `Communication-efficient distributed estimation of
+  causal effects with high-dimensional data', {\em Stat} {\bf 13}(3),~e70006.
 
 \end{thebibliography}

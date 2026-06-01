@@ -2,14 +2,14 @@
 
 library(testthat)
 
-# Package loaded by helper-load.R (all functions available via FACEC namespace)
+# Package loaded by helper-load.R (all functions available via FACEHD namespace)
 
 test_that("generate_base_covariates creates correct dimensions", {
   set.seed(42)
   n <- 100
   p <- 5
   X <- generate_base_covariates(n, p)
-  
+
   expect_equal(nrow(X), n)
   expect_equal(ncol(X), p)
 })
@@ -19,12 +19,12 @@ test_that("generate_base_covariates produces standardized output", {
   n <- 1000
   p <- 4
   X <- generate_base_covariates(n, p)
-  
+
   # Check approximately zero mean (within tolerance)
   col_means <- colMeans(X)
   expect_true(all(abs(col_means) < 0.1), 
               info = "Column means should be approximately zero")
-  
+
   # Check approximately unit variance
   col_sds <- apply(X, 2, sd)
   expect_true(all(abs(col_sds - 1) < 0.1),
@@ -64,7 +64,8 @@ test_that("generate_simulation_data creates valid structure", {
   K <- 2  # 2 source sites
   p <- 4
   
-  data <- generate_simulation_data(n_total, K, p, config = "C1")
+  data <- generate_simulation_data(n_total, K, p, config = "C1",
+                                   estimand_type = "sample", dgp_type = "facehd")
   
   # Check that data has required components
   expect_true("X" %in% names(data))
@@ -72,9 +73,17 @@ test_that("generate_simulation_data creates valid structure", {
   expect_true("R" %in% names(data))
   expect_true("A" %in% names(data))
   expect_true("Y" %in% names(data))
+  expect_true("Z_site_true" %in% names(data))
+  expect_true("W_outcome_true" %in% names(data))
+  expect_true("Z_site" %in% names(data))
+  expect_true("W_outcome" %in% names(data))
   
   # Check dimensions
   expect_equal(nrow(data$X), n_total)
+  expect_equal(nrow(data$Z_site_true), n_total)
+  expect_equal(nrow(data$W_outcome_true), n_total)
+  expect_equal(nrow(data$Z_site), n_total)
+  expect_equal(nrow(data$W_outcome), n_total)
   expect_equal(length(data$R), n_total)
   expect_equal(length(data$A), n_total)
   expect_equal(length(data$Y), n_total)
@@ -86,13 +95,29 @@ test_that("generate_simulation_data creates valid structure", {
   expect_true(all(data$Y %in% c(0, 1)))
 })
 
+test_that("default dgp_type is 'face' at the simulation entry points", {
+  # The package default DGP is the FACE negative-transfer DGP.
+  expect_identical(formals(generate_simulation_data)$dgp_type, "face")
+  expect_identical(formals(run_single_simulation)$dgp_type,    "face")
+  expect_identical(formals(run_simulation_study)$dgp_type,     "face")
+  expect_identical(formals(validate_simulation_params)$dgp_type, "face")
+
+  # Calling the dispatcher without dgp_type produces FACE-DGP data.
+  set.seed(1)
+  data <- generate_simulation_data(n_total = 300, K = 2, p = 10,
+                                   config = "C1", estimand_type = "sample",
+                                   warn_ignored = FALSE)
+  expect_equal(data$dgp_type, "face")
+})
+
 test_that("split_data_by_site correctly separates sites", {
   set.seed(42)
   n_total <- 300
   K <- 2
   p <- 4
   
-  data <- generate_simulation_data(n_total, K, p, config = "C1")
+  data <- generate_simulation_data(n_total, K, p, config = "C1",
+                                   estimand_type = "sample", dgp_type = "facehd")
   data_split <- split_data_by_site(data)
   
   # Should have target + K source sites
@@ -107,24 +132,63 @@ test_that("split_data_by_site correctly separates sites", {
   # Check that total observations sum to original n
   total_n <- sum(sapply(data_split, function(x) x$n))
   expect_equal(total_n, n_total)
+
+  for (site in names(data_split)) {
+    expect_true("Z_site_true" %in% names(data_split[[site]]))
+    expect_true("W_outcome_true" %in% names(data_split[[site]]))
+  }
 })
 
-test_that("different configs produce different data characteristics", {
+test_that("FACE-HD configs change fitted bases without changing the DGP", {
   set.seed(42)
   n_total <- 200
   K <- 2
   p <- 4
   
-  data_c1 <- generate_simulation_data(n_total, K, p, config = "C1")
+  data_c1 <- generate_simulation_data(n_total, K, p, config = "C1",
+                                      estimand_type = "sample", dgp_type = "facehd")
   set.seed(42)
-  data_c2 <- generate_simulation_data(n_total, K, p, config = "C2")
-  
-  # Different configs should produce different outcomes
-  # (due to different covariate specifications)
-  expect_false(all(data_c1$Y == data_c2$Y))
+  data_c2 <- generate_simulation_data(n_total, K, p, config = "C2",
+                                      estimand_type = "sample", dgp_type = "facehd")
+  set.seed(42)
+  data_c3 <- generate_simulation_data(n_total, K, p, config = "C3",
+                                      estimand_type = "sample", dgp_type = "facehd")
+  set.seed(42)
+  data_c4 <- generate_simulation_data(n_total, K, p, config = "C4",
+                                      estimand_type = "sample", dgp_type = "facehd")
+
+  # The true data-generating process is fixed across configurations.
+  expect_identical(data_c1$R, data_c2$R)
+  expect_identical(data_c1$R, data_c3$R)
+  expect_identical(data_c1$R, data_c4$R)
+  expect_identical(data_c1$A, data_c2$A)
+  expect_identical(data_c1$A, data_c3$A)
+  expect_identical(data_c1$A, data_c4$A)
+  expect_identical(data_c1$Y, data_c2$Y)
+  expect_identical(data_c1$Y, data_c3$Y)
+  expect_identical(data_c1$Y, data_c4$Y)
+  expect_equal(data_c1$mu1_true, data_c2$mu1_true)
+  expect_equal(data_c1$mu1_true, data_c3$mu1_true)
+  expect_equal(data_c1$mu1_true, data_c4$mu1_true)
+  expect_equal(data_c1$Z_site_true, data_c2$Z_site_true)
+  expect_equal(data_c1$Z_site_true, data_c3$Z_site_true)
+  expect_equal(data_c1$Z_site_true, data_c4$Z_site_true)
+  expect_equal(data_c1$W_outcome_true, data_c2$W_outcome_true)
+  expect_equal(data_c1$W_outcome_true, data_c3$W_outcome_true)
+  expect_equal(data_c1$W_outcome_true, data_c4$W_outcome_true)
+
+  # Configs only control the fitted working bases exposed to estimators.
+  expect_equal(data_c1$Z_site, data_c2$Z_site)
+  expect_false(isTRUE(all.equal(data_c1$W_outcome, data_c2$W_outcome)))
+  expect_equal(data_c1$W_outcome, data_c3$W_outcome)
+  expect_false(isTRUE(all.equal(data_c1$Z_site, data_c3$Z_site)))
+  expect_equal(data_c2$W_outcome, data_c4$W_outcome)
+  expect_equal(data_c3$Z_site, data_c4$Z_site)
+  expect_false(isTRUE(all.equal(data_c1$Z_site, data_c4$Z_site)))
+  expect_false(isTRUE(all.equal(data_c1$W_outcome, data_c4$W_outcome)))
 })
 
-test_that("shift_strength affects FACE-C site model under model allocation", {
+test_that("shift_strength affects FACE-HD site model under model allocation", {
   K <- 3
   p <- 10
   n_ref <- 2000
@@ -215,7 +279,7 @@ test_that("generate_face_covariates returns correct structure", {
   n_target <- 200
   n_source <- 150
   
-  cov_data <- generate_face_covariates(n_target, n_source, K, p,
+  cov_data <- generate_face_covariates(n_target, rep(n_source, K), p,
                                               kappa = 0.125, nu_source_max = 0.2)
   
   expect_true(is.matrix(cov_data$X))
@@ -301,7 +365,7 @@ test_that("generate_face_data returns valid structure", {
   # Continuous outcomes should NOT be binary
   expect_false(all(data$Y %in% c(0, 1)))
   
-  # FACE-C specific params should be NULL
+  # FACE-HD specific params should be NULL
   expect_null(data$gamma_params)
   expect_null(data$beta1_true)
   expect_null(data$beta0_true)
@@ -365,6 +429,25 @@ test_that("generate_simulation_data dispatches binary face DGP correctly", {
   expect_true(nrow(data$X) > 0)
 })
 
+test_that("source site-treatment categories map to the intended treatment labels", {
+  site_probs <- list(
+    p_target = rep(0, 4),
+    p_s1_0 = c(1, 0, 0, 0),
+    p_s1_1 = c(0, 1, 0, 0),
+    p_s2_0 = c(0, 0, 1, 0),
+    p_s2_1 = c(0, 0, 0, 1)
+  )
+
+  assigned <- generate_site_treatment_assignments(
+    n = 4L,
+    site_probs = site_probs,
+    K = 2L
+  )
+
+  expect_equal(assigned$R, c("s1", "s1", "s2", "s2"))
+  expect_equal(assigned$A, c(0L, 1L, 0L, 1L))
+})
+
 test_that("get_face_outcome_parameters handles varying p", {
   # p < 4: uses min(4, p) non-zero coefficients
 
@@ -395,4 +478,3 @@ test_that("get_face_ps_parameters handles varying p", {
   expect_true(params10$alpha2[1] != 0)
   expect_true(all(params10$alpha2[2:10] == 0))
 })
-

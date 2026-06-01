@@ -11,7 +11,7 @@
 
 library(testthat)
 
-# Package loaded by helper-load.R (all functions available via FACEC namespace).
+# Package loaded by helper-load.R (all functions available via FACEHD namespace).
 # Reuses the cached smoke result from test-cross_fitting.R when both files run
 # in the same session.
 
@@ -136,8 +136,10 @@ test_that("calculate_dr_weights: validates matching covariate dimensions", {
 
 .required_crossfit_fields <- c("estimate", "variance", "se",
                                "ci_lower", "ci_upper",
-                               "fold_lambdas", "clip_diagnostics",
-                               "aggregation_lambda_rule")
+                               "fold_lambdas", "fold_lambda_info",
+                               "clip_diagnostics",
+                               "aggregation_lambda_rule",
+                               "nuisance_lambda_rule")
 
 test_that("run_crossfit(one_round) result schema is complete", {
   skip_if_not(exists("fit_general_glm_cpp"), message = "C++ not compiled")

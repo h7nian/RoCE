@@ -1,4 +1,4 @@
-Package: FACEC
+Package: FACEHD
 Type: Package
 Title: FACE-HD: Federated Adaptive Causal Estimation in High Dimensions
 Version: 0.1.0
@@ -65,6 +65,6 @@ Collate:
 RoxygenNote: 7.2.3
 VignetteBuilder: knitr
 Config/testthat/edition: 3
-URL: https://github.com/sinianzhang/FACE-C
-BugReports: https://github.com/sinianzhang/FACE-C/issues
+URL: https://github.com/sinianzhang/FACE-HD
+BugReports: https://github.com/sinianzhang/FACE-HD/issues
 

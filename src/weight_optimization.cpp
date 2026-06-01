@@ -20,7 +20,7 @@ inline MatrixXd symmetrize_matrix(const MatrixXd& M) {
 }
 
 inline bool is_weight_debug_enabled() {
-    const char* debug_env = std::getenv("FACEC_DEBUG_WEIGHTS");
+    const char* debug_env = std::getenv("FACEHD_DEBUG_WEIGHTS");
     return (debug_env != nullptr) && (std::string(debug_env) == "1");
 }
 
@@ -366,7 +366,7 @@ double calculate_aggregated_variance_cpp(const VectorXd& eta, const VectorXd& V_
 // ============================================================================
 // Evaluates the aggregated variance for every lambda in a grid in a single
 // C++ call, eliminating the per-lambda R→C++ round-trips that dominate
-// select_lambda_cv_crossfit when the grid contains ~100 candidates.
+// select_aggregation_lambda when the grid contains ~100 candidates.
 //
 // Pathwise warm-start: lambdas are traversed from LARGEST to SMALLEST
 // (most-regularized → least-regularized).  The solution at a large lambda

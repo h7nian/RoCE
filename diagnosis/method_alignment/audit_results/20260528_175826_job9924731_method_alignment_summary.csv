@@ -1,0 +1,11 @@
+"area","status","severity","n_checks"
+"implementation","pass","critical",8
+"main_tex","pass","critical",3
+"nuisance_cv","pass","critical",2
+"FACE_reference","pass","info",1
+"method_file","pass","info",1
+"nuisance_cv","pass","info",1
+"nuisance_cv","needs_followup","warning",1
+"oracle_benchmark","needs_source_fix_candidate","warning",1
+"FACE_reference","pass","warning",2
+"SMMAL_reference","pass","warning",3

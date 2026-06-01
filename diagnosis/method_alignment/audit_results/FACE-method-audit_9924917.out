@@ -1,0 +1,26 @@
+======================================================
+ FACE-C Method Alignment Audit
+======================================================
+ Repo:       /users/0/zhan9381/FACE-C
+ Output:     diagnosis/method_alignment/audit_results
+ Start:      Thu May 28 18:05:47 CDT 2026
+ Host:       acn230
+ Job:        9924917
+======================================================
+[method-audit] wrote /users/0/zhan9381/FACE-C/diagnosis/method_alignment/audit_results/20260528_180548_job9924917_method_alignment_audit.csv
+[method-audit] wrote /users/0/zhan9381/FACE-C/diagnosis/method_alignment/audit_results/20260528_180548_job9924917_method_alignment_summary.csv
+             area                     status severity n_checks
+   implementation                       pass critical        8
+         main_tex                       pass critical        3
+      nuisance_cv                       pass critical        2
+   FACE_reference                       pass     info        1
+      method_file                       pass     info        1
+      nuisance_cv                       pass     info        1
+      nuisance_cv             needs_followup  warning        1
+ oracle_benchmark needs_source_fix_candidate  warning        1
+   FACE_reference                       pass  warning        2
+  SMMAL_reference                       pass  warning        3
+[method-audit] DONE
+======================================================
+ Method alignment audit completed at Thu May 28 18:05:48 CDT 2026
+======================================================

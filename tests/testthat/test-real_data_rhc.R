@@ -54,7 +54,7 @@ test_that("build_rhc_cohort supports binary death180 and continuous los outcomes
   expect_equal(attr(cohort_los, "outcome"), "los")
 })
 
-test_that("build_rhc_data_split returns a valid FACE-C data_split", {
+test_that("build_rhc_data_split returns a valid FACE-HD data_split", {
   skip_if_no_rhc_csv()
   data_split <- build_rhc_data_split(K = 5L)
 

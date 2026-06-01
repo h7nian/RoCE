@@ -1,4 +1,4 @@
-# constants.R - Centralized numerical constants for FACE-C algorithms
+# constants.R - Centralized numerical constants for FACE-HD algorithms
 #
 # This file provides a single source of truth for all numerical constants
 # used across the codebase. All other files should reference these constants
@@ -30,9 +30,6 @@
 # OPTIMIZATION DEFAULTS
 # =============================================================================
 
-#' Default regularization lambda for initial estimation
-LAMBDA_DEFAULT <- 0.01
-
 #' Default truncation parameter M_tau for calibrated loss functions.
 #' Applied during model fitting (eq:gamma_calibrated_loss, eq:alpha_calibrated_loss
 #' in main.tex). See Remark 2 in proof.tex for the choice of M_tau.
@@ -60,9 +57,6 @@ TOL_DEFAULT <- 1e-6
 #' Lambda grid size for standard CV selection
 LAMBDA_GRID_SIZE_STANDARD <- 100
 
-#' Lambda grid size for fast mode CV selection
-LAMBDA_GRID_SIZE_FAST <- 20
-
 #' Ratio of \code{lambda_min} to \code{lambda_max} in the CV grid when the
 #' design is low-dimensional (n > p). Matches glmnet's default in that regime.
 LAMBDA_MIN_RATIO_LOW_DIM <- 1e-4
@@ -84,14 +78,21 @@ ESTIMATE_MAX <- 1e6
 #' Minimum lambda for weight optimization
 LAMBDA_MIN <- 1e-6
 
-#' Maximum lambda for weight optimization
-LAMBDA_MAX <- 100
+#' Maximum lambda for weight optimization.
+#' This is a numerical sanity cap, not the default path endpoint; aggregation
+#' CV starts from its KKT lambda_max unless that value exceeds this cap.
+LAMBDA_MAX <- 1e6
 
 #' Maximum iterations for weight optimization (optimize_weights)
 WEIGHT_OPT_MAX_ITER <- 10000L
 
 #' Convergence tolerance for weight optimization (optimize_weights)
 WEIGHT_OPT_TOL <- 1e-8
+
+#' Default number of multiplier (wild) bootstrap replicates for comparison-method
+#' standard errors (\code{.multiplier_bootstrap_se}). Large enough to keep the
+#' Monte-Carlo error of the bootstrap SE small relative to its sampling variability.
+BOOTSTRAP_REPLICATES_DEFAULT <- 1000L
 
 # =============================================================================
 # SITE BALANCE
@@ -111,6 +112,11 @@ WEIGHT_OPT_TOL <- 1e-8
 #' Derived analytically (unit-norm + Gaussian covariates) and calibrated
 #' empirically; gives ≈25% target for K=3, ≈20% for K=4, etc.
 GAMMA_BALANCE_INTERCEPT <- -0.15
+
+#' Default covariate-shift strength for the FACE-HD DGP.
+#' A moderate default keeps the main simulation away from the strong-transport
+#' stress-test regime while preserving nontrivial source/target covariate shift.
+FACEHD_SHIFT_STRENGTH_DEFAULT <- 0.5
 
 # =============================================================================
 # NUMERICAL STABILITY
@@ -191,9 +197,6 @@ RIDGE_DEFAULT <- 1e-6
 DR_WEIGHT_LOWER <- 0.1
 DR_WEIGHT_UPPER <- 10.0
 
-#' Default regularization lambda for density ratio estimation (comparison methods)
-COMPARISON_DR_LAMBDA_DEFAULT <- 0.01
-
 # =============================================================================
 # CONFIDENCE INTERVAL
 # =============================================================================
@@ -212,8 +215,8 @@ POSITIVITY_LOWER <- 0.1
 #' Positivity upper bound for propensity score clipping in data generation
 POSITIVITY_UPPER <- 0.9
 
-#' Default noise standard deviation for continuous outcomes in FACEC DGP
-FACEC_NOISE_SD_DEFAULT <- 0.1
+#' Default noise standard deviation for continuous outcomes in FACEHD DGP
+FACEHD_NOISE_SD_DEFAULT <- 0.1
 
 #' Shift SD multiplier for independent site allocation covariate shifts
 #' Controls magnitude of site-specific mean shifts: delta ~ N(0, INDEPENDENT_SHIFT_SD * shift_strength)
@@ -291,12 +294,12 @@ VALID_HETEROGENEITY_TYPES <- c("none", "mild", "strong", "partial")
 
 #' Valid data generating process (DGP) types
 #'
-#' "facec"      – current FACE-C DGP (multinomial logistic site model,
+#' "facehd"      – current FACE-HD DGP (multinomial logistic site model,
 #'                nonlinear covariate transforms, binary or continuous outcome)
 #' "face" – DGP from Han et al. (JASA 2023, Section 5.1):
 #'                site-specific skewed-normal covariates, linear + squared
 #'                outcome model, site-specific constant ATEs, continuous outcome
-VALID_DGP_TYPES <- c("facec", "face")
+VALID_DGP_TYPES <- c("facehd", "face")
 
 # =============================================================================
 # FACE PAPER DGP CONSTANTS (Han et al., JASA 2023, Section 5.1)
@@ -414,7 +417,3 @@ resolve_glm_family <- function(family) {
     glmnet_family = glmnet_family
   )
 }
-
-
-
-

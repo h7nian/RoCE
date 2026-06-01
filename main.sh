@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================================
-# FACE-C Simulation Job Submission Script
+# FACE-HD Simulation Job Submission Script
 # ============================================================================
 #
 # Submits SLURM jobs for each parameter combination in the simulation study.
@@ -8,8 +8,8 @@
 # checkpoint/restart for preemption-resilient execution.
 #
 # Usage:
-#   ./main.sh                          # Submit core experiments (facec DGP)
-#   ./main.sh --subset minimal         # Single test job (facec)
+#   ./main.sh                          # Submit core experiments (facehd DGP)
+#   ./main.sh --subset minimal         # Single test job (facehd)
 #   ./main.sh --subset full            # Full factorial (many jobs!)
 #   ./main.sh --subset face            # FACE DGP (Han et al. JASA 2023)
 #   ./main.sh --dry-run                # Preview without submitting
@@ -28,7 +28,7 @@
 #   --array-concurrency 16             # max concurrent array tasks
 #
 # Subsets:                           jobs   formula
-#   minimal              1           1×1×1×1  (single facec setting)
+#   minimal              1           1×1×1×1  (single facehd setting)
 #   core               108           3n × 3K × 4p × 3cfg
 #   continuous         216           core × 2 outcome types
 #   shift              324           core × 3 shift strengths
@@ -62,6 +62,7 @@ OVERRIDE_VERBOSE_EVERY=""
 OVERRIDE_PARALLEL_STRATEGY=""
 OVERRIDE_ESTIMATE_ATE=""
 OVERRIDE_ARRAY_CONCURRENCY=""
+OVERRIDE_N_FOLDS=""
 
 usage() {
     echo "Usage: $0 [OPTIONS]"
@@ -79,6 +80,9 @@ usage() {
     echo "  --parallel-strategy STR    one of: outer_priority, balanced, outer_only"
     echo "  --estimate-ate BOOL        Also estimate ATE via A=0 arm (true/false)"
     echo "  --array-concurrency N      Max concurrent SLURM array tasks (integer >=1)"
+    echo "  --n-folds N                Cross-fitting folds K_f (integer >=3, default 10)"
+    echo "                             diagnosis/bias/ recommends 3 when"
+    echo "                             n_site_arm / (K_f * p) < ~5"
     echo ""
     echo "Examples:"
     echo "  $0 --subset face --outcome-type binary --n-sims 100 --dry-run"
@@ -100,6 +104,7 @@ while [[ $# -gt 0 ]]; do
         --parallel-strategy) OVERRIDE_PARALLEL_STRATEGY="${2:?Missing parallel-strategy value}"; shift 2 ;;
         --estimate-ate)     OVERRIDE_ESTIMATE_ATE="${2:?Missing estimate-ate value}"; shift 2 ;;
         --array-concurrency) OVERRIDE_ARRAY_CONCURRENCY="${2:?Missing array-concurrency value}"; shift 2 ;;
+        --n-folds)         OVERRIDE_N_FOLDS="${2:?Missing n-folds value}"; shift 2 ;;
         -h|--help)         usage ;;
         *)                 echo "Error: unknown option '$1'"; usage ;;
     esac
@@ -116,16 +121,17 @@ CONFIG_VALUES=("C1" "C2" "C3")
 
 # New design parameters (defaults match main.R defaults)
 OUTCOME_TYPE_VALUES=("binary")
-SHIFT_STRENGTH_VALUES=(1.0)
+SHIFT_STRENGTH_VALUES=(0.5)
 N_SIMS=500
 USE_LAMBDA_CACHE="TRUE"
 VERBOSE_EVERY="10"
 PARALLEL_STRATEGY="outer_priority"
 ESTIMATE_ATE="FALSE"
 ARRAY_CONCURRENCY="16"
+N_FOLDS=10  # diagnosis/bias/ recommends 3; override via --n-folds
 
-# DGP selection: "facec" (default) or "face" (FACE JASA 2023 Section 5.1)
-DGP_TYPE="facec"
+# DGP selection: "facehd" (default) or "face" (FACE JASA 2023 Section 5.1)
+DGP_TYPE="facehd"
 ATE_DEVIATION_VALUES=(0.0)
 N_DEVIATED_SITES_VALUES=(0)
 
@@ -158,7 +164,7 @@ case $SUBSET in
         P_VALUES=(10 50 100 200)
         CONFIG_VALUES=("C1" "C2" "C3")
         OUTCOME_TYPE_VALUES=("binary")
-        SHIFT_STRENGTH_VALUES=(1.0)
+        SHIFT_STRENGTH_VALUES=(0.5)
         ATE_DEVIATION_VALUES=(0.0 1.0 2.0 3.0)
         N_DEVIATED_SITES_VALUES=(0 2 4)
         ;;
@@ -182,6 +188,7 @@ esac
 [[ -n "$OVERRIDE_PARALLEL_STRATEGY" ]] && PARALLEL_STRATEGY="$OVERRIDE_PARALLEL_STRATEGY"
 [[ -n "$OVERRIDE_ESTIMATE_ATE" ]] && ESTIMATE_ATE="$OVERRIDE_ESTIMATE_ATE"
 [[ -n "$OVERRIDE_ARRAY_CONCURRENCY" ]] && ARRAY_CONCURRENCY="$OVERRIDE_ARRAY_CONCURRENCY"
+[[ -n "$OVERRIDE_N_FOLDS" ]]       && N_FOLDS="$OVERRIDE_N_FOLDS"
 
 normalize_bool() {
     case "$1" in
@@ -214,6 +221,10 @@ if ! [[ "$VERBOSE_EVERY" =~ ^[0-9]+$ ]] || [[ "$VERBOSE_EVERY" -lt 1 ]]; then
 fi
 if ! [[ "$ARRAY_CONCURRENCY" =~ ^[0-9]+$ ]] || [[ "$ARRAY_CONCURRENCY" -lt 1 ]]; then
     echo "Error: --array-concurrency must be a positive integer"
+    exit 1
+fi
+if ! [[ "$N_FOLDS" =~ ^[0-9]+$ ]] || [[ "$N_FOLDS" -lt 3 ]]; then
+    echo "Error: --n-folds must be an integer >= 3 (main.cmd enforces same constraint)"
     exit 1
 fi
 
@@ -290,7 +301,7 @@ build_setting_id() {
     local site_allocation=${9:-model}
     local transform_type=${10:-mild}
     local n_folds=${11:-10}
-    local dgp_type=${12:-facec}
+    local dgp_type=${12:-facehd}
     local ate_deviation=${13:-0.0}
     local n_deviated_sites=${14:-0}
     local estimate_ate=${15:-FALSE}
@@ -328,7 +339,7 @@ TOTAL=${#COMBOS[@]}
 mkdir -p log checkpoints results
 
 echo "======================================================"
-echo " FACE-C Simulation Job Submission"
+echo " FACE-HD Simulation Job Submission"
 echo "======================================================"
 echo ""
 echo " Subset:     ${SUBSET}"
@@ -344,7 +355,7 @@ echo ""
 echo " Design parameters:"
 echo "   outcome_type:      ${OUTCOME_TYPE_VALUES[*]}"
 echo "   shift_strength:    ${SHIFT_STRENGTH_VALUES[*]}"
-echo "   n_folds:           10 (fixed)"
+echo "   n_folds:           ${N_FOLDS} (diagnosis/bias/ recommends 3 when n_site_arm/(K_f*p) < ~5)"
 echo "   n_sims:            ${N_SIMS}"
 echo ""
 echo " DGP:"
@@ -387,7 +398,7 @@ if [[ "$DRY_RUN" == true ]]; then
         job_count=$((job_count + 1))
         setting_id=$(build_setting_id "$n_total" "$K" "$p" "$config" \
                                       "$outcome_type" "$shift_strength" \
-                                      "none" "superpopulation" "model" "mild" "10" \
+                                      "none" "superpopulation" "model" "mild" "${N_FOLDS}" \
                                       "$DGP_TYPE" "$ate_deviation" "$n_deviated_sites" \
                                       "$ESTIMATE_ATE")
         printf "  [%3d/%d] %s\n" "$job_count" "$TOTAL" "$setting_id"
@@ -400,7 +411,7 @@ else
         read -r n_total K p config outcome_type shift_strength ate_deviation n_deviated_sites <<< "$combo"
         setting_id=$(build_setting_id "$n_total" "$K" "$p" "$config" \
                                       "$outcome_type" "$shift_strength" \
-                                      "none" "superpopulation" "model" "mild" "10" \
+                                      "none" "superpopulation" "model" "mild" "${N_FOLDS}" \
                                       "$DGP_TYPE" "$ate_deviation" "$n_deviated_sites" \
                                       "$ESTIMATE_ATE")
         printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
@@ -410,7 +421,7 @@ else
 
     submit_output=$(sbatch \
         --array="1-${TOTAL}%${ARRAY_CONCURRENCY}" \
-        --export="COMBO_FILE=${combo_file},arg6=superpopulation,arg7=model,arg8=mild,arg10=none,arg12=10,arg13=${N_SIMS},arg14=${DGP_TYPE},arg17=${USE_LAMBDA_CACHE},arg18=${VERBOSE_EVERY},arg19=${PARALLEL_STRATEGY},arg20=${ESTIMATE_ATE}" \
+        --export="COMBO_FILE=${combo_file},arg6=superpopulation,arg7=model,arg8=mild,arg10=none,arg12=${N_FOLDS},arg13=${N_SIMS},arg14=${DGP_TYPE},arg17=${USE_LAMBDA_CACHE},arg18=${VERBOSE_EVERY},arg19=${PARALLEL_STRATEGY},arg20=${ESTIMATE_ATE}" \
         --job-name="FACE_${SUBSET}" \
         main.cmd)
 

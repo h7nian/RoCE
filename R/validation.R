@@ -1,4 +1,4 @@
-# validation.R - Input validation functions for FACE-C algorithms
+# validation.R - Input validation functions for FACE-HD algorithms
 #
 # This file contains functions to validate inputs before algorithm execution.
 # Proper validation helps catch errors early and provides informative messages.
@@ -194,12 +194,16 @@ validate_algorithm_inputs <- function(data_split, lambda_selection = NULL,
       stop("lambda_selection must be either 'cv' or a numeric value")
     }
 
-    if (is.character(lambda_selection) && lambda_selection != "cv") {
+    if (is.character(lambda_selection) &&
+        (length(lambda_selection) != 1L || !identical(lambda_selection, "cv"))) {
       stop("lambda_selection must be 'cv' if character")
     }
 
-    if (is.numeric(lambda_selection) && (lambda_selection <= 0 || lambda_selection > 1)) {
-      stop("lambda_selection must be between 0 and 1 if numeric")
+    if (is.numeric(lambda_selection) &&
+        (length(lambda_selection) != 1L || !is.finite(lambda_selection) ||
+         lambda_selection < LAMBDA_MIN || lambda_selection > LAMBDA_MAX)) {
+      stop(sprintf("lambda_selection must be a finite numeric scalar in [%g, %g]",
+                   LAMBDA_MIN, LAMBDA_MAX))
     }
   }
 
@@ -308,7 +312,7 @@ validate_crossfit_sample_sizes <- function(data_split, n_folds, min_fold_size = 
   return(TRUE)
 }
 
-#' Validate truncation parameters used in FACE-C
+#' Validate truncation parameters used in FACE-HD
 #'
 #' @param M_tau Truncation bound for calibrated nuisance optimization.
 #' @param M_tau_inference Truncation bound for inference-stage DR terms.
@@ -356,7 +360,7 @@ validate_truncation_parameters <- function(M_tau, M_tau_inference) {
 #' @param K Positive integer number of source sites (NULL to skip this check)
 #' @param p Positive integer number of covariates (NULL to skip this check)
 #' @param config Configuration string (NULL to skip, else must be "C1"-"C4")
-#' @param dgp_type "facec" (default) or "face"
+#' @param dgp_type "face" (FACE negative-transfer DGP, default) or "facehd"
 #' @param ate_deviation Numeric ATE deviation for FACE paper non-informative sites (>= 0)
 #' @param n_deviated_sites Non-negative integer: how many source sites deviate (FACE paper only)
 #' @param warn_ignored Logical. If TRUE, warn when parameters are accepted for
@@ -368,14 +372,14 @@ validate_simulation_params <- function(estimand_type = "superpopulation",
                                         transform_type = "mild",
                                         outcome_type = "binary",
                                         heterogeneity_type = "none",
-                                        shift_strength = 1.0,
+                                        shift_strength = FACEHD_SHIFT_STRENGTH_DEFAULT,
                                         n_folds = N_FOLDS_DEFAULT,
                                         n_sims = NULL,
                                         n_total = NULL,
                                         K = NULL,
                                         p = NULL,
                                         config = NULL,
-                                        dgp_type = "facec",
+                                        dgp_type = "face",
                                         ate_deviation = 0.0,
                                         n_deviated_sites = 0L,
                                         warn_ignored = TRUE) {
@@ -390,10 +394,10 @@ validate_simulation_params <- function(estimand_type = "superpopulation",
   }
 
   # site_allocation, transform_type, outcome_type, heterogeneity_type, and
-  # shift_strength are specific to the FACE-C DGP.  For the FACE paper DGP
+  # shift_strength are specific to the FACE-HD DGP.  For the FACE paper DGP
   # these parameters are not used, so we skip their validation (they keep
   # their defaults and generate a warning when non-default values are passed).
-  if (dgp_type == "facec") {
+  if (dgp_type == "facehd") {
     if (!(site_allocation %in% VALID_SITE_ALLOCATIONS)) {
       stop(sprintf("Invalid site_allocation: '%s'. Must be one of: %s",
                    site_allocation, paste(VALID_SITE_ALLOCATIONS, collapse = ", ")))
@@ -455,7 +459,7 @@ validate_simulation_params <- function(estimand_type = "superpopulation",
         .warn_ignored_param("heterogeneity_type", heterogeneity_type, dgp_type,
                             "FACE paper DGP uses ate_deviation/n_deviated_sites instead.")
       }
-      if (.is_non_default_numeric(shift_strength, 1.0)) {
+      if (.is_non_default_numeric(shift_strength, FACEHD_SHIFT_STRENGTH_DEFAULT)) {
         .warn_ignored_param("shift_strength", shift_strength, dgp_type,
                             "FACE paper DGP uses fixed skewed-normal covariate shifts.")
       }

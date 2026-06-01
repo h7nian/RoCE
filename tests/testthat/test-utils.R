@@ -2,7 +2,7 @@
 
 library(testthat)
 
-# Package loaded by helper-load.R (all functions available via FACEC namespace)
+# Package loaded by helper-load.R (all functions available via FACEHD namespace)
 
 test_that("scale_center works on vectors", {
   x <- c(1, 2, 3, 4, 5)
@@ -111,6 +111,33 @@ test_that("safe_var handles single values and NAs", {
   expect_true(is.finite(result))
 })
 
+test_that("build_lambda_grid returns a glmnet-style descending path", {
+  grid <- build_lambda_grid(lambda_max = 2, lambda_min_ratio = 1e-3, nlambda = 6)
+
+  expect_equal(grid[1], 2, tolerance = 1e-12)
+  expect_equal(grid[length(grid)], 2e-3, tolerance = 1e-12)
+  expect_true(all(diff(grid) < 0))
+})
+
+test_that("lambda_max helpers fail fast on empty treatment arm", {
+  Z <- matrix(rnorm(20), nrow = 10, ncol = 2)
+  W <- matrix(rnorm(20), nrow = 10, ncol = 2)
+  A <- rep(0L, 10)
+  Y <- rnorm(10)
+  mean_grad_psi <- c(1, 0, 0)
+  alpha_init <- c(0, 0, 0)
+  gamma_s <- c(0, 0, 0)
+
+  expect_error(
+    compute_lambda_max_refined_dr(Z, A, mean_grad_psi, alpha_init, A_val = 1L),
+    "no observations with A_val"
+  )
+  expect_error(
+    compute_lambda_max_outcome(W, Y, A, gamma_s, A_val = 1L, Z_site = Z),
+    "no observations with A_val"
+  )
+})
+
 test_that("validate_algorithm_inputs catches invalid data", {
   # Create minimal valid data
   valid_data <- list(
@@ -163,7 +190,12 @@ test_that("validate_algorithm_inputs accepts lambda_selection = NULL", {
 
   expect_silent(validate_algorithm_inputs(valid_data))
   expect_silent(validate_algorithm_inputs(valid_data, lambda_selection = NULL))
+  expect_silent(validate_algorithm_inputs(valid_data, lambda_selection = 2))
   expect_silent(validate_algorithm_inputs(valid_data, family = "binomial"))
+  expect_error(validate_algorithm_inputs(valid_data, lambda_selection = LAMBDA_MAX * 2),
+               "finite numeric scalar")
+  expect_error(validate_algorithm_inputs(valid_data, lambda_selection = c("cv", "bad")),
+               "must be 'cv'")
 })
 
 test_that("comparison estimators validate inputs at entry", {
@@ -216,6 +248,22 @@ test_that("RHC imputers fail fast when no non-NA values remain", {
   expect_equal(imputed_mode[3L], "a")  # mode of {"a","b","a"}
 })
 
+test_that("RHC continuous imputer rejects non-numeric tokens explicitly", {
+  expect_error(
+    .rhc_impute_continuous(c("1.2", "not_numeric", NA), var_name = "bad_cont"),
+    "non-numeric non-missing"
+  )
+})
+
+test_that("solve_with_ridge fails instead of switching solvers", {
+  singular_mat <- matrix(c(1, 1, 1, 1), nrow = 2L)
+
+  expect_error(
+    solve_with_ridge(singular_mat, ridge = 0),
+    "refusing to switch"
+  )
+})
+
 test_that("calculate_weighted_site_aipw warns when too few treated units", {
   # Regression test: previously this function silently returned NA / Inf with
   # a zero influence function when the treated-arm cell was below
@@ -236,4 +284,3 @@ test_that("calculate_weighted_site_aipw warns when too few treated units", {
   expect_true(is.infinite(res$variance))
   expect_equal(res$psi, rep(0, n))
 })
-

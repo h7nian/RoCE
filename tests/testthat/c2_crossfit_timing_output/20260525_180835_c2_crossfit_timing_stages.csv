@@ -1,0 +1,26 @@
+"stage","detail","elapsed_sec"
+"generate_data","",2.15862441062927
+"build_folds","",0.0108165740966797
+"target_combine_folds","k1=1 k2=2 train_folds=3",0.000117063522338867
+"target_materialize_calib","k1=1 k2=2",7.34329223632812e-05
+"target_fit_initial_outcome","k1=1 k2=2 n_train=339 n_arm=174 cached=no",0.0594091415405273
+"target_mean_grad","k1=1 k2=2 n_calib=339",0.000213861465454102
+"target_combine_folds","k1=1 k2=3 train_folds=2",0.00868821144104004
+"target_materialize_calib","k1=1 k2=3",8.08238983154297e-05
+"target_fit_initial_outcome","k1=1 k2=3 n_train=339 n_arm=174 cached=yes",0.0203373432159424
+"target_mean_grad","k1=1 k2=3 n_calib=339",0.0122175216674805
+"source_materialize_calib","source=s1 k1=1 k2=2",9.87052917480469e-05
+"source_combine_folds","source=s1 k1=1 k2=2 train_folds=3",9.13143157958984e-05
+"source_fit_initial_density_ratio","source=s1 k1=1 k2=2 n_train=254 n_arm=134 cached=no",395.97868347168
+"source_materialize_calib","source=s1 k1=1 k2=3",0.000276565551757812
+"source_combine_folds","source=s1 k1=1 k2=3 train_folds=2",0.000127553939819336
+"source_fit_initial_density_ratio","source=s1 k1=1 k2=3 n_train=256 n_arm=135 cached=yes",0.0132722854614258
+"source_stack_Z","source=s1 k1=1",0.000194787979125977
+"source_stack_W","source=s1 k1=1",0.000155448913574219
+"source_make_W_plugin_block","source=s1 k1=1",0.000334262847900391
+"source_fit_unified_density_ratio","source=s1 k1=1 n_cal=510 p_z=50 p_w_plugin=102",3.52826952934265
+"source_make_Z_plugin_block","source=s1 k1=1",0.0161800384521484
+"source_fit_unified_outcome","source=s1 k1=1 n_cal=510 p_w=50 p_z_plugin=102",1.1527726650238
+"source_materialize_main","source=s1 k1=1",8.89301300048828e-05
+"source_correction_term","source=s1 k1=1 n_main=256",9.60826873779297e-05
+"target_predict_main","source=s1 k1=1 n_target_main=341",7.62939453125e-05

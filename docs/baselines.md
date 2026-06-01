@@ -1,4 +1,4 @@
-# Baseline Formula-to-Code Mapping (FACE-C)
+# Baseline Formula-to-Code Mapping (FACE-HD)
 
 This note documents how each baseline estimator is implemented and where the key formulas appear in code.
 

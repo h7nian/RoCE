@@ -4,6 +4,7 @@
 #include "utils.hpp"
 #include "numerical_constants.hpp"
 #include <algorithm>
+#include <cmath>
 #include <numeric>  // for std::iota
 #include <stdexcept>
 
@@ -132,21 +133,6 @@ inline std::vector<int> filter_treated(const VectorXd& A, int a_val = 1) {
     return filter_treated_indices(A, a_val);
 }
 
-// Early return when treated units are empty or insufficient for CV
-inline List make_early_return(const VectorXd& lambda_grid, int n_lambda, bool empty) {
-    VectorXd cv_scores(n_lambda);
-    cv_scores.fill(INFINITY);
-    if (empty) {
-        return List::create(Named("best_lambda") = lambda_grid(0),
-                           Named("best_idx") = 1,
-                           Named("cv_scores") = cv_scores);
-    } else {
-        return List::create(Named("best_lambda") = lambda_grid(n_lambda/2),
-                           Named("best_idx") = n_lambda/2 + 1,
-                           Named("cv_scores") = cv_scores);
-    }
-}
-
 // Fold train/val index split
 struct FoldSplit {
     std::vector<std::vector<int>> train;
@@ -187,34 +173,76 @@ inline VectorXd normalize_weights(const VectorXd& w) {
     return w;
 }
 
-// Aggregate fold scores → mean CV scores → best lambda → return List
+// Aggregate unpenalized fold scores -> lambda.min/lambda.1se -> selected lambda.
 inline List aggregate_cv_results(const MatrixXd& fold_scores, const VectorXd& lambda_grid,
                                  int n_lambda, int n_folds) {
     VectorXd cv_scores(n_lambda);
+    VectorXd cv_se(n_lambda);
+    IntegerVector n_valid(n_lambda);
     for (int i = 0; i < n_lambda; i++) {
         StableAccumulator sum_acc;
-        int valid = 0;
         for (int fold = 0; fold < n_folds; fold++) {
-            if (std::isfinite(fold_scores(i, fold))) {
-                sum_acc.add(fold_scores(i, fold));
-                valid++;
+            if (!std::isfinite(fold_scores(i, fold))) {
+                throw std::runtime_error(
+                    "aggregate_cv_results: non-finite validation loss at lambda index " +
+                    std::to_string(i + 1) + ", fold " + std::to_string(fold + 1) +
+                    "; CV lambda selection requires every validation fold to be finite."
+                );
             }
+            sum_acc.add(fold_scores(i, fold));
         }
-        cv_scores(i) = (valid > 0) ? (sum_acc.value() / valid) : INFINITY;
+        n_valid[i] = n_folds;
+        cv_scores(i) = sum_acc.value() / n_folds;
+
+        if (n_folds > 1) {
+            StableAccumulator var_acc;
+            for (int fold = 0; fold < n_folds; fold++) {
+                double diff = fold_scores(i, fold) - cv_scores(i);
+                var_acc.add(diff * diff);
+            }
+            double fold_var = var_acc.value() / (n_folds - 1);
+            cv_se(i) = std::sqrt(std::max(0.0, fold_var) / n_folds);
+        } else {
+            cv_se(i) = 0.0;
+        }
     }
 
-    int best_idx = 0;
-    double min_score = cv_scores(0);
-    for (int i = 1; i < n_lambda; i++) {
-        if (cv_scores(i) < min_score) {
+    int best_idx = -1;
+    double min_score = INFINITY;
+    for (int i = 0; i < n_lambda; i++) {
+        if (std::isfinite(cv_scores(i)) && cv_scores(i) < min_score) {
             min_score = cv_scores(i);
             best_idx = i;
+        }
+    }
+    if (best_idx < 0) {
+        throw std::runtime_error("aggregate_cv_results: all lambda values produced invalid CV scores.");
+    }
+
+    int idx_1se = best_idx;
+    if (std::isfinite(min_score)) {
+        double one_se_cutoff = min_score + cv_se(best_idx);
+        double largest_lambda = lambda_grid(best_idx);
+        for (int i = 0; i < n_lambda; i++) {
+            if (std::isfinite(cv_scores(i)) &&
+                cv_scores(i) <= one_se_cutoff &&
+                lambda_grid(i) > largest_lambda) {
+                largest_lambda = lambda_grid(i);
+                idx_1se = i;
+            }
         }
     }
 
     return List::create(Named("best_lambda") = lambda_grid(best_idx),
                        Named("best_idx") = best_idx + 1,
-                       Named("cv_scores") = cv_scores);
+                       Named("lambda_min") = lambda_grid(best_idx),
+                       Named("lambda_1se") = lambda_grid(idx_1se),
+                       Named("idx_min") = best_idx + 1,
+                       Named("idx_1se") = idx_1se + 1,
+                       Named("cv_scores") = cv_scores,
+                       Named("cv_se") = cv_se,
+                       Named("n_valid_folds") = n_valid,
+                       Named("lambda_rule") = "min");
 }
 
 // ---- Coordinate Descent Inner Loops ----
@@ -355,19 +383,31 @@ inline void density_ratio_cd_update(VectorXd& gamma, std::vector<bool>& active,
     }
 }
 
-// Density ratio validation loss: grad^T γ + Σ exp(-φ^T γ) ψ' / n_val
+// Density ratio validation loss: grad^T γ + source_scale * Ẽ_val[exp(-φ^T γ) ψ']
+//
+// source_scale = n_treated / n_source rescales the treated-arm validation average
+// (Σ_{treated in val} ... / n_val) into the full-source empirical expectation
+// Ẽ_{s_j}[I(A=1) exp(-φ^T γ) ψ'] = (n_treated / n_source) * mean_{treated}[...] used by
+// the training objective (density_ratio_cd_update normalizes by the full source size n)
+// and by main.tex (eq:gamma_init, eq:gamma_calibrated_loss). Without this factor the
+// validation loss is a treated-arm average that over-weights the exp term by
+// 1/arm_fraction relative to the linear grad^T γ term, biasing λ_γ selection and
+// leaving the estimated tilt γ̂ mis-regularized (degrades C2 coverage at large n).
 inline double density_ratio_val_loss(const VectorXd& gamma, const VectorXd& mean_grad_psi,
-                                     const MatrixXd& X_val, const VectorXd& psi_prime_val) {
+                                     const MatrixXd& X_val, const VectorXd& psi_prime_val,
+                                     double source_scale) {
     int n_val = X_val.rows();
-    long double loss = static_cast<long double>(mean_grad_psi.dot(gamma));
+    long double linear = static_cast<long double>(mean_grad_psi.dot(gamma));
+    long double source_sum = 0.0L;
     for (int j = 0; j < n_val; j++) {
         double eta_gamma = X_val.row(j).dot(gamma);
         eta_gamma = std::max(NumericalConstants::ETA_CLIP_MIN, std::min(NumericalConstants::ETA_CLIP_MAX, eta_gamma));
         double exp_neg_g = std::exp(-eta_gamma);
         exp_neg_g = std::max(NumericalConstants::WEIGHT_MIN, std::min(NumericalConstants::WEIGHT_MAX, exp_neg_g));
-        loss += static_cast<long double>(exp_neg_g * psi_prime_val(j) / n_val);
+        source_sum += static_cast<long double>(exp_neg_g * psi_prime_val(j));
     }
-    return static_cast<double>(loss);
+    return static_cast<double>(
+        linear + static_cast<long double>(source_scale) * source_sum / n_val);
 }
 
 // GLM validation loss: Σ w_j * loss(y_j, μ_j) / n_val

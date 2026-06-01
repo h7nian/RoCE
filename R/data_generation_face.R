@@ -1,7 +1,7 @@
 # data_generation_face.R - FACE Paper DGP (Han et al., JASA 2023, Section 5.1)
 #
 # This file implements the data-generating process described in the published
-# FACE paper. The key differences from the FACE-C DGP (in data_generation.R) are:
+# FACE paper. The key differences from the FACE-HD DGP (in data_generation.R) are:
 #   - Covariates: site-specific skewed-normal distributions (no pooled draw)
 #   - Outcome:    continuous, linear + squared covariate terms, site-specific
 #                 constant ATE Δ_k (no within-site effect modification)
@@ -16,6 +16,7 @@
 #   - build_face_ate_map
 #   - generate_face_outcomes
 #   - calculate_face_truth
+#   - resolve_face_site_sizes
 #   - generate_face_data  (main orchestrator)
 
 #' Generate samples from the skewed-normal distribution SN(κ, φ², ν)
@@ -52,10 +53,11 @@ generate_skewed_normal <- function(n, kappa = 0, phi = 1, nu = 0) {
 #' with \eqn{\kappa_{k\cdot} \in (0.10, 0.15)} and \eqn{\phi_{k\cdot} = 1}
 #' in the paper.
 #'
-#' @param n_target          Number of target-site observations.
-#' @param n_source_per_site Number of observations per source site.
-#' @param K                 Number of source sites (0 for reference-population calls).
-#' @param p                 Number of covariates.
+#' @param n_target       Number of target-site observations.
+#' @param n_source_sizes Integer vector of per-site source sample sizes; its
+#'                       length determines the number of source sites \eqn{K}
+#'                       (use \code{integer(0)} for reference-population calls).
+#' @param p              Number of covariates.
 #' @param kappa             Location parameter (default \code{FACE_KAPPA}).
 #' @param nu_source_max     Maximum skewness for source sites
 #'                          (default \code{FACE_NU_SOURCE_MAX}).
@@ -66,10 +68,11 @@ generate_skewed_normal <- function(n, kappa = 0, phi = 1, nu = 0) {
 #'     \item \code{kappa}     – location parameter used.
 #'     \item \code{nu_source} – skewness values assigned to each source site.
 #'   }
-generate_face_covariates <- function(n_target, n_source_per_site, K, p,
+generate_face_covariates <- function(n_target, n_source_sizes, p,
                                            kappa         = FACE_KAPPA,
                                            nu_source_max = FACE_NU_SOURCE_MAX) {
-  n_total <- n_target + K * n_source_per_site
+  K       <- length(n_source_sizes)
+  n_total <- n_target + sum(n_source_sizes)
   X <- matrix(0, nrow = n_total, ncol = p)
   R <- character(n_total)
 
@@ -85,16 +88,19 @@ generate_face_covariates <- function(n_target, n_source_per_site, K, p,
     R[1:n_target] <- "t"
   }
 
-  # Source sites
+  # Source sites (sizes may differ across sites; advance a running row offset)
+  offset <- n_target
   for (k in seq_len(K)) {
-    idx_start <- n_target + (k - 1L) * n_source_per_site + 1L
-    idx_end   <- n_target + k * n_source_per_site
+    n_k <- n_source_sizes[k]
+    if (n_k <= 0L) next
+    idx <- (offset + 1L):(offset + n_k)
     for (j in 1:p) {
-      X[idx_start:idx_end, j] <- generate_skewed_normal(
-        n_source_per_site, kappa = kappa, phi = 1, nu = nu_source[k]
+      X[idx, j] <- generate_skewed_normal(
+        n_k, kappa = kappa, phi = 1, nu = nu_source[k]
       )
     }
-    R[idx_start:idx_end] <- paste0("s", k)
+    R[idx] <- paste0("s", k)
+    offset <- offset + n_k
   }
 
   colnames(X) <- paste0("X", 1:p)
@@ -219,11 +225,10 @@ calculate_face_truth <- function(p, kappa = FACE_KAPPA,
   with_seed(ref_seed, {
     # Target-site covariates: X ~ N(kappa, 1) (ν = 0 → symmetric)
     ref_covs <- generate_face_covariates(
-      n_target          = n_ref,
-      n_source_per_site = 0L,
-      K                 = 0L,
-      p                 = p,
-      kappa             = kappa
+      n_target       = n_ref,
+      n_source_sizes = integer(0),
+      p              = p,
+      kappa          = kappa
     )
     X_ref      <- ref_covs$X
     out_params <- get_face_outcome_parameters(p)
@@ -253,10 +258,77 @@ calculate_face_truth <- function(p, kappa = FACE_KAPPA,
   })
 }
 
+#' Resolve per-site sample sizes for the FACE paper DGP
+#'
+#' Supports two mutually exclusive ways of specifying how observations are
+#' distributed across the target and source sites:
+#' \itemize{
+#'   \item \strong{Explicit per-site} (federated-realistic): supply both
+#'         \code{n_target} and \code{n_source_sizes}; the number of source sites
+#'         \eqn{K} is taken from \code{length(n_source_sizes)} and the total is
+#'         their sum.
+#'   \item \strong{Total with equal split} (default, matches the FACE paper's
+#'         equal \eqn{n_k}): supply \code{n_total}; each source receives
+#'         \eqn{\lfloor n_{total}/(K+1)\rfloor} observations and the target the
+#'         remainder.
+#' }
+#'
+#' @param n_total        Total sample size across all sites (equal-split mode).
+#' @param n_target       Target-site sample size (explicit per-site mode).
+#' @param n_source_sizes Integer vector of per-site source sizes (explicit mode).
+#' @param K              Number of source sites (equal-split mode only; ignored
+#'                       in per-site mode, where it is taken from
+#'                       \code{length(n_source_sizes)}).
+#' @return Named list with \code{n_total}, \code{n_target},
+#'   \code{n_source_sizes} (length-\eqn{K} integer vector), and \code{K}.
+#' @keywords internal
+resolve_face_site_sizes <- function(n_total = NULL, n_target = NULL,
+                                    n_source_sizes = NULL, K = NULL) {
+  per_site <- !is.null(n_source_sizes) || !is.null(n_target)
+
+  if (per_site) {
+    if (is.null(n_source_sizes) || is.null(n_target)) {
+      stop("Per-site allocation requires BOTH n_target and n_source_sizes.",
+           call. = FALSE)
+    }
+    n_target       <- as.integer(n_target)
+    n_source_sizes <- as.integer(n_source_sizes)
+    if (length(n_source_sizes) < 1L || anyNA(n_source_sizes) ||
+        any(n_source_sizes <= 0L)) {
+      stop("n_source_sizes must be a non-empty vector of positive integers.",
+           call. = FALSE)
+    }
+    if (is.na(n_target) || n_target <= 0L) {
+      stop("n_target must be a positive integer.", call. = FALSE)
+    }
+    # In per-site mode the number of source sites is defined by n_source_sizes;
+    # any K argument is redundant and ignored (callers report the resolved K).
+    K       <- length(n_source_sizes)
+    n_total <- n_target + sum(n_source_sizes)
+  } else {
+    if (is.null(n_total) || is.null(K)) {
+      stop("Equal-split allocation requires both n_total and K.", call. = FALSE)
+    }
+    n_source_per_site <- floor(n_total / (K + 1L))
+    if (n_source_per_site <= 0L) {
+      stop(sprintf(
+        "n_total (%d) is too small for K=%d sites (each source would get 0).",
+        as.integer(n_total), as.integer(K)), call. = FALSE)
+    }
+    n_target       <- n_total - K * n_source_per_site
+    n_source_sizes <- rep(n_source_per_site, K)
+  }
+
+  list(n_total        = as.integer(n_total),
+       n_target       = as.integer(n_target),
+       n_source_sizes = as.integer(n_source_sizes),
+       K              = as.integer(K))
+}
+
 #' Orchestrate full data generation for the FACE paper DGP
 #'
 #' Creates a dataset whose structure (field names and types) is identical to that
-#' produced by the FACE-C DGP path of \code{generate_simulation_data()}, so that
+#' produced by the FACE-HD DGP path of \code{generate_simulation_data()}, so that
 #' downstream code (\code{split_data_by_site()}, estimation algorithms, etc.)
 #' requires no modification.
 #'
@@ -272,30 +344,43 @@ calculate_face_truth <- function(p, kappa = FACE_KAPPA,
 #'         OR uses only \eqn{X}.
 #' }
 #'
-#' @param n_total          Total observations across all sites.
-#' @param K                Number of source sites.
+#' @param n_total          Total observations across all sites (equal-split
+#'                         allocation). Ignored when \code{n_source_sizes} is
+#'                         supplied; may be left \code{NULL} in that case.
+#' @param K                Number of source sites (equal-split allocation).
 #' @param p                Number of covariates (only first 4 have non-zero coefficients).
 #' @param config           Configuration string: "C1", "C2", "C3", or "C4".
 #' @param estimand_type    "superpopulation" (fixed truth) or "sample" (realized truth).
 #' @param outcome_type     "continuous" (default) or "binary".
 #' @param ate_deviation    ATE deviation for non-informative source sites (default 0).
 #' @param n_deviated_sites Number of leading source sites with deviated ATE (default 0L).
-#' @return Named list with the same fields as the FACE-C DGP output.
-generate_face_data <- function(n_total, K = 3, p = 4, config = "C1",
+#' @param n_target         Optional target-site sample size for explicit per-site
+#'                         allocation (paired with \code{n_source_sizes}).
+#' @param n_source_sizes   Optional integer vector of per-site source sample
+#'                         sizes; when supplied, \code{K} and the total are taken
+#'                         from it and \code{n_total} is ignored.
+#' @return Named list with the same fields as the FACE-HD DGP output.
+generate_face_data <- function(n_total = NULL, K = 3, p = 4, config = "C1",
                                      estimand_type    = "superpopulation",
                                      outcome_type     = "continuous",
                                      ate_deviation    = 0.0,
-                                     n_deviated_sites = 0L) {
-  # ---- 1. Allocate equal sample sizes (remainder goes to target) ----
-  n_source_per_site <- floor(n_total / (K + 1L))
-  n_target          <- n_total - K * n_source_per_site
+                                     n_deviated_sites = 0L,
+                                     n_target         = NULL,
+                                     n_source_sizes   = NULL) {
+  # ---- 1. Resolve per-site sample sizes. Equal split across K + 1 sites by
+  #         default (FACE-paper convention); explicit per-site sizes when both
+  #         n_target and n_source_sizes are supplied. ----
+  site_sizes     <- resolve_face_site_sizes(n_total, n_target, n_source_sizes, K)
+  n_total        <- site_sizes$n_total
+  K              <- site_sizes$K
+  n_target       <- site_sizes$n_target
+  n_source_sizes <- site_sizes$n_source_sizes
 
   # ---- 2. Generate site-specific covariates from skewed-normal distribution ----
   cov_list <- generate_face_covariates(
-    n_target          = n_target,
-    n_source_per_site = n_source_per_site,
-    K                 = K,
-    p                 = p
+    n_target       = n_target,
+    n_source_sizes = n_source_sizes,
+    p              = p
   )
   X  <- cov_list$X
   R  <- cov_list$R
@@ -375,7 +460,7 @@ generate_face_data <- function(n_total, K = 3, p = 4, config = "C1",
     mu0_realized <- mean(Y_0[target_idx])
   }
 
-  # ---- 7. Assemble output list (matches FACE-C DGP structure) ----
+  # ---- 7. Assemble output list (matches FACE-HD DGP structure) ----
   list(
     n            = n_total,
     K            = K,

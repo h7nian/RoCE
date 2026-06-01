@@ -15,10 +15,63 @@
 # outcome means, then compute the difference.
 #
 # =============================================================================
-# This file implements the main FACE-C algorithms with optional parallelization
+# This file implements the main FACE-HD algorithms with optional parallelization
 # for processing multiple source sites simultaneously.
 
 # Parallelization utilities are in R/parallel_utils.R (setup_parallel, parallel_lapply)
+
+.make_plugin_block_design <- function(feature_list, caller = ".make_plugin_block_design") {
+  if (length(feature_list) == 0L) {
+    stop(sprintf("%s: feature_list must contain at least one matrix.", caller))
+  }
+
+  feature_list <- lapply(feature_list, as.matrix)
+  p <- ncol(feature_list[[1L]])
+  if (is.null(p)) {
+    stop(sprintf("%s: feature entries must be matrices.", caller))
+  }
+  bad <- which(vapply(feature_list, ncol, integer(1L)) != p)
+  if (length(bad) > 0L) {
+    stop(sprintf("%s: all feature matrices must have the same number of columns.", caller))
+  }
+
+  block_width <- p + 1L
+  total_n <- sum(vapply(feature_list, nrow, integer(1L)))
+  out <- matrix(0, nrow = total_n, ncol = length(feature_list) * block_width)
+
+  row_start <- 1L
+  for (i in seq_along(feature_list)) {
+    mat <- feature_list[[i]]
+    n_i <- nrow(mat)
+    if (n_i == 0L) next
+    row_end <- row_start + n_i - 1L
+    col_start <- (i - 1L) * block_width + 1L
+    col_end <- i * block_width
+    out[row_start:row_end, col_start:col_end] <- cbind(1, mat)
+    row_start <- row_end + 1L
+  }
+
+  out
+}
+
+.stack_fold_field <- function(fold_data_list, field, caller = ".stack_fold_field") {
+  values <- lapply(fold_data_list, `[[`, field)
+  if (length(values) == 0L) {
+    stop(sprintf("%s: no values to stack for field '%s'.", caller, field))
+  }
+  if (is.matrix(values[[1L]])) {
+    do.call(rbind, values)
+  } else {
+    unlist(values, use.names = FALSE)
+  }
+}
+
+.average_numeric_list <- function(values, caller = ".average_numeric_list") {
+  if (length(values) == 0L) {
+    stop(sprintf("%s: values must be non-empty.", caller))
+  }
+  Reduce(`+`, values) / length(values)
+}
 
 #' Process a single source site for cross-fitting (shared by both algorithms)
 #'
@@ -43,33 +96,38 @@
 #' @param link_int Integer code for link function (0=identity, 1=logit)
 #' @param use_lambda_cache Logical. If TRUE, reuse selected nuisance lambdas
 #'   within each source-site k2 loop to reduce repeated CV.
+#' @param nuisance_lambda_rule CV selection rule for nuisance fits:
+#'   \code{"min"} (default) uses \code{lambda.min}; \code{"1se"} uses
+#'   \code{lambda.1se}.
 #' @return List with source site results (mu_ts, gamma_s, alpha_ts, delta_ts, mu_pred_ts, n_s)
 process_source_site <- function(s, source_folds, target_folds, k1, n_folds,
                                 A_val, M_tau, M_tau_inference = M_TAU_INFERENCE_DEFAULT,
                                 data_split,
                                 combine_cache = NULL, get_fold_inputs,
                                 family_int = 1L, link_int = 1L,
-                                use_lambda_cache = TRUE) {
+                                use_lambda_cache = TRUE,
+                                nuisance_lambda_rule = c("min", "1se")) {
+  nuisance_lambda_rule <- .match_nuisance_lambda_rule(nuisance_lambda_rule, "process_source_site")
+
   secondary_folds <- setdiff(1:n_folds, k1)
   label <- "crossfit"
   
-  # Initialize parameter storage for secondary folds
-  gamma_cal_list <- list()
-  alpha_cal_list <- list()
+  # Initialize fold-specific storage. The calibrated nuisance itself is obtained
+  # by one fold-summed optimization after all secondary-fold plug-ins are ready.
+  gamma_init_list <- list()
+  alpha_init_list <- list()
+  source_calib_list <- list()
+  mean_grad_psi_list <- list()
   
   # Lambda caching (optional): reuse selected lambda values within the same
   # source site's k2 loop. This remains valid under parallel execution because
   # it is local state (no cross-worker shared mutable cache).
   cached_lambda_init_dr <- NULL
-  cached_lambda_cal_dr  <- NULL
-  cached_lambda_cal_out <- NULL
   
   # Warm-start: pass previous k2's solution to accelerate convergence.
   # Across k2 iterations the training/calibration data changes by only 1 fold,
   # so optimal parameters are similar. Warm-starting reduces iterations by 3-10x.
   prev_gamma_init <- NULL
-  prev_gamma_cal  <- NULL
-  prev_alpha_cal  <- NULL
   
   # For each secondary fold k2, compute calibrated parameters
   for (k2 in secondary_folds) {
@@ -110,53 +168,67 @@ process_source_site <- function(s, source_folds, target_folds, k1, n_folds,
     gamma_init_k1_k2 <- fit_initial_density_ratio(
       source_train$Z_site, source_train$A, mean_phi_k2,
       lambda = if (isTRUE(use_lambda_cache)) cached_lambda_init_dr else NULL,
-      A_val = A_val, warm_start = prev_gamma_init
+      A_val = A_val, warm_start = prev_gamma_init,
+      lambda_rule = nuisance_lambda_rule
     )
     if (isTRUE(use_lambda_cache) && is.null(cached_lambda_init_dr)) {
       cached_lambda_init_dr <- attr(gamma_init_k1_k2, "lambda_used")
     }
     prev_gamma_init <- as.numeric(gamma_init_k1_k2)
     
-    # Compute calibrated density ratio  — eq:gamma_calibrated_loss in main.tex
-    gamma_cal_k1_k2 <- fit_unified_density_ratio(
-      Z_site = source_calib$Z_site, A = source_calib$A,
-      mean_grad_psi = mean_grad_psi_init_k2, alpha_init = alpha_init_k1_k2,
-      lambda = if (isTRUE(use_lambda_cache)) cached_lambda_cal_dr else NULL,
-      calibrated = TRUE, M_tau = M_tau,
-      W_outcome = source_calib$W_outcome, A_val = A_val,
-      family_int = family_int, link_int = link_int,
-      warm_start = prev_gamma_cal
-    )
-    if (isTRUE(use_lambda_cache) && is.null(cached_lambda_cal_dr)) {
-      cached_lambda_cal_dr <- attr(gamma_cal_k1_k2, "lambda_used")
-    }
-    prev_gamma_cal <- as.numeric(gamma_cal_k1_k2)
-    
-    # Compute calibrated outcome (using gamma_init for Neyman Orthogonality) — eq:alpha_calibrated_loss in main.tex
-    alpha_cal_k1_k2 <- fit_unified_outcome(
-      W_outcome = source_calib$W_outcome, Y = source_calib$Y, A = source_calib$A,
-      A_val = A_val, gamma_s = gamma_init_k1_k2,
-      lambda = if (isTRUE(use_lambda_cache)) cached_lambda_cal_out else NULL,
-      family_int = family_int, link_int = link_int,
-      calibrated = TRUE, M_tau = M_tau, Z_site = source_calib$Z_site,
-      warm_start = prev_alpha_cal
-    )
-    if (isTRUE(use_lambda_cache) && is.null(cached_lambda_cal_out)) {
-      cached_lambda_cal_out <- attr(alpha_cal_k1_k2, "lambda_used")
-    }
-    prev_alpha_cal <- as.numeric(alpha_cal_k1_k2)
-    
-    gamma_cal_list[[paste0("k2_", k2)]] <- gamma_cal_k1_k2
-    alpha_cal_list[[paste0("k2_", k2)]] <- alpha_cal_k1_k2
+    k2_key <- paste0("k2_", k2)
+    gamma_init_list[[k2_key]] <- gamma_init_k1_k2
+    alpha_init_list[[k2_key]] <- alpha_init_k1_k2
+    source_calib_list[[k2_key]] <- source_calib
+    mean_grad_psi_list[[k2_key]] <- mean_grad_psi_init_k2
   }
   
-  # Average calibrated parameters across secondary folds
-  if (length(gamma_cal_list) == 0 || length(alpha_cal_list) == 0) {
+  # Fold-summed SMMAL-style calibrated optimization over all secondary folds.
+  # The existing C++ optimizers accept one plug-in vector, so fold-specific
+  # plug-ins are represented through block designs. C++ prepends a global
+  # intercept; we set its coefficient to zero and carry fold-specific intercepts
+  # inside the block design.
+  if (length(source_calib_list) == 0 || length(gamma_init_list) == 0 || length(alpha_init_list) == 0) {
     stop(sprintf("process_source_site: all calibration folds failed for source site '%s' (outer fold k1=%d). Cannot form method-aligned nuisance estimates.",
                  s, k1))
   } else {
-    gamma_final_k1 <- colMeans(do.call(rbind, gamma_cal_list))
-    alpha_final_k1 <- colMeans(do.call(rbind, alpha_cal_list))
+    Z_cal_stack <- .stack_fold_field(source_calib_list, "Z_site", "process_source_site")
+    W_cal_stack <- .stack_fold_field(source_calib_list, "W_outcome", "process_source_site")
+    A_cal_stack <- .stack_fold_field(source_calib_list, "A", "process_source_site")
+    Y_cal_stack <- .stack_fold_field(source_calib_list, "Y", "process_source_site")
+
+    mean_grad_psi_avg <- .average_numeric_list(mean_grad_psi_list, "process_source_site")
+
+    W_plugin_block <- .make_plugin_block_design(
+      lapply(source_calib_list, `[[`, "W_outcome"),
+      caller = "process_source_site(gamma fold-summed calibration)"
+    )
+    alpha_plugin_block <- c(0, unlist(alpha_init_list, use.names = FALSE))
+
+    gamma_final_k1 <- fit_unified_density_ratio(
+      Z_site = Z_cal_stack, A = A_cal_stack,
+      mean_grad_psi = mean_grad_psi_avg, alpha_init = alpha_plugin_block,
+      lambda = NULL,
+      calibrated = TRUE, M_tau = M_tau,
+      W_outcome = W_plugin_block, A_val = A_val,
+      family_int = family_int, link_int = link_int,
+      lambda_rule = nuisance_lambda_rule
+    )
+
+    Z_plugin_block <- .make_plugin_block_design(
+      lapply(source_calib_list, `[[`, "Z_site"),
+      caller = "process_source_site(alpha fold-summed calibration)"
+    )
+    gamma_plugin_block <- c(0, unlist(gamma_init_list, use.names = FALSE))
+
+    alpha_final_k1 <- fit_unified_outcome(
+      W_outcome = W_cal_stack, Y = Y_cal_stack, A = A_cal_stack,
+      A_val = A_val, gamma_s = gamma_plugin_block,
+      lambda = NULL,
+      family_int = family_int, link_int = link_int,
+      calibrated = TRUE, M_tau = M_tau, Z_site = Z_plugin_block,
+      lambda_rule = nuisance_lambda_rule
+    )
   }
   
   # Compute correction term on main fold  — eq:site_membership in main.tex
@@ -191,11 +263,13 @@ process_source_site <- function(s, source_folds, target_folds, k1, n_folds,
     n_s = source_main_fold$n,
     correction_components = correction_result$correction_components,
     correction_clip_diagnostics = correction_result$clip_diagnostics,
-    n_calibrated_folds = length(gamma_cal_list),
-    calibrated_fold_keys = names(gamma_cal_list),
-    # Per-k2 calibrated parameters for Version A inner-fold variance computation
-    per_k2_gamma = gamma_cal_list,
-    per_k2_alpha = alpha_cal_list
+    n_calibrated_folds = length(source_calib_list),
+    calibrated_fold_keys = names(source_calib_list),
+    # Per-k2 out-of-two-fold plug-ins for aggregation inner validation.
+    # These are trained without folds k1 and k2, so validation summaries on k2
+    # do not reuse the validation observations.
+    per_k2_gamma = gamma_init_list,
+    per_k2_alpha = alpha_init_list
   ))
 }
 
@@ -230,11 +304,10 @@ partition_into_folds <- function(data, n_folds, seed = NULL) {
       fold_ids[treated_idx] <- sample(rep(1:n_folds, length.out = length(treated_idx)))
       fold_ids[control_idx] <- sample(rep(1:n_folds, length.out = length(control_idx)))
     } else {
-      warning(sprintf(
-        "assign_folds: too few treated or control units for stratified fold assignment (n_treated=%d, n_control=%d, n_folds=%d); falling back to simple random assignment.",
+      stop(sprintf(
+        "partition_into_folds: too few treated or control units for stratified fold assignment (n_treated=%d, n_control=%d, n_folds=%d). Reduce n_folds or provide data with at least one observation from each treatment arm in every fold.",
         length(treated_idx), length(control_idx), n_folds
       ), call. = FALSE)
-      fold_ids <- sample(rep(1:n_folds, length.out = n))
     }
     fold_ids
   }
@@ -345,7 +418,7 @@ build_crossfit_folds <- function(data_split, n_folds) {
 # All other steps (fold partitioning, calibration, aggregation) are identical.
 # =============================================================================
 
-#' Unified Cross-fitting Algorithm for FACE-C
+#' Unified Cross-fitting Algorithm for FACE-HD
 #'
 #' Implements Algorithms 1 and 2 from main.tex (Section A.2).
 #' The \code{communication_mode} parameter controls who trains the initial
@@ -362,10 +435,11 @@ build_crossfit_folds <- function(data_split, n_folds) {
 #'        Minimum 3 required for proper two-level cross-fitting calibration.
 #' @param communication_mode character, "two_round" or "one_round"
 #' @param lambda_selection method for lambda selection ("cv" or numeric value)
-#' @param lambda_rule rule used when \code{lambda_selection = "cv"} for
-#'        aggregation weights: \code{"min"} selects the variance minimizer
-#'        (paper default), while \code{"1se"} selects the largest lambda within
-#'        5% of the minimum for extra stability.
+#' @param lambda_rule rule for the aggregation penalty when
+#'        \code{lambda_selection = "cv"}: \code{"min"} (default) selects the
+#'        bare validation minimizer. \code{"1se"} selects the largest lambda
+#'        whose average inner-validation criterion is within one standard error
+#'        of the minimum.
 #' @param verbose print progress messages
 #' @param M_tau truncation parameter for calibrated losses during training (default 10.0)
 #' @param M_tau_inference truncation parameter for the inference step (correction term
@@ -375,6 +449,9 @@ build_crossfit_folds <- function(data_split, n_folds) {
 #'        NULL or 1 for sequential, -1 for all cores minus 1.
 #' @param nlambda_init Integer. Number of lambda values for cv.glmnet in the
 #'        initial outcome model (fit_initial_outcome). Default 100.
+#' @param nuisance_lambda_rule CV selection rule for nuisance fits:
+#'        \code{"min"} (default) uses \code{lambda.min}; \code{"1se"} uses
+#'        \code{lambda.1se}.
 #' @param family GLM family specification: "gaussian" or "binomial".
 #' @param A_val Integer (0 or 1). Treatment value for potential outcome estimation.
 #' @param use_lambda_cache Logical. If TRUE, reuse selected nuisance
@@ -396,10 +473,12 @@ run_crossfit <- function(data_split, n_folds = N_FOLDS_DEFAULT,
                          family = "binomial", A_val = 1L,
                          use_lambda_cache = TRUE,
                          precomputed_folds = NULL,
-                         target_only_ps_cache = NULL) {
+                         target_only_ps_cache = NULL,
+                         nuisance_lambda_rule = c("min", "1se")) {
 
   communication_mode <- match.arg(communication_mode)
   lambda_rule <- match.arg(lambda_rule)
+  nuisance_lambda_rule <- .match_nuisance_lambda_rule(nuisance_lambda_rule, "run_crossfit")
 
   # ---- SHARED SETUP ----
   glm_spec <- resolve_glm_family(family)
@@ -519,7 +598,8 @@ run_crossfit <- function(data_split, n_folds = N_FOLDS_DEFAULT,
           alpha_init_k1_k2 <- fit_initial_outcome(
             source_train$W_outcome, source_train$Y, source_train$A, A_val,
             lambda = if (isTRUE(use_lambda_cache)) cached_lambda_site else NULL,
-            nlambda = nlambda_init, family = family
+            nlambda = nlambda_init, family = family,
+            lambda_rule = nuisance_lambda_rule
           )
           if (isTRUE(use_lambda_cache) && is.null(cached_lambda_site)) {
             cached_lambda_site <- attr(alpha_init_k1_k2, "lambda_used")
@@ -537,12 +617,15 @@ run_crossfit <- function(data_split, n_folds = N_FOLDS_DEFAULT,
       # Target precomputes mean_phi (shared across sources) and
       # mean_grad_psi_init (per source, depends on source alpha_init)
       target_fold_cache <- list()
+      target_train_cache <- list()
       mean_phi_cache <- list()
       for (k2 in secondary_folds) {
         k2_key <- paste0("k2_", k2)
+        training_folds <- setdiff(1:n_folds, c(k1, k2))
         target_fold_cache[[k2_key]] <- materialize_fold(target_folds, k2)
-        if (target_fold_cache[[k2_key]]$n > 0) {
-          mean_phi_cache[[k2_key]] <- c(1, colMeans(target_fold_cache[[k2_key]]$Z_site))
+        target_train_cache[[k2_key]] <- combine_folds(target_folds, training_folds)
+        if (target_train_cache[[k2_key]]$n > 0) {
+          mean_phi_cache[[k2_key]] <- c(1, colMeans(target_train_cache[[k2_key]]$Z_site))
         } else {
           mean_phi_cache[[k2_key]] <- rep(0, ncol(target_fold_cache[[k2_key]]$Z_site) + 1)
         }
@@ -604,7 +687,8 @@ run_crossfit <- function(data_split, n_folds = N_FOLDS_DEFAULT,
         alpha_init_k1_k2 <- fit_initial_outcome(
           target_train$W_outcome, target_train$Y, target_train$A, A_val,
           lambda = if (isTRUE(use_lambda_cache)) cached_lambda else NULL,
-          nlambda = nlambda_init, family = family
+          nlambda = nlambda_init, family = family,
+          lambda_rule = nuisance_lambda_rule
         )
         if (isTRUE(use_lambda_cache) && is.null(cached_lambda)) {
           cached_lambda <- attr(alpha_init_k1_k2, "lambda_used")
@@ -619,7 +703,7 @@ run_crossfit <- function(data_split, n_folds = N_FOLDS_DEFAULT,
           target_calib_k2$W_outcome, target_calib_k2$Z_site,
           alpha_init_k1_k2, family_int, link_int
         )
-        mean_phi <- c(1, colMeans(target_calib_k2$Z_site))
+        mean_phi <- c(1, colMeans(target_train$Z_site))
 
         target_summaries[[k2_key]] <- list(
           mean_grad_psi_init = mean_grad_psi_init,
@@ -670,7 +754,8 @@ run_crossfit <- function(data_split, n_folds = N_FOLDS_DEFAULT,
           get_fold_inputs = get_fold_inputs,
           family_int = family_int,
           link_int = link_int,
-          use_lambda_cache = use_lambda_cache
+          use_lambda_cache = use_lambda_cache,
+          nuisance_lambda_rule = nuisance_lambda_rule
         )
       },
       n_cores = actual_cores
@@ -719,7 +804,7 @@ run_crossfit <- function(data_split, n_folds = N_FOLDS_DEFAULT,
   source_estimates <- colMeans(source_estimates_matrix)
   names(source_estimates) <- source_sites
 
-  return(calculate_crossfit_aggregation(
+  result <- calculate_crossfit_aggregation(
     data_split = data_split, target_data = target_data,
     source_sites = source_sites, K = K,
     target_folds = target_folds, source_folds = source_folds,
@@ -737,7 +822,9 @@ run_crossfit <- function(data_split, n_folds = N_FOLDS_DEFAULT,
     family_int = family_int,
     link_int = link_int,
     A_val = A_val
-  ))
+  )
+  result$nuisance_lambda_rule <- nuisance_lambda_rule
+  return(result)
 }
 
 #' Combine multiple folds into a single dataset
@@ -784,30 +871,32 @@ combine_folds <- function(fold_list, fold_indices) {
   ))
 }
 
-#' Stabilized lambda selection for weight optimization in cross-fitting
+#' Legacy aggregation-penalty (lambda) variance-curve selector
 #'
-#' Selects the regularization lambda for the aggregation weight optimization
-#' (eq:final_opt in main.tex). Uses a data-adaptive grid and a configurable
-#' selection rule over the evaluated grid:
+#' Selects the aggregation penalty lambda for the weight optimization
+#' (eq:final_opt in main.tex) over a glmnet-style KKT lambda path. This is NOT a
+#' cross-validation procedure: lambda affects only the low-dimensional weight
+#' optimization (not nuisance estimation), so there are no held-out fold losses.
+#' The current cross-fitting path uses \code{select_aggregation_lambda_inner_cv()}
+#' in \code{R/cross_fitting_aggregation.R}. This helper remains for diagnostic
+#' variance-curve evaluation and only supports \code{lambda_rule = "min"}.
 #'
 #' \enumerate{
-#'   \item \strong{Data-adaptive lambda grid.}
+#'   \item \strong{KKT lambda path.}
 #'     In eq:final_opt, the penalty is weighted L1:
 #'     \eqn{\lambda |\eta_j| (\mu_{ot} - \mu_{ts,j})^2}.
-#'     The unpenalized variance curvature for site \eqn{j} scales with
-#'     \eqn{V_{t,j}/n_t + V_{s,j}/n_{s,j}}.
-#'     We use the same practical "natural scale" heuristic as in main.tex:
-#'     \deqn{\lambda_{nat} = (V_{t,j}/n_t + V_{s,j}/n_{s,j}) / (\mu_{ot} - \mu_{ts,j})^2}
-#'     The grid spans \eqn{\pm 2} orders of magnitude around the median
-#'     \eqn{\lambda_{nat}} across sites, covering the full transition from
-#'     under-regularized (\eqn{\eta} unconstrained) to over-regularized
-#'     (\eqn{\eta \approx 0}, i.e.\ target-only).
+#'     At \eqn{\eta = 0}, the smooth variance gradient is
+#'     \eqn{2(C_{ot,j} - V_{ot})/n_t}, so the zero-solution endpoint is
+#'     \eqn{\lambda_{\max} = \max_j |2(C_{ot,j} - V_{ot})/n_t| /
+#'     (\mu_{ot} - \mu_{ts,j})^2} over coordinates with positive penalty
+#'     weights. The grid descends geometrically from this endpoint.
 #'
 #'   \item \strong{Selection rule.}
-#'     \code{"min"} selects the variance minimizer, matching main.tex.
-#'     \code{"1se"} selects the \emph{largest} (most regularized) \eqn{\lambda}
-#'     whose variance is within a 5\% relative tolerance of the minimum,
-#'     analogous to glmnet's 1-SE rule.
+#'     This legacy helper evaluates one variance curve, not fold-level validation
+#'     scores, so it cannot compute a valid one-SE rule. Use
+#'     \code{select_aggregation_lambda_inner_cv()} through
+#'     \code{calculate_crossfit_aggregation()} for glmnet-style
+#'     \code{"min"}/\code{"1se"} aggregation tuning.
 #' }
 #'
 #' @param n_folds number of cross-fitting folds used in main algorithm
@@ -819,10 +908,11 @@ combine_folds <- function(fold_list, fold_indices) {
 #' @param C_cross_k1 cross-site covariance matrix
 #' @param verbose print progress
 #' @param crossfit_type type of cross-fitting algorithm ("one_round" or "two_round")
-#' @param lambda_grid lambda values to test (default NULL for data-adaptive grid)
-#' @param lambda_rule selection rule: "min" or "1se"
+#' @param lambda_grid lambda values to test (default NULL for KKT lambda path)
+#' @param lambda_rule selection rule. Only \code{"min"} is supported here because
+#'   this legacy helper has no fold-level standard errors.
 #' @return selected lambda value
-select_lambda_cv_crossfit <- function(n_folds, fold_target_estimate,
+select_aggregation_lambda <- function(n_folds, fold_target_estimate,
                                      fold_source_estimates, variances_k1, C_ot_k1,
                                      n_samples_k1, C_cross_k1, verbose = FALSE,
                                      crossfit_type = "one_round",
@@ -830,47 +920,59 @@ select_lambda_cv_crossfit <- function(n_folds, fold_target_estimate,
                                      lambda_rule = c("min", "1se")) {
 
   lambda_rule <- match.arg(lambda_rule)
+  if (identical(lambda_rule, "1se")) {
+    stop("select_aggregation_lambda: lambda_rule='1se' requires fold-level validation standard errors; use select_aggregation_lambda_inner_cv() via calculate_crossfit_aggregation(), or set lambda_rule='min' for this legacy variance-curve selector.",
+         call. = FALSE)
+  }
   K <- length(fold_source_estimates)
 
   # ==========================================================================
-  # STEP 1: Data-adaptive lambda grid
+  # STEP 1: glmnet-style lambda grid from KKT lambda_max
   # ==========================================================================
   # In eq:final_opt, the penalty for site j is weighted L1:
   #   λ * |η_j| * (μ_ot − μ_{ts,j})²
   # The variance curvature contribution scales as:
   #   η_j² * (V_{t,j}/n_t + V_{s,j}/n_{s,j})
   #
-  # We use λ_nat = variance_scale / discrepancy_scale as a practical
-  # heuristic to locate the interesting bias-variance transition region.
-  # (For weighted L1, this is a scale-calibration heuristic, not an exact
-  # equality of two quadratic terms.)
+  # At η = 0, the smooth variance gradient is
+  #   ∂V/∂η_j = 2 * (C_ot,j - V_ot) / n_t.
+  # The exact zero-solution KKT endpoint is therefore
+  #   λ_max = max_j |∂V/∂η_j| / d_j²
+  # over coordinates with d_j² > 0. The helper below implements this and then
+  # builds a descending geometric path, matching the nuisance CV convention.
   # ==========================================================================
   adaptive_grid <- is.null(lambda_grid)
-  lambda_natural <- NA_real_
+  lambda_max <- NA_real_
 
   if (adaptive_grid) {
-    d_sq <- (fold_target_estimate - fold_source_estimates)^2
-    var_per_site <- variances_k1$V_t / n_samples_k1$n_t +
-                    variances_k1$V_s / n_samples_k1$n_s
-
-    # Floor d² at the per-site variance level: when |μ_ot − μ_{ts,j}| is
-    # within sampling noise (< SE), the bias is indistinguishable from zero
-    # and should not drive lambda to extreme values via division by near-zero.
-    d_sq_floor <- pmax(d_sq, var_per_site)
-    lambda_natural <- median(var_per_site / d_sq_floor)
-    lambda_natural <- max(min(lambda_natural, LAMBDA_MAX), LAMBDA_MIN)
-
-    # Grid spans 2 orders of magnitude each side of the natural scale
-    lambda_grid <- exp(seq(log(lambda_natural * 1e-2),
-                           log(lambda_natural * 1e2),
-                           length.out = LAMBDA_GRID_SIZE_STANDARD))
+    grid_component <- list(
+      V_ot = variances_k1$V_ot,
+      C_ot = C_ot_k1,
+      avg_target_est = fold_target_estimate,
+      avg_source_est = fold_source_estimates,
+      n_t = n_samples_k1$n_t
+    )
+    lambda_grid <- .aggregation_lambda_grid(grid_component)
+    lambda_max <- attr(lambda_grid, "lambda_max")
+  } else {
+    if (!is.numeric(lambda_grid) || length(lambda_grid) == 0L ||
+        any(!is.finite(lambda_grid)) || any(lambda_grid <= 0)) {
+      stop("select_aggregation_lambda: lambda_grid must contain positive finite numeric values.",
+           call. = FALSE)
+    }
+    clipped <- pmax(pmin(lambda_grid, LAMBDA_MAX), LAMBDA_MIN)
+    if (!isTRUE(all.equal(clipped, lambda_grid, check.attributes = FALSE))) {
+      warning(sprintf("select_aggregation_lambda: lambda_grid values were clipped to [%g, %g].",
+                      LAMBDA_MIN, LAMBDA_MAX), call. = FALSE)
+    }
+    lambda_grid <- clipped
   }
 
   if (verbose) {
     cat("Weight-optimization lambda selection:\n")
     if (adaptive_grid) {
-      cat(sprintf("  Natural scale: %.4f  |  Grid: [%.2e, %.2e]  |  %d pts\n",
-                  lambda_natural, min(lambda_grid), max(lambda_grid),
+      cat(sprintf("  KKT lambda_max: %.4f  |  Grid: [%.2e, %.2e]  |  %d pts\n",
+                  lambda_max, min(lambda_grid), max(lambda_grid),
                   length(lambda_grid)))
     } else {
       cat(sprintf("  User-supplied grid: [%.2e, %.2e]  |  %d pts\n",
@@ -900,42 +1002,29 @@ select_lambda_cv_crossfit <- function(n_folds, fold_target_estimate,
       C_ot        = pmax(pmin(C_ot_k1, ESTIMATE_MAX), -ESTIMATE_MAX),
       mu_ot       = max(min(fold_target_estimate, ESTIMATE_MAX), -ESTIMATE_MAX),
       C_cross     = cross_matrix,
-      lambda_grid = pmax(pmin(lambda_grid, LAMBDA_MAX), LAMBDA_MIN),
+      lambda_grid = lambda_grid,
       max_iter    = WEIGHT_OPT_MAX_ITER,
       tol         = WEIGHT_OPT_TOL
     ),
     error = function(e) {
       stop(sprintf(
-        "select_lambda_cv_crossfit: batch C++ evaluation failed: %s",
+        "select_aggregation_lambda: batch C++ evaluation failed: %s",
         conditionMessage(e)
       ))
     }
   )
 
-  # ==========================================================================
-  # STEP 3: Select lambda over the evaluated grid
-  # ==========================================================================
-  # "min" matches main.tex. "1se" preserves the earlier conservative behavior:
-  # among lambdas within RELATIVE_TOLERANCE of the minimum, pick the largest.
-  # ==========================================================================
-  RELATIVE_TOLERANCE <- 0.05
-
   valid <- which(is.finite(cv_variances) & cv_variances > 0)
 
   if (length(valid) == 0) {
-    stop(sprintf("select_lambda_cv_crossfit: all %d lambdas produced invalid variance; cannot select aggregation lambda.",
+    stop(sprintf("select_aggregation_lambda: all %d lambdas produced invalid variance; cannot select aggregation lambda.",
                  length(lambda_grid)))
   }
 
   min_var <- min(cv_variances[valid])
   min_var_idx <- valid[which.min(cv_variances[valid])]
 
-  if (identical(lambda_rule, "min")) {
-    best_idx <- min_var_idx
-  } else {
-    within_tol <- valid[cv_variances[valid] <= min_var * (1 + RELATIVE_TOLERANCE)]
-    best_idx <- within_tol[which.max(lambda_grid[within_tol])]
-  }
+  best_idx <- min_var_idx
   best_lambda <- lambda_grid[best_idx]
 
   if (verbose) {

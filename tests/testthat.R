@@ -1,11 +1,11 @@
-# This file is part of the testthat test framework for FACE-C
+# This file is part of the testthat test framework for FACE-HD
 # Run all tests with: testthat::test_dir("tests/testthat")
 
 library(testthat)
 
-# Load the FACEC package (prefer installed; fall back to devtools::load_all)
-if (requireNamespace("FACEC", quietly = TRUE)) {
-  library(FACEC)
+# Load the FACEHD package for standalone testthat runs.
+if (requireNamespace("FACEHD", quietly = TRUE)) {
+  library(FACEHD)
 } else if (requireNamespace("devtools", quietly = TRUE)) {
   # Determine project root (works from tests/ or project root)
   if (file.exists("../../DESCRIPTION")) {

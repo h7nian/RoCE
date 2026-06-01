@@ -1,0 +1,16 @@
+[2026-05-28 04:29:39] config seed=364 n=5000 K=4 p=10 C2 folds=10 nlambda_init=100 methods=target_only,pooled_dr,tilted_aipw,oracle_dr,one_round_crossfit,two_round_crossfit nuisance_rule=min agg_rule=min
+[2026-05-28 04:29:40] data truth=0.59269438 mu1_realized=0.59077950 n_t=1155 n_sources=888,935,1125,897
+[2026-05-28 04:29:40] method_start target_only
+[2026-05-28 04:29:41] method_done target_only estimate=0.54210062 bias=-0.05059375 se=0.02059409 elapsed_sec=1.2
+[2026-05-28 04:29:42] method_start pooled_dr
+[2026-05-28 04:29:44] method_done pooled_dr estimate=0.56539210 bias=-0.02730228 se=0.01370958 elapsed_sec=2.0
+[2026-05-28 04:29:44] method_start tilted_aipw
+[2026-05-28 04:29:44] method_done tilted_aipw estimate=0.57673911 bias=-0.01595527 se=0.01078472 elapsed_sec=0.1
+[2026-05-28 04:29:44] method_start oracle_dr
+[2026-05-28 04:29:44] method_done oracle_dr estimate=0.59693704 bias=0.00424266 se=0.01162547 elapsed_sec=0.0
+[2026-05-28 04:29:44] crossfit_start one_round_crossfit
+[2026-05-28 04:30:32] crossfit_done one_round_crossfit estimate=0.57111255 bias=-0.02158183 se=0.01121039 target_bias=-0.05068940 weight_l1=0.6897 elapsed_sec=47.6
+[2026-05-28 04:30:32] crossfit_start two_round_crossfit
+[2026-05-28 04:31:17] crossfit_done two_round_crossfit estimate=0.57342222 bias=-0.01927216 se=0.01094300 target_bias=-0.05051604 weight_l1=0.6958 elapsed_sec=44.4
+[2026-05-28 04:31:17] output runs=c2_core_intermediate_output/20260528_042939_job9874603_seed364_nuismin_aggmin_method_runs.csv
+[2026-05-28 04:31:17] output contracts=c2_core_intermediate_output/20260528_042939_job9874603_seed364_nuismin_aggmin_paper_contracts.csv

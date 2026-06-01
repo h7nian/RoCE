@@ -9,13 +9,13 @@
 # and JASA-friendly sizing (7" x 5").
 
 suppressPackageStartupMessages({
-  if (!requireNamespace("FACEC", quietly = TRUE)) {
-    stop("FACEC package is not installed.")
+  if (!requireNamespace("FACEHD", quietly = TRUE)) {
+    stop("FACEHD package is not installed.")
   }
   if (!requireNamespace("ggplot2", quietly = TRUE)) {
     stop("ggplot2 is required for forest plot regeneration.")
   }
-  library(FACEC)
+  library(FACEHD)
 })
 
 setting_id   <- "rhc_K5_death30_kf10_A1_ninsclas_Mt5"

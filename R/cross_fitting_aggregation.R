@@ -233,6 +233,7 @@ aggregate_fold_estimates <- function(fold_aggregated_estimates, all_phi_agg,
                                              family_int, link_int, A_val) {
   secondary_folds <- setdiff(1:n_folds, k1)
   n_inner <- length(secondary_folds)
+  components <- setNames(vector("list", n_inner), paste0("k2_", secondary_folds))
 
   V_ot_sum <- 0
   V_t_sum <- numeric(K)
@@ -247,10 +248,17 @@ aggregate_fold_estimates <- function(fold_aggregated_estimates, all_phi_agg,
 
     to_inner <- fold_results[[k1]]$target_only_inner[[k2_key]]
     varphi_ot_inner <- to_inner$varphi_ot
-    V_ot_sum <- V_ot_sum + to_inner$V_ot
-    target_est_sum <- target_est_sum + to_inner$estimate
+    V_ot_k2 <- to_inner$V_ot
+    target_est_k2 <- to_inner$estimate
+    V_ot_sum <- V_ot_sum + V_ot_k2
+    target_est_sum <- target_est_sum + target_est_k2
 
     target_fold_k2 <- materialize_fold(target_folds, k2)
+    V_t_k2 <- numeric(K)
+    V_s_k2 <- numeric(K)
+    C_ot_k2 <- numeric(K)
+    source_est_k2 <- numeric(K)
+    n_s_val_k2 <- numeric(K)
     zeta_list_inner <- vector("list", K)
 
     for (i in seq_along(source_sites)) {
@@ -259,9 +267,19 @@ aggregate_fold_estimates <- function(fold_aggregated_estimates, all_phi_agg,
       gamma_k2 <- src$per_k2_gamma[[k2_key]]
       alpha_k2 <- src$per_k2_alpha[[k2_key]]
 
-      if (is.null(gamma_k2) || is.null(alpha_k2)) next
+      if (is.null(gamma_k2) || is.null(alpha_k2)) {
+        missing_fields <- c(
+          if (is.null(gamma_k2)) "per_k2_gamma" else character(0),
+          if (is.null(alpha_k2)) "per_k2_alpha" else character(0)
+        )
+        stop(sprintf(
+          ".aggregate_inner_training_components: missing %s for outer fold %s, inner fold %s, source '%s'.",
+          paste(missing_fields, collapse = " and "), k1, k2, s
+        ), call. = FALSE)
+      }
 
       source_fold_k2 <- materialize_fold(source_folds[[s]], k2)
+      n_s_val_k2[i] <- source_fold_k2$n
 
       correction_inner <- calculate_correction_term_cpp(
         source_fold_k2$Z_site, source_fold_k2$A, source_fold_k2$Y,
@@ -274,7 +292,8 @@ aggregate_fold_estimates <- function(fold_aggregated_estimates, all_phi_agg,
         target_fold_k2$W_outcome, alpha_k2, family_int, link_int
       ))
 
-      source_est_sum[i] <- source_est_sum[i] + mu_pred_inner + delta_inner
+      source_est_k2[i] <- mu_pred_inner + delta_inner
+      source_est_sum[i] <- source_est_sum[i] + source_est_k2[i]
 
       sv_inner <- calculate_source_variance_cpp(
         source_fold_k2$Z_site, source_fold_k2$A, source_fold_k2$Y,
@@ -282,21 +301,37 @@ aggregate_fold_estimates <- function(fold_aggregated_estimates, all_phi_agg,
         source_fold_k2$W_outcome, M_tau_inference,
         family_int, link_int, A_val
       )
-      V_s_sum[i] <- V_s_sum[i] + sv_inner$V_s
+      V_s_k2[i] <- sv_inner$V_s
+      V_s_sum[i] <- V_s_sum[i] + V_s_k2[i]
 
       tv_inner <- calculate_target_variance_cpp(
         target_fold_k2$W_outcome, alpha_k2, mu_pred_inner,
         family_int, link_int
       )
-      V_t_sum[i] <- V_t_sum[i] + tv_inner$V_t
+      V_t_k2[i] <- tv_inner$V_t
+      V_t_sum[i] <- V_t_sum[i] + V_t_k2[i]
       zeta_list_inner[[i]] <- tv_inner$zeta_components
 
-      C_ot_sum[i] <- C_ot_sum[i] + calculate_covariance_term_cpp(
+      C_ot_k2[i] <- calculate_covariance_term_cpp(
         varphi_ot_inner, tv_inner$zeta_components
       )
+      C_ot_sum[i] <- C_ot_sum[i] + C_ot_k2[i]
     }
 
-    C_cross_sum <- C_cross_sum + .compute_cross_covariance_matrix(zeta_list_inner, K)
+    C_cross_k2 <- .compute_cross_covariance_matrix(zeta_list_inner, K)
+    C_cross_sum <- C_cross_sum + C_cross_k2
+
+    components[[k2_key]] <- list(
+      V_ot = V_ot_k2,
+      V_t = V_t_k2,
+      V_s = V_s_k2,
+      C_ot = C_ot_k2,
+      C_cross = C_cross_k2,
+      avg_target_est = target_est_k2,
+      avg_source_est = source_est_k2,
+      n_t = target_fold_k2$n,
+      n_s = n_s_val_k2
+    )
   }
 
   list(
@@ -306,8 +341,246 @@ aggregate_fold_estimates <- function(fold_aggregated_estimates, all_phi_agg,
     C_ot = C_ot_sum / n_inner,
     C_cross = C_cross_sum / n_inner,
     avg_target_est = target_est_sum / n_inner,
-    avg_source_est = source_est_sum / n_inner
+    avg_source_est = source_est_sum / n_inner,
+    components = components
   )
+}
+
+.average_aggregation_components <- function(components) {
+  if (length(components) == 0L) {
+    stop(".average_aggregation_components: components must be non-empty.")
+  }
+
+  list(
+    V_ot = mean(vapply(components, `[[`, numeric(1L), "V_ot")),
+    V_t = colMeans(do.call(rbind, lapply(components, `[[`, "V_t"))),
+    V_s = colMeans(do.call(rbind, lapply(components, `[[`, "V_s"))),
+    C_ot = colMeans(do.call(rbind, lapply(components, `[[`, "C_ot"))),
+    C_cross = Reduce(`+`, lapply(components, `[[`, "C_cross")) / length(components),
+    avg_target_est = mean(vapply(components, `[[`, numeric(1L), "avg_target_est")),
+    avg_source_est = colMeans(do.call(rbind, lapply(components, `[[`, "avg_source_est"))),
+    n_t = sum(vapply(components, `[[`, numeric(1L), "n_t")),
+    n_s = colSums(do.call(rbind, lapply(components, `[[`, "n_s")))
+  )
+}
+
+.validate_aggregation_grid_component <- function(component, caller) {
+  required <- c("V_ot", "C_ot", "avg_target_est", "avg_source_est", "n_t")
+  missing_required <- required[!vapply(required, function(field) {
+    !is.null(component[[field]])
+  }, logical(1L))]
+  if (length(missing_required) > 0L) {
+    stop(sprintf("%s: component is missing required field(s): %s.",
+                 caller, paste(missing_required, collapse = ", ")),
+         call. = FALSE)
+  }
+
+  estimates <- as.numeric(component$avg_source_est)
+  C_ot <- as.numeric(component$C_ot)
+  if (length(estimates) == 0L || length(C_ot) != length(estimates)) {
+    stop(sprintf("%s: avg_source_est and C_ot must be non-empty vectors with the same length.",
+                 caller), call. = FALSE)
+  }
+  if (!all(is.finite(estimates)) || !all(is.finite(C_ot))) {
+    stop(sprintf("%s: avg_source_est and C_ot must be finite.", caller),
+         call. = FALSE)
+  }
+
+  V_ot <- as.numeric(component$V_ot)
+  mu_ot <- as.numeric(component$avg_target_est)
+  n_t <- as.numeric(component$n_t)
+  if (length(V_ot) != 1L || !is.finite(V_ot) ||
+      length(mu_ot) != 1L || !is.finite(mu_ot) ||
+      length(n_t) != 1L || !is.finite(n_t) || n_t <= 0) {
+    stop(sprintf("%s: V_ot, avg_target_est, and n_t must be finite scalar values with n_t > 0.",
+                 caller), call. = FALSE)
+  }
+
+  list(
+    estimates = pmax(pmin(estimates, ESTIMATE_MAX), -ESTIMATE_MAX),
+    C_ot = pmax(pmin(C_ot, ESTIMATE_MAX), -ESTIMATE_MAX),
+    V_ot = max(V_ot, VARIANCE_MIN),
+    mu_ot = max(min(mu_ot, ESTIMATE_MAX), -ESTIMATE_MAX),
+    n_t = max(n_t, 1)
+  )
+}
+
+.aggregation_lambda_max <- function(component) {
+  fields <- .validate_aggregation_grid_component(component, ".aggregation_lambda_max")
+  penalty_weights <- (fields$mu_ot - fields$estimates)^2
+  grad0 <- 2 * (fields$C_ot - fields$V_ot) / fields$n_t
+
+  penalized <- penalty_weights > 0
+  unpenalized_active <- !penalized & abs(grad0) > sqrt(.Machine$double.eps)
+  if (any(unpenalized_active)) {
+    warning(sprintf(
+      ".aggregation_lambda_max: %d source coordinate(s) have zero aggregation penalty weight and non-zero gradient at eta=0; no finite lambda can force those weights to zero. lambda_max is computed over penalized coordinates only.",
+      sum(unpenalized_active)
+    ), call. = FALSE)
+  }
+  if (!any(penalized)) {
+    warning(".aggregation_lambda_max: all aggregation penalty weights are zero; lambda has no effect on the weighted-L1 penalty. Using LAMBDA_MIN as a degenerate path.",
+            call. = FALSE)
+    return(LAMBDA_MIN)
+  }
+
+  lambda_max <- max(abs(grad0[penalized]) / penalty_weights[penalized])
+  if (!is.finite(lambda_max) || lambda_max <= 0) {
+    warning(".aggregation_lambda_max: KKT lambda_max is non-positive or non-finite; using LAMBDA_MIN as a degenerate path.",
+            call. = FALSE)
+    return(LAMBDA_MIN)
+  }
+  lambda_max <- max(lambda_max, LAMBDA_MIN)
+  if (lambda_max > LAMBDA_MAX) {
+    warning(sprintf(".aggregation_lambda_max: exact KKT lambda_max=%g exceeds LAMBDA_MAX=%g; clipping the path endpoint.",
+                    lambda_max, LAMBDA_MAX), call. = FALSE)
+    lambda_max <- LAMBDA_MAX
+  }
+  lambda_max
+}
+
+.aggregation_lambda_grid <- function(component, lambda_grid = NULL) {
+  if (!is.null(lambda_grid)) {
+    if (!is.numeric(lambda_grid) || length(lambda_grid) == 0L ||
+        any(!is.finite(lambda_grid)) || any(lambda_grid <= 0)) {
+      stop(".aggregation_lambda_grid: lambda_grid must contain positive finite numeric values.",
+           call. = FALSE)
+    }
+    clipped <- pmax(pmin(lambda_grid, LAMBDA_MAX), LAMBDA_MIN)
+    if (!isTRUE(all.equal(clipped, lambda_grid, check.attributes = FALSE))) {
+      warning(sprintf(".aggregation_lambda_grid: lambda_grid values were clipped to [%g, %g].",
+                      LAMBDA_MIN, LAMBDA_MAX), call. = FALSE)
+    }
+    return(clipped)
+  }
+
+  lambda_max <- .aggregation_lambda_max(component)
+  if (lambda_max <= LAMBDA_MIN) {
+    grid <- LAMBDA_MIN
+  } else {
+    grid <- build_lambda_grid(
+      lambda_max = lambda_max,
+      lambda_min_ratio = LAMBDA_MIN_RATIO_LOW_DIM,
+      nlambda = LAMBDA_GRID_SIZE_STANDARD
+    )
+    grid <- unique(pmax(pmin(grid, LAMBDA_MAX), LAMBDA_MIN))
+  }
+  attr(grid, "lambda_max") <- lambda_max
+  attr(grid, "lambda_min") <- min(grid)
+  grid
+}
+
+.validation_aggregation_objective <- function(eta, component) {
+  variances <- list(V_ot = component$V_ot, V_t = component$V_t, V_s = component$V_s)
+  n_samples <- list(n_t = max(component$n_t, 1), n_s = pmax(component$n_s, 1))
+  var_term <- calculate_aggregated_variance(
+    eta, variances, component$C_ot, n_samples,
+    C_cross = component$C_cross, lambda = 0, mu_ot = component$avg_target_est
+  )
+  n_val <- component$n_t + sum(component$n_s)
+  n_val * var_term
+}
+
+select_aggregation_lambda_inner_cv <- function(components, verbose = FALSE,
+                                               lambda_grid = NULL,
+                                               lambda_rule = c("min", "1se")) {
+  lambda_rule <- match.arg(lambda_rule)
+  if (length(components) < 2L) {
+    stop("select_aggregation_lambda_inner_cv: at least two inner folds are required.")
+  }
+
+  all_component <- .average_aggregation_components(components)
+  lambda_grid <- .aggregation_lambda_grid(all_component, lambda_grid)
+  cv_scores <- rep(Inf, length(lambda_grid))
+  cv_se <- rep(Inf, length(lambda_grid))
+  n_valid_folds <- integer(length(lambda_grid))
+
+  for (li in seq_along(lambda_grid)) {
+    lambda <- lambda_grid[li]
+    fold_scores <- numeric(length(components))
+
+    for (m in seq_along(components)) {
+      train_component <- .average_aggregation_components(components[-m])
+      val_component <- components[[m]]
+
+      variances_train <- list(
+        V_ot = train_component$V_ot,
+        V_t = train_component$V_t,
+        V_s = train_component$V_s
+      )
+      n_train <- list(n_t = max(train_component$n_t, 1),
+                      n_s = pmax(train_component$n_s, 1))
+
+      eta_train <- tryCatch(
+        optimize_weights(
+          train_component$avg_source_est, variances_train, train_component$C_ot,
+          n_train, lambda, train_component$avg_target_est,
+          train_component$C_cross, clip_weights = FALSE
+        ),
+        error = function(e) {
+          stop(sprintf(
+            "select_aggregation_lambda_inner_cv: weight optimization failed for lambda index %d (lambda=%g), validation fold %d/%d: %s",
+            li, lambda, m, length(components), conditionMessage(e)
+          ), call. = FALSE)
+        }
+      )
+      if (!all(is.finite(eta_train))) {
+        stop(sprintf(
+          "select_aggregation_lambda_inner_cv: weight optimization returned non-finite weights for lambda index %d (lambda=%g), validation fold %d/%d.",
+          li, lambda, m, length(components)
+        ), call. = FALSE)
+      }
+
+      fold_scores[m] <- .validation_aggregation_objective(eta_train, val_component)
+      if (!is.finite(fold_scores[m])) {
+        stop(sprintf(
+          "select_aggregation_lambda_inner_cv: validation objective was non-finite for lambda index %d (lambda=%g), validation fold %d/%d.",
+          li, lambda, m, length(components)
+        ), call. = FALSE)
+      }
+    }
+
+    n_valid_folds[li] <- length(fold_scores)
+    cv_scores[li] <- mean(fold_scores)
+    cv_se[li] <- stats::sd(fold_scores) / sqrt(length(fold_scores))
+  }
+
+  if (any(!is.finite(cv_scores))) {
+    stop("select_aggregation_lambda_inner_cv: internal error; non-finite validation score escaped fail-fast validation.",
+         call. = FALSE)
+  }
+  valid <- seq_along(lambda_grid)
+  min_score <- min(cv_scores[valid])
+  min_idx <- valid[which.min(cv_scores[valid])]
+  if (identical(lambda_rule, "min")) {
+    best_idx <- min_idx
+  } else {
+    one_se_cutoff <- min_score + cv_se[min_idx]
+    within_1se <- valid[cv_scores[valid] <= one_se_cutoff]
+    best_idx <- within_1se[which.max(lambda_grid[within_1se])]
+  }
+  idx_1se <- valid[cv_scores[valid] <= min_score + cv_se[min_idx]]
+  idx_1se <- idx_1se[which.max(lambda_grid[idx_1se])]
+
+  if (verbose) {
+    cat(sprintf("  Inner validation min: %.6f at lambda=%.4f\n",
+                min_score, lambda_grid[min_idx]))
+    cat(sprintf("  Inner validation 1se: lambda=%.4f (cutoff=%.6f, se=%.6f)\n",
+                lambda_grid[idx_1se], min_score + cv_se[min_idx], cv_se[min_idx]))
+    cat(sprintf("  Selected: %.4f (score=%.6f, rule=%s)\n",
+                lambda_grid[best_idx], cv_scores[best_idx], lambda_rule))
+  }
+
+  selected <- lambda_grid[best_idx]
+  attr(selected, "lambda_min") <- lambda_grid[min_idx]
+  attr(selected, "lambda_1se") <- lambda_grid[idx_1se]
+  attr(selected, "idx_min") <- min_idx
+  attr(selected, "idx_1se") <- idx_1se
+  attr(selected, "cv_scores") <- cv_scores
+  attr(selected, "cv_se") <- cv_se
+  attr(selected, "n_valid_folds") <- n_valid_folds
+  attr(selected, "lambda_rule") <- lambda_rule
+  selected
 }
 
 .compute_phase2_weights <- function(n_folds, inner_fold_info, fold_info,
@@ -318,6 +591,7 @@ aggregate_fold_estimates <- function(fold_aggregated_estimates, all_phi_agg,
   fold_aggregated_estimates <- numeric(n_folds)
   fold_weights <- array(0, dim = c(n_folds, K))
   fold_lambdas <- numeric(n_folds)
+  fold_lambda_info <- vector("list", n_folds)
 
   for (k1 in 1:n_folds) {
     log_info(verbose, "      Phase 2: Inner-fold weights for fold k1=%d/%d", k1, n_folds)
@@ -326,19 +600,38 @@ aggregate_fold_estimates <- function(fold_aggregated_estimates, all_phi_agg,
     variances_k1 <- list(V_ot = inner_v$V_ot, V_t = inner_v$V_t, V_s = inner_v$V_s)
     n_samples_k1 <- list(n_t = as.numeric(n_t), n_s = as.numeric(n_source_full))
 
-    lambda_reg_k1 <- if (lambda_selection == "cv") {
-      select_lambda_cv_crossfit(
-        n_folds, inner_v$avg_target_est, inner_v$avg_source_est,
-        variances_k1, inner_v$C_ot, n_samples_k1, inner_v$C_cross, verbose = FALSE,
-        crossfit_type = crossfit_type,
+    lambda_reg_k1 <- if (is.character(lambda_selection) &&
+                         length(lambda_selection) == 1L &&
+                         identical(lambda_selection, "cv")) {
+      select_aggregation_lambda_inner_cv(
+        inner_v$components, verbose = FALSE,
         lambda_rule = lambda_rule
       )
-    } else if (is.numeric(lambda_selection)) {
-      lambda_selection
+    } else if (is.numeric(lambda_selection) &&
+               length(lambda_selection) == 1L &&
+               is.finite(lambda_selection)) {
+      lambda_value <- .validate_lambda_scalar(lambda_selection, "calculate_crossfit_aggregation")
+      if (lambda_value > LAMBDA_MAX) {
+        stop(sprintf("calculate_crossfit_aggregation: lambda_selection must be <= %g.",
+                     LAMBDA_MAX), call. = FALSE)
+      }
+      lambda_value
     } else {
-      LAMBDA_DEFAULT
+      stop("calculate_crossfit_aggregation: lambda_selection must be 'cv' or a finite numeric scalar.",
+           call. = FALSE)
     }
     fold_lambdas[k1] <- lambda_reg_k1
+    fold_lambda_info[[k1]] <- list(
+      lambda_used = as.numeric(lambda_reg_k1),
+      lambda_min = as.numeric(attr(lambda_reg_k1, "lambda_min") %||% lambda_reg_k1),
+      lambda_1se = as.numeric(attr(lambda_reg_k1, "lambda_1se") %||% lambda_reg_k1),
+      idx_min = attr(lambda_reg_k1, "idx_min") %||% NA_integer_,
+      idx_1se = attr(lambda_reg_k1, "idx_1se") %||% NA_integer_,
+      cv_scores = attr(lambda_reg_k1, "cv_scores") %||% numeric(0),
+      cv_se = attr(lambda_reg_k1, "cv_se") %||% numeric(0),
+      n_valid_folds = attr(lambda_reg_k1, "n_valid_folds") %||% integer(0),
+      lambda_rule = attr(lambda_reg_k1, "lambda_rule") %||% "fixed"
+    )
 
     eta_k1 <- optimize_weights(
       inner_v$avg_source_est, variances_k1, inner_v$C_ot, n_samples_k1,
@@ -361,7 +654,8 @@ aggregate_fold_estimates <- function(fold_aggregated_estimates, all_phi_agg,
   list(
     fold_weights = fold_weights,
     fold_aggregated_estimates = fold_aggregated_estimates,
-    fold_lambdas = fold_lambdas
+    fold_lambdas = fold_lambdas,
+    fold_lambda_info = fold_lambda_info
   )
 }
 
@@ -608,6 +902,7 @@ calculate_crossfit_aggregation <- function(data_split, target_data, source_sites
   fold_weights <- phase2_res$fold_weights
   fold_aggregated_estimates <- phase2_res$fold_aggregated_estimates
   fold_lambdas <- phase2_res$fold_lambdas
+  fold_lambda_info <- phase2_res$fold_lambda_info
 
   average_weights <- colMeans(fold_weights)
 
@@ -715,6 +1010,7 @@ calculate_crossfit_aggregation <- function(data_split, target_data, source_sites
     weights = weights,
     fold_weights = fold_weights,
     fold_lambdas = fold_lambdas,
+    fold_lambda_info = fold_lambda_info,
     fold_aggregated_estimates = fold_aggregated_estimates,
     aggregation_lambda_rule = lambda_rule,
     clip_diagnostics = clip_diagnostics,
@@ -728,6 +1024,7 @@ calculate_crossfit_aggregation <- function(data_split, target_data, source_sites
       phase1 = phase1_summary,
       phase1b = phase1b_summary,
       fold_lambdas = fold_lambdas,
+      fold_lambda_info = fold_lambda_info,
       fold_weights = fold_weights,
       fold_aggregated_estimates = fold_aggregated_estimates,
       aggregation_lambda_rule = lambda_rule,

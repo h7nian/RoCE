@@ -2,7 +2,7 @@
 
 library(testthat)
 
-# Package loaded by helper-load.R (all functions available via FACEC namespace)
+# Package loaded by helper-load.R (all functions available via FACEHD namespace)
 
 test_that("GLM family support is restricted to gaussian/binomial", {
 	expect_equal(VALID_GLM_FAMILIES, c("gaussian", "binomial"))

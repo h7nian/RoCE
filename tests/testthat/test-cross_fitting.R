@@ -6,7 +6,7 @@
 
 library(testthat)
 
-# Package loaded by helper-load.R (all functions available via FACEC namespace)
+# Package loaded by helper-load.R (all functions available via FACEHD namespace)
 
 # make_small_data_split + get_smoke_data_split + get_smoke_result are shared
 # helpers loaded via tests/testthat/helper-data.R before this file is sourced.
@@ -27,6 +27,7 @@ test_that("run_crossfit(two_round) returns expected structure", {
   expect_true("ci_lower" %in% names(result))
   expect_true("ci_upper" %in% names(result))
   expect_true("fold_lambdas" %in% names(result))
+  expect_true("fold_lambda_info" %in% names(result))
   expect_true("clip_diagnostics" %in% names(result))
   expect_equal(result$aggregation_lambda_rule, "min")
   
@@ -75,6 +76,7 @@ test_that("run_crossfit(one_round) returns expected structure", {
   expect_true("ci_lower" %in% names(result))
   expect_true("ci_upper" %in% names(result))
   expect_true("fold_lambdas" %in% names(result))
+  expect_true("fold_lambda_info" %in% names(result))
   expect_true("clip_diagnostics" %in% names(result))
   expect_equal(result$aggregation_lambda_rule, "min")
   

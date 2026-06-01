@@ -2,7 +2,7 @@
 # NOTE: Despite the .cmd suffix, this is a Bash SLURM submission script.
 #SBATCH --output=log/%A_%a.out
 #SBATCH --error=log/%A_%a.err
-#SBATCH --time=4-00:00:00
+#SBATCH --time=2-00:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 # ============================================================================
@@ -13,7 +13,7 @@
 # ============================================================================
 #SBATCH --cpus-per-task=64
 #SBATCH --mem=96g
-#SBATCH --job-name=FACE-C
+#SBATCH --job-name=FACE-HD
 #SBATCH -p preempt,saffo-2tb,msismall,msilarge,msilong,amdsmall,agsmall,amdlarge,amd512,amd2tb
 #SBATCH --nice=5
 #SBATCH --requeue
@@ -58,15 +58,19 @@ trap 'handle_preemption' USR1
 cd "${SLURM_SUBMIT_DIR:-$(dirname "$0")}"
 
 # Load required modules
-# Pin to the spack/centos7-ivybridge build that the installed FACEC.so was
+# Pin to the spack/centos7-ivybridge build that the installed FACEHD.so was
 # compiled against. On Rocky 8 nodes (e.g. saffo-2tb's acl4x), an unqualified
-# `module load R` can resolve to a different build, breaking ABI on FACEC.so.
+# `module load R` can resolve to a different build, breaking ABI on FACEHD.so.
 module load R/4.2.2-gcc-8.2.0-vp7tyde
 
 # Override unconditionally: the spack `R/4.2.2-gcc-8.2.0-vp7tyde` module sets
 # its own R_LIBS_USER (~/R/library), which is empty on this account. All 270
-# installed packages — including FACEC and its deps — live in ~/Rlibs.
+# installed packages — including FACEHD and its deps — live in ~/Rlibs.
 export R_LIBS_USER="${HOME}/Rlibs"
+
+# Run FACE core from the installed FACEHD package by default. Set
+# FACEHD_MAIN_USE_SOURCE=TRUE explicitly when a source-tree run is needed.
+export FACEHD_MAIN_USE_SOURCE="${FACEHD_MAIN_USE_SOURCE:-FALSE}"
 
 # Prevent BLAS/OpenMP oversubscription when using R-level parallelism
 export OMP_NUM_THREADS=1
@@ -96,10 +100,14 @@ export NESTED_PARALLEL=1
 # arg8: transform_type (strong, mild, none) - default: mild
 # arg9: outcome_type (binary, continuous) - default: binary
 # arg10: heterogeneity_type (none, mild, strong, partial) - default: none
-# arg11: shift_strength (numeric) - default: 1.0
+# arg11: shift_strength (numeric) - default: 0.5
 # arg12: n_folds (integer) - default: 10
+#        NOTE: diagnosis/bias/ recommends n_folds=3 (or 5) when
+#        n_site_arm / (n_folds * p) < ~5; see comment in main.R.
+#        Verified C1 at n=5000,K=3,p=10: K_f=3 raised one/two-round
+#        coverage from 0.886/0.878 to 0.945/0.955.
 # arg13: n_sims (integer) - default: 500
-# arg14: dgp_type (facec, face) - default: facec
+# arg14: dgp_type (facehd, face) - default: facehd
 # arg15: ate_deviation (numeric, FACE paper only) - default: 0.0
 # arg16: n_deviated_sites (integer, FACE paper only) - default: 0
 # arg17: use_lambda_cache (TRUE/FALSE) - default: TRUE
@@ -134,10 +142,10 @@ SITE_ALLOCATION="${arg7:-model}"
 TRANSFORM_TYPE="${arg8:-mild}"
 OUTCOME_TYPE="${arg9:-binary}"
 HETEROGENEITY_TYPE="${arg10:-none}"
-SHIFT_STRENGTH="${arg11:-1.0}"
+SHIFT_STRENGTH="${arg11:-0.5}"
 N_FOLDS="${arg12:-10}"
 N_SIMS="${arg13:-500}"
-DGP_TYPE="${arg14:-facec}"
+DGP_TYPE="${arg14:-facehd}"
 ATE_DEVIATION="${arg15:-0.0}"
 N_DEVIATED_SITES="${arg16:-0}"
 USE_LAMBDA_CACHE="${arg17:-TRUE}"
@@ -165,8 +173,8 @@ if [[ ! "$PARALLEL_STRATEGY" =~ ^(outer_priority|balanced|outer_only)$ ]]; then
     echo "ERROR: parallel_strategy must be one of: outer_priority, balanced, outer_only."
     exit 2
 fi
-if [[ ! "$DGP_TYPE" =~ ^(facec|face)$ ]]; then
-    echo "ERROR: dgp_type must be one of: facec, face."
+if [[ ! "$DGP_TYPE" =~ ^(facehd|face)$ ]]; then
+    echo "ERROR: dgp_type must be one of: facehd, face."
     exit 2
 fi
 if [[ ! "$OUTCOME_TYPE" =~ ^(binary|continuous)$ ]]; then
@@ -191,7 +199,7 @@ if ! [[ "$VERBOSE_EVERY" =~ ^[0-9]+$ ]] || [[ "$VERBOSE_EVERY" -lt 1 ]]; then
 fi
 
 # Create setting identifier from active DGP/output parameters.
-# Format (facec): n<N>_K<K>_p<P>_<config>_<estimand>_<outcome>_<alloc>_tf<transform>_ht<het>_ss<shift>_kf<folds>_ate<flag>
+# Format (facehd): n<N>_K<K>_p<P>_<config>_<estimand>_<outcome>_<alloc>_tf<transform>_ht<het>_ss<shift>_kf<folds>_ate<flag>
 # Format (face):  n<N>_K<K>_p<P>_<config>_<estimand>_<outcome>_face_dev<dev>_nd<nd>_kf<folds>_ate<flag>
 # Must match main.R and main.sh::build_setting_id()
 if [[ -n "${SETTING_ID_FROM_FILE:-}" ]]; then
@@ -212,7 +220,7 @@ ARRAY_TAG="${SLURM_ARRAY_TASK_ID:-0}"
 LOG_FILE="log/${SETTING_ID}_${SLURM_JOB_ID}_${ARRAY_TAG}.out"
 
 echo "=============================================="
-echo "FACE-C Simulation Job"
+echo "FACE-HD Simulation Job"
 echo "=============================================="
 echo "Job ID:        ${SLURM_JOB_ID}"
 echo "Array Task ID: ${SLURM_ARRAY_TASK_ID:-NA}"
@@ -237,6 +245,7 @@ echo "  verbose_every:       ${VERBOSE_EVERY}"
 echo "  parallel_strategy:   ${PARALLEL_STRATEGY}"
 echo "  estimate_ate:        ${ESTIMATE_ATE}"
 echo "  dgp_type:            ${DGP_TYPE}"
+echo "  FACEHD_MAIN_USE_SOURCE: ${FACEHD_MAIN_USE_SOURCE}"
 if [[ "$DGP_TYPE" == "face" ]]; then
 echo "  ate_deviation:       ${ATE_DEVIATION}"
 echo "  n_deviated_sites:    ${N_DEVIATED_SITES}"

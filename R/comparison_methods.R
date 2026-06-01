@@ -55,8 +55,11 @@
 #' Sample-size adjusted estimator (SS) with correct variance estimation
 #' 
 #' This estimator computes a sample-size weighted average of site-specific
-#' AIPW estimates. The variance is computed using pooled influence functions
-#' to properly account for both within-site and between-site variation.
+#' AIPW estimates. By default (\code{variance_method = "bootstrap"}) the standard
+#' error is the multiplier (wild) bootstrap, i.e. the fixed-effects sampling variance
+#' of the weighted average; the DerSimonian-Laird random-effects (\eqn{\tau^2}) variance
+#' is available via \code{variance_method = "analytic"} and is retained in
+#' \code{components} for reference.
 #' 
 #' @param data_split split data by site
 #' @param family GLM family ("binomial", "gaussian", etc.). Default "binomial".
@@ -66,12 +69,17 @@
 #' @param n_folds Number of cross-fitting folds (default uses data-driven value).
 #' @param site_fits Optional precomputed per-site outputs from
 #'   \\code{fit_site_aipw}. When provided, avoids refitting nuisances.
+#' @param variance_method Standard-error method: \code{"bootstrap"} (default) uses the
+#'   multiplier (wild) bootstrap over influence-function blocks; \code{"analytic"} uses
+#'   the method's analytic variance.
 #' @return estimate with variance
 #' @export
 estimate_sample_size_weighted <- function(data_split, family = "binomial",
                                           use_rcal = FALSE, use_crossfit = TRUE,
                                           n_folds = NULL, A_val = 1L,
-                                          site_fits = NULL) {
+                                          site_fits = NULL,
+                                          variance_method = c("bootstrap", "analytic")) {
+  variance_method <- match.arg(variance_method)
   validate_algorithm_inputs(data_split, family = family, A_val = A_val)
 
   sites <- names(data_split)
@@ -150,19 +158,31 @@ estimate_sample_size_weighted <- function(data_split, family = "binomial",
     var_re <- var_re + w_j^2 * (var_j + tau_sq)
   }
   
-  # Use random-effects variance as the final variance
-  final_variance <- var_re
-  
+  # Variance: bootstrap (default) over per-site influence blocks with sample-size
+  # weights, or the analytic random-effects (tau^2) variance. The bootstrap reproduces
+  # the fixed-effects sampling variance and avoids the tau^2 inflation.
+  boot_blocks <- lapply(names(site_estimates), function(site) {
+    list(influence = site_fits[[site]]$varphi_ot,
+         weight = site_estimates[[site]]$n / total_n)
+  })
+  var_res <- .resolve_comparison_variance(
+    analytic_variance = var_re, blocks = boot_blocks, variance_method = variance_method
+  )
+
   return(list(
     estimate = weighted_sum,
-    variance = final_variance,
-    se = sqrt(final_variance),
+    variance = var_res$variance,
+    se = var_res$se,
     method = "sample_size",
     n = total_n,
     components = list(
-      var_fixed_effects = var_fe,
-      var_random_effects = var_re,
-      tau_squared = tau_sq,
+      variance_method = var_res$variance_method,
+      variance_analytic = var_res$variance_analytic,
+      se_analytic = var_res$se_analytic,
+      se_bootstrap = var_res$se_bootstrap,
+      var_fixed_effects = as.numeric(var_fe),
+      var_random_effects = as.numeric(var_re),
+      tau_squared = as.numeric(tau_sq),
       Q_statistic = het$Q,
       df = K - 1,
       I_squared = het$I_squared
@@ -173,14 +193,18 @@ estimate_sample_size_weighted <- function(data_split, family = "binomial",
 #' Inverse-variance weighted estimator (IVW) with heterogeneity correction
 #' 
 #' This estimator computes an inverse-variance weighted average of site-specific
-#' AIPW estimates. The variance is computed using a random-effects model to
-#' properly account for between-site heterogeneity (covariate shift).
-#' 
-#' When sites have different covariate distributions, they may estimate slightly
-#' different population parameters. The standard fixed-effects IVW variance
-#' (1/total_precision) underestimates the true variance by ignoring this
-#' between-site heterogeneity. We use Cochran's Q statistic to estimate the
-#' between-site variance component (τ²) and compute a random-effects variance.
+#' AIPW estimates. By default (\code{variance_method = "bootstrap"}) the standard
+#' error is the multiplier (wild) bootstrap, i.e. the fixed-effects sampling variance
+#' \eqn{1/\sum_j \mathrm{precision}_j}; the random-effects (\eqn{\tau^2}) variance is
+#' available via \code{variance_method = "analytic"} and retained in \code{components}.
+#'
+#' The analytic random-effects path is motivated as follows. When sites have different
+#' covariate distributions, they may estimate slightly different population parameters,
+#' and the fixed-effects IVW variance (\eqn{1/\sum_j \mathrm{precision}_j}) would then
+#' understate uncertainty ABOUT THAT COMMON PARAMETER; Cochran's Q estimates the
+#' between-site component (\eqn{\tau^2}). For the fixed target estimand, however, that
+#' between-site spread is transport bias rather than sampling variance, so the bootstrap
+#' (fixed-effects) SE is the honest default and the \eqn{\tau^2} inflation is opt-in.
 #' 
 #' @param data_split split data by site
 #' @param family GLM family ("binomial", "gaussian", etc.). Default "binomial".
@@ -190,12 +214,17 @@ estimate_sample_size_weighted <- function(data_split, family = "binomial",
 #' @param n_folds Number of cross-fitting folds (default uses data-driven value).
 #' @param site_fits Optional precomputed per-site outputs from
 #'   \\code{fit_site_aipw}. When provided, avoids refitting nuisances.
+#' @param variance_method Standard-error method: \code{"bootstrap"} (default) uses the
+#'   multiplier (wild) bootstrap over influence-function blocks; \code{"analytic"} uses
+#'   the method's analytic variance.
 #' @return estimate with variance
 #' @export
 estimate_inverse_variance_weighted <- function(data_split, family = "binomial",
                                                use_rcal = FALSE, use_crossfit = TRUE,
                                                n_folds = NULL, A_val = 1L,
-                                               site_fits = NULL) {
+                                               site_fits = NULL,
+                                               variance_method = c("bootstrap", "analytic")) {
+  variance_method <- match.arg(variance_method)
   validate_algorithm_inputs(data_split, family = family, A_val = A_val)
 
   sites <- names(data_split)
@@ -333,16 +362,30 @@ estimate_inverse_variance_weighted <- function(data_split, family = "binomial",
   
   pooled_variance <- within_site_var + between_site_var
   
-  # Use the larger of RE variance and pooled variance for robustness
+  # Use the larger of RE variance and pooled variance for robustness (analytic path)
   final_variance <- max(final_variance, pooled_variance)
-  
+
+  # Variance: bootstrap (default) over per-site influence blocks with fixed-effects
+  # precision weights, or the analytic random-effects variance above.
+  boot_blocks <- lapply(names(site_results), function(site) {
+    list(influence = site_fits[[site]]$varphi_ot,
+         weight = site_results[[site]]$precision / total_precision)
+  })
+  var_res <- .resolve_comparison_variance(
+    analytic_variance = final_variance, blocks = boot_blocks, variance_method = variance_method
+  )
+
   return(list(
     estimate = final_estimate,
-    variance = final_variance,
-    se = sqrt(final_variance),
+    variance = var_res$variance,
+    se = var_res$se,
     method = "inverse_variance",
     n = total_n,
     components = list(
+      variance_method = var_res$variance_method,
+      variance_analytic = var_res$variance_analytic,
+      se_analytic = var_res$se_analytic,
+      se_bootstrap = var_res$se_bootstrap,
       var_fixed_effects = var_fe,
       var_random_effects = if (tau_sq > 0) var_re else var_fe,
       var_pooled = pooled_variance,
@@ -360,9 +403,14 @@ estimate_inverse_variance_weighted <- function(data_split, family = "binomial",
 #' @param data_split split data by site
 #' @param family GLM family ("binomial", "gaussian", etc.). Default "binomial".
 #'        Supports both "binomial" (logit) and "gaussian" (identity).
+#' @param variance_method Standard-error method: \code{"bootstrap"} (default) uses the
+#'   multiplier (wild) bootstrap over influence-function blocks; \code{"analytic"} uses
+#'   the method's analytic variance.
 #' @return estimate with variance
 #' @export
-estimate_tilted_aipw <- function(data_split, family = "binomial", A_val = 1L) {
+estimate_tilted_aipw <- function(data_split, family = "binomial", A_val = 1L,
+                                 variance_method = c("bootstrap", "analytic")) {
+  variance_method <- match.arg(variance_method)
   validate_algorithm_inputs(data_split, family = family, A_val = A_val)
   glm_spec <- resolve_glm_family(family)
 
@@ -473,7 +521,7 @@ estimate_tilted_aipw <- function(data_split, family = "binomial", A_val = 1L) {
       # Use A-weighted score to match the density ratio estimating equation
       aw_i <- as.numeric(tr_source == A_val) * as.numeric(w_i)
       M_alpha <- t(Z_int_centered) %*% (Z_int_centered * aw_i) / n_source
-      adj_alpha <- safe_solve(M_alpha) %*% A_s
+      adj_alpha <- solve_with_ridge(M_alpha) %*% A_s
       infl_alpha_source <- as.numeric(aw_i * (Z_int_centered %*% adj_alpha))
 
       influence <- aipw_res$influence + infl_alpha_source
@@ -555,18 +603,32 @@ estimate_tilted_aipw <- function(data_split, family = "binomial", A_val = 1L) {
     }
   }
   
-  var_total <- var_target_component + var_source_component
-  
-  # Ensure variance is positive
-  var_total <- max(var_total, VARIANCE_MIN)
-  
+  var_total <- max(var_target_component + var_source_component, VARIANCE_MIN)
+
+  # Variance: bootstrap (default) over the shared-target influence block plus per-source
+  # influence blocks, or the analytic influence-function variance above.
+  boot_blocks <- c(
+    list(list(influence = aggregated_target_if, weight = 1)),
+    lapply(names(source_estimates), function(site) {
+      list(influence = source_estimates[[site]]$varphi_ot,
+           weight = source_estimates[[site]]$n / total_n)
+    })
+  )
+  var_res <- .resolve_comparison_variance(
+    analytic_variance = var_total, blocks = boot_blocks, variance_method = variance_method
+  )
+
   return(list(
     estimate = weighted_sum,
-    variance = var_total,
-    se = sqrt(var_total),
+    variance = var_res$variance,
+    se = var_res$se,
     method = "tilted_aipw",
     n = total_n,
     components = list(
+      variance_method = var_res$variance_method,
+      variance_analytic = var_res$variance_analytic,
+      se_analytic = var_res$se_analytic,
+      se_bootstrap = var_res$se_bootstrap,
       target_weight = w_target,
       source_weights = w_sources,
       target_variance_component = var_target_component,
@@ -584,10 +646,23 @@ estimate_tilted_aipw <- function(data_split, family = "binomial", A_val = 1L) {
 #' 
 #' @param data_split Split data by site
 #' @param dr_lambda Regularization for density ratio. If NULL, selected via CV.
+#' @param dr_lambda_rule CV selection rule when \code{dr_lambda = NULL}:
+#'   \code{"min"} (default) selects \code{lambda.min}; \code{"1se"} selects
+#'   \code{lambda.1se}.
 #' @param family GLM family ("binomial", "gaussian", etc.). Default "binomial".
+#' @param variance_method Standard-error method: \code{"bootstrap"} (default) uses the
+#'   multiplier (wild) bootstrap over influence-function blocks; \code{"analytic"} uses
+#'   the method's analytic variance.
 #' @return List with estimate, variance, se
 #' @export
-estimate_federated_dr <- function(data_split, dr_lambda = NULL, A_val = 1L, family = "binomial") {
+estimate_federated_dr <- function(data_split, dr_lambda = NULL,
+                                  dr_lambda_rule = c("min", "1se"),
+                                  A_val = 1L, family = "binomial",
+                                  variance_method = c("bootstrap", "analytic")) {
+  variance_method <- match.arg(variance_method)
+  dr_lambda_rule <- .match_nuisance_lambda_rule(
+    dr_lambda_rule, "estimate_federated_dr", arg = "dr_lambda_rule"
+  )
   validate_algorithm_inputs(data_split, family = family, A_val = A_val)
 
   target_data <- data_split[["t"]]
@@ -617,14 +692,9 @@ estimate_federated_dr <- function(data_split, dr_lambda = NULL, A_val = 1L, fami
     source_data <- data_split[[site]]
     Z_source <- as.matrix(source_data$Z_site)
     
-    # Select lambda via CV for each source site (or use provided value)
-    site_lambda <- if (is.null(dr_lambda)) {
-      select_dr_lambda_cv(Z_source, Z_target)
-    } else {
-      dr_lambda
-    }
-    
-    dr_weights <- calculate_dr_weights(Z_source, Z_target, lambda = site_lambda)
+    dr_weights <- calculate_dr_weights(
+      Z_source, Z_target, lambda = dr_lambda, lambda_rule = dr_lambda_rule
+    )
     
     source_res <- calculate_weighted_site_aipw(
       y = source_data$Y, a = source_data$A,
@@ -641,7 +711,7 @@ estimate_federated_dr <- function(data_split, dr_lambda = NULL, A_val = 1L, fami
     A_s <- -1 / d_alpha * colMeans(as.numeric(dr_weights) * Z_int_centered * as.numeric(phi_centered))
     aw_i <- as.numeric(source_data$A == A_val) * as.numeric(dr_weights)
     M_alpha <- t(Z_int_centered) %*% (Z_int_centered * aw_i) / max(1, n_source)
-    adj_alpha <- safe_solve(M_alpha) %*% A_s
+    adj_alpha <- solve_with_ridge(M_alpha) %*% A_s
     infl_alpha_source <- as.numeric(aw_i * (Z_int_centered %*% adj_alpha))
     target_if_component <- -as.numeric(Z_target_centered %*% adj_alpha)
     varphi_source <- as.numeric(source_res$varphi_ot) + infl_alpha_source
@@ -699,14 +769,31 @@ estimate_federated_dr <- function(data_split, dr_lambda = NULL, A_val = 1L, fami
   }
 
   variance <- max(var_target_component + var_source_component, VARIANCE_MIN)
-  
+
+  # Variance: bootstrap (default) over the shared-target influence block plus per-source
+  # influence blocks (IVW weights), or the analytic influence-function variance above.
+  boot_blocks <- c(
+    list(list(influence = aggregated_target_if, weight = 1)),
+    lapply(setdiff(valid_sites, "t"), function(site) {
+      list(influence = site_results[[site]]$varphi_ot,
+           weight = weight_by_site[[site]])
+    })
+  )
+  var_res <- .resolve_comparison_variance(
+    analytic_variance = variance, blocks = boot_blocks, variance_method = variance_method
+  )
+
   return(list(
     estimate = estimate,
-    variance = variance,
-    se = sqrt(variance),
+    variance = var_res$variance,
+    se = var_res$se,
     method = "federated_dr",
     n = sum(sapply(site_results[valid_sites], function(x) x$n)),
     components = list(
+      variance_method = var_res$variance_method,
+      variance_analytic = var_res$variance_analytic,
+      se_analytic = var_res$se_analytic,
+      se_bootstrap = var_res$se_bootstrap,
       ivw_weights = weight_by_site,
       var_target_component = var_target_component,
       var_source_component = var_source_component
@@ -721,10 +808,23 @@ estimate_federated_dr <- function(data_split, dr_lambda = NULL, A_val = 1L, fami
 #' 
 #' @param data_split Split data by site
 #' @param dr_lambda Regularization for density ratio. If NULL, selected via CV.
+#' @param dr_lambda_rule CV selection rule when \code{dr_lambda = NULL}:
+#'   \code{"min"} (default) selects \code{lambda.min}; \code{"1se"} selects
+#'   \code{lambda.1se}.
 #' @param family GLM family ("binomial", "gaussian", etc.). Default "binomial".
+#' @param variance_method Standard-error method: \code{"bootstrap"} (default) uses the
+#'   multiplier (wild) bootstrap over influence-function blocks; \code{"analytic"} uses
+#'   the method's analytic variance.
 #' @return List with estimate, variance, se
 #' @export
-estimate_pooled_dr <- function(data_split, dr_lambda = NULL, A_val = 1L, family = "binomial") {
+estimate_pooled_dr <- function(data_split, dr_lambda = NULL,
+                               dr_lambda_rule = c("min", "1se"),
+                               A_val = 1L, family = "binomial",
+                               variance_method = c("bootstrap", "analytic")) {
+  variance_method <- match.arg(variance_method)
+  dr_lambda_rule <- .match_nuisance_lambda_rule(
+    dr_lambda_rule, "estimate_pooled_dr", arg = "dr_lambda_rule"
+  )
   validate_algorithm_inputs(data_split, family = family, A_val = A_val)
 
   target_data <- data_split[["t"]]
@@ -748,14 +848,9 @@ estimate_pooled_dr <- function(data_split, dr_lambda = NULL, A_val = 1L, family 
     source_data <- data_split[[site]]
     Z_source <- as.matrix(source_data$Z_site)
     
-    # Select lambda via CV for each source site (or use provided value)
-    site_lambda <- if (is.null(dr_lambda)) {
-      select_dr_lambda_cv(Z_source, Z_target)
-    } else {
-      dr_lambda
-    }
-    
-    dr_weights <- calculate_dr_weights(Z_source, Z_target, lambda = site_lambda)
+    dr_weights <- calculate_dr_weights(
+      Z_source, Z_target, lambda = dr_lambda, lambda_rule = dr_lambda_rule
+    )
 
     source_res <- calculate_weighted_site_aipw(
       y = source_data$Y, a = source_data$A,
@@ -772,7 +867,7 @@ estimate_pooled_dr <- function(data_split, dr_lambda = NULL, A_val = 1L, family 
     A_s <- -1 / d_alpha * colMeans(as.numeric(dr_weights) * Z_int_centered * as.numeric(phi_centered))
     aw_i <- as.numeric(source_data$A == A_val) * as.numeric(dr_weights)
     M_alpha <- t(Z_int_centered) %*% (Z_int_centered * aw_i) / max(1, n_source)
-    adj_alpha <- safe_solve(M_alpha) %*% A_s
+    adj_alpha <- solve_with_ridge(M_alpha) %*% A_s
     infl_alpha_source <- as.numeric(aw_i * (Z_int_centered %*% adj_alpha))
     target_if_component <- -as.numeric(Z_target_centered %*% adj_alpha)
     
@@ -783,7 +878,7 @@ estimate_pooled_dr <- function(data_split, dr_lambda = NULL, A_val = 1L, family 
       idx = idx_start:idx_end,
       infl_alpha_source = infl_alpha_source,
       target_if_component = target_if_component,
-      lambda = site_lambda
+      lambda = as.numeric(attr(dr_weights, "lambda_used") %||% dr_lambda %||% NA_real_)
     )
     
     all_y <- c(all_y, source_data$Y)
@@ -817,6 +912,17 @@ estimate_pooled_dr <- function(data_split, dr_lambda = NULL, A_val = 1L, family 
   }
   final_variance <- max(wss / (N_all^2), VARIANCE_MIN)
 
+  # Variance: bootstrap (default) over per-site blocks of the stacked influence function
+  # (one block per site, weight n_site/N_all so the wild bootstrap reproduces the
+  # site-stratified within-group variance above), or that analytic variance.
+  boot_blocks <- lapply(unique(all_sites), function(site) {
+    idx <- which(all_sites == site)
+    list(influence = varphi_total[idx], weight = length(idx) / N_all)
+  })
+  var_res <- .resolve_comparison_variance(
+    analytic_variance = final_variance, blocks = boot_blocks, variance_method = variance_method
+  )
+
   source_lambdas <- setNames(
     sapply(source_sites, function(site) {
       meta <- source_meta[[site]]
@@ -827,12 +933,16 @@ estimate_pooled_dr <- function(data_split, dr_lambda = NULL, A_val = 1L, family 
   
   return(list(
     estimate = result$estimate,
-    variance = final_variance,
-    se = sqrt(final_variance),
+    variance = var_res$variance,
+    se = var_res$se,
     method = "pooled_dr",
     n = N_all,
     varphi_ot = varphi_total,
     components = list(
+      variance_method = var_res$variance_method,
+      variance_analytic = var_res$variance_analytic,
+      se_analytic = var_res$se_analytic,
+      se_bootstrap = var_res$se_bootstrap,
       n_target = n_target,
       n_source_total = N_all - n_target,
       mean_weight = mean(all_weights),
@@ -853,11 +963,22 @@ estimate_pooled_dr <- function(data_split, dr_lambda = NULL, A_val = 1L, family 
 #' @param use_crossfit Logical. If TRUE (default), use cross-fitted nuisances.
 #' @param n_folds Number of cross-fitting folds (default uses data-driven value).
 #' @param family GLM family ("binomial", "gaussian", etc.). Default "binomial".
-#' @return list of results from all methods
+#' @param variance_method Standard-error method for the comparison baselines
+#'   (\code{sample_size}, \code{inverse_variance}, \code{federated_dr},
+#'   \code{pooled_dr}, \code{tilted_aipw}): \code{"bootstrap"} (default) uses the
+#'   multiplier (wild) bootstrap; \code{"analytic"} uses each method's analytic
+#'   variance. \code{target_only} always uses its analytic influence-function variance.
+#' @return Named list of per-method results. The five comparison baselines additionally
+#'   carry \code{components$variance_method}, \code{components$variance_analytic},
+#'   \code{components$se_analytic}, and \code{components$se_bootstrap}; the
+#'   \code{target_only} benchmark does not. Consumers should read \code{$estimate} and
+#'   \code{$se} uniformly and treat those four \code{components} fields as baseline-only.
 #' @export
 run_all_comparisons <- function(data_split, use_rcal = FALSE,
                                 use_crossfit = TRUE, n_folds = NULL,
-                                family = "binomial", A_val = 1L) {
+                                family = "binomial", A_val = 1L,
+                                variance_method = c("bootstrap", "analytic")) {
+  variance_method <- match.arg(variance_method)
 
   precomputed_site_fits <- .fit_site_aipw_all_sites(
     data_split = data_split,
@@ -869,7 +990,7 @@ run_all_comparisons <- function(data_split, use_rcal = FALSE,
   )
 
   results <- list(
-    # Target-only (benchmark)
+    # Target-only (benchmark; analytic influence-function variance)
     target_only = estimate_target_only(
       data_split, family, use_rcal = use_rcal,
       use_crossfit = use_crossfit, n_folds = n_folds, A_val = A_val
@@ -879,24 +1000,29 @@ run_all_comparisons <- function(data_split, use_rcal = FALSE,
     sample_size = estimate_sample_size_weighted(
       data_split, family, use_rcal = use_rcal,
       use_crossfit = use_crossfit, n_folds = n_folds,
-      A_val = A_val, site_fits = precomputed_site_fits
+      A_val = A_val, site_fits = precomputed_site_fits,
+      variance_method = variance_method
     ),
     inverse_variance = estimate_inverse_variance_weighted(
       data_split, family, use_rcal = use_rcal,
       use_crossfit = use_crossfit, n_folds = n_folds,
-      A_val = A_val, site_fits = precomputed_site_fits
+      A_val = A_val, site_fits = precomputed_site_fits,
+      variance_method = variance_method
     ),
 
     # DR-corrected methods (theoretically correct, lambda selected via CV)
     federated_dr = estimate_federated_dr(
-      data_split, dr_lambda = NULL, A_val = A_val, family = family
+      data_split, dr_lambda = NULL, A_val = A_val, family = family,
+      variance_method = variance_method
     ),
     pooled_dr = estimate_pooled_dr(
-      data_split, dr_lambda = NULL, A_val = A_val, family = family
+      data_split, dr_lambda = NULL, A_val = A_val, family = family,
+      variance_method = variance_method
     ),
 
     # Tilted AIPW
-    tilted_aipw = estimate_tilted_aipw(data_split, family, A_val = A_val)
+    tilted_aipw = estimate_tilted_aipw(data_split, family, A_val = A_val,
+                                       variance_method = variance_method)
   )
 
   return(results)

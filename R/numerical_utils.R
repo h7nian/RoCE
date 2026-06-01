@@ -1,7 +1,7 @@
 # numerical_utils.R - Pure numerical and mathematical utility functions
 #
 # This file contains helper functions for numerical operations used throughout
-# the FACE-C algorithm. All functions are pure (no side effects) and focused
+# the FACE-HD algorithm. All functions are pure (no side effects) and focused
 # on mathematical transformations.
 #
 # Contents:
@@ -236,13 +236,13 @@ get_cv_fold_count <- function(n, min_per_fold = 5, max_folds = N_CV_FOLDS_LAMBDA
 #' @param nlambda Number of grid points (default
 #'   \code{LAMBDA_GRID_SIZE_STANDARD}, i.e.\sspace 100).
 #' @return Numeric vector of lambda values on a log-linear scale, sorted
-#'   ascending (smallest first).
+#'   descending (lambda_max first), matching glmnet's path convention.
 build_lambda_grid <- function(lambda_max, lambda_min_ratio = 1e-4,
                               nlambda = LAMBDA_GRID_SIZE_STANDARD) {
   stopifnot(is.numeric(lambda_max), length(lambda_max) == 1,
             is.finite(lambda_max), lambda_max > 0)
   lmin <- lambda_max * max(lambda_min_ratio, .Machine$double.eps)
-  exp(seq(log(lmin), log(lambda_max), length.out = nlambda))
+  exp(seq(log(lambda_max), log(lmin), length.out = nlambda))
 }
 
 # =============================================================================
@@ -251,10 +251,11 @@ build_lambda_grid <- function(lambda_max, lambda_min_ratio = 1e-4,
 
 #' Compute lambda_max for INITIAL density ratio model
 #'
-#' At \eqn{\gamma = 0} the gradient of the un-penalised initial density
-#' ratio loss (treating all source units as \eqn{A=1}) is
+#' At the intercept-only solution (all penalized slopes equal zero), the
+#' gradient of the un-penalised initial density ratio loss is
 #' \deqn{\frac{\partial \ell}{\partial \gamma_j}\bigg|_{\gamma=0}
-#'       = \bar\phi_j - \frac{1}{n_{\text{total}}} \sum_{i \in S} X_{ij},}
+#'       = \bar\phi_j - \exp(-\gamma_0)
+#'         \frac{1}{n_{\text{total}}} \sum_{i:A_i=a} X_{ij},}
 #' where \eqn{\bar\phi = \widetilde E_t[\phi(X)]} and the sum runs over the
 #' source treated units.
 #'
@@ -276,26 +277,33 @@ compute_lambda_max_initial_dr <- function(Z_site, A, mean_phi, A_val = 1L) {
                  A_val), call. = FALSE)
   }
 
-  # mean_phi already includes intercept at position 1
-  # X_treated with intercept prepended, shape (n_treated, p+1)
-  X_treated <- cbind(1, Z_site[treated_idx, , drop = FALSE])
+  if (length(mean_phi) != ncol(Z_site) + 1L) {
+    stop("compute_lambda_max_initial_dr: mean_phi length must equal ncol(Z_site) + 1.",
+         call. = FALSE)
+  }
+  target_intercept <- as.numeric(mean_phi[1])
+  source_intercept <- n_treated / n_total
+  if (!is.finite(target_intercept) || target_intercept <= 0) {
+    stop("compute_lambda_max_initial_dr: mean_phi intercept must be positive and finite.",
+         call. = FALSE)
+  }
+  exp_neg_intercept <- target_intercept / source_intercept
 
-  # Gradient at gamma=0 (exp(-0) = 1, psi' = 1 for initial DR):
-  # grad_j = mean_phi[j] - sum(X_treated[, j]) / n_total
-  grad <- as.numeric(mean_phi) - colSums(X_treated) / n_total
+  grad_slopes <- as.numeric(mean_phi[-1]) -
+    exp_neg_intercept * colSums(Z_site[treated_idx, , drop = FALSE]) / n_total
 
-  # Exclude intercept (j=1): L1 penalty does not apply to intercept
-  lambda_max <- max(abs(grad[-1]))
+  lambda_max <- max(abs(grad_slopes))
   max(lambda_max, 1e-6)  # floor to prevent degenerate grids
 }
 
 #' Compute lambda_max for REFINED / CALIBRATED density ratio model
 #'
 #' Same logic but the gradient depends on \eqn{\psi'(\phi^T \alpha_{\text{init}})}.
-#' At \eqn{\gamma = 0}:
+#' At the intercept-only solution:
 #' \deqn{
 #'   \nabla_j \ell |_{\gamma=0} = \bar g_j
-#'     - \frac{1}{n_{\text{total}}} \sum_{i \in S} X_{ij}\,\psi'(\phi_i^T\alpha)
+#'     - \exp(-\gamma_0) \frac{1}{n_{\text{total}}}
+#'       \sum_{i:A_i=a} X_{ij}\,\psi'(\phi_i^T\alpha)
 #' }
 #' where \eqn{\bar g = \widetilde E_t[\nabla_\alpha \psi]}.
 #'
@@ -320,7 +328,14 @@ compute_lambda_max_refined_dr <- function(Z_site, A, mean_grad_psi, alpha_init,
   n_total <- nrow(Z_site)
   treated_idx <- which(A == A_val)
   n_treated <- length(treated_idx)
-  if (n_treated == 0) return(1)
+  if (n_treated == 0) {
+    stop(sprintf("compute_lambda_max_refined_dr: no observations with A_val=%d.",
+                 A_val), call. = FALSE)
+  }
+  if (length(mean_grad_psi) != ncol(Z_site) + 1L) {
+    stop("compute_lambda_max_refined_dr: mean_grad_psi length must equal ncol(Z_site) + 1.",
+         call. = FALSE)
+  }
 
   # X_treated with intercept (density ratio features)
   X_treated <- cbind(1, Z_site[treated_idx, , drop = FALSE])
@@ -330,6 +345,10 @@ compute_lambda_max_refined_dr <- function(Z_site, A, mean_grad_psi, alpha_init,
     W_tr <- cbind(1, W_outcome[treated_idx, , drop = FALSE])
   } else {
     W_tr <- X_treated
+  }
+  if (length(alpha_init) != ncol(W_tr)) {
+    stop("compute_lambda_max_refined_dr: alpha_init length must match the intercept-augmented outcome design.",
+         call. = FALSE)
   }
 
   # Compute ψ'(ϕ^T α_init) for each treated unit
@@ -349,26 +368,35 @@ compute_lambda_max_refined_dr <- function(Z_site, A, mean_grad_psi, alpha_init,
                          eta_alpha)
       1.0 / (eta_safe^2)                              # inverse: |h'(η)| = 1/η²
     },
-    stop(sprintf("compute_lambda_max_calibrated_dr: unsupported link_int=%s.",
+    stop(sprintf("compute_lambda_max_refined_dr: unsupported link_int=%s.",
                  link_int), call. = FALSE)
   )
 
-  # grad_j = mean_grad_psi[j] - sum(X_treated[, j] * psi_prime) / n_total
-  grad <- as.numeric(mean_grad_psi) - colSums(X_treated * psi_prime) / n_total
+  source_intercept <- sum(psi_prime) / n_total
+  target_intercept <- as.numeric(mean_grad_psi[1])
+  if (!is.finite(source_intercept) || source_intercept <= 0 ||
+      !is.finite(target_intercept) || target_intercept <= 0) {
+    stop("compute_lambda_max_refined_dr: intercept-only density-ratio KKT equation is not well-defined.",
+         call. = FALSE)
+  }
+  exp_neg_intercept <- target_intercept / source_intercept
 
-  lambda_max <- max(abs(grad[-1]))
+  grad_slopes <- as.numeric(mean_grad_psi[-1]) -
+    exp_neg_intercept * colSums(Z_site[treated_idx, , drop = FALSE] * psi_prime) / n_total
+
+  lambda_max <- max(abs(grad_slopes))
   max(lambda_max, 1e-6)
 }
 
 #' Compute lambda_max for WEIGHTED outcome GLM model
 #'
-#' At \eqn{\beta = 0} the (un-penalised) gradient of the weighted GLM loss is
+#' At the intercept-only solution the (un-penalised) gradient of the weighted GLM loss is
 #' \deqn{
-#'   \nabla_j \ell|_{\beta=0} = \frac{1}{n_{\text{total}}}
-#'     \sum_{i \in S} w_i \bigl(\psi'(0) - Y_i\bigr) X_{ij}
+#'   \nabla_j \ell = \frac{1}{n_{\text{total}}}
+#'     \sum_{i:A_i=a} w_i \bigl(h(\beta_0) - Y_i\bigr) X_{ij}
 #' }
-#' where \eqn{w_i = \exp(-Z_i^T\gamma)} and \eqn{\psi'(0)} depends on the
-#' GLM family (e.g.\ 0.5 for logistic).
+#' where \eqn{w_i = \exp(-Z_i^T\gamma)} and \eqn{h(\beta_0)} is the weighted
+#' intercept-only fitted mean.
 #'
 #' @param W_outcome Covariate matrix for outcome model (\eqn{n \times p}).
 #' @param Y Outcome vector.
@@ -389,7 +417,10 @@ compute_lambda_max_outcome <- function(W_outcome, Y, A, gamma_s,
   n_total <- nrow(W_outcome)
   treated_idx <- which(A == A_val)
   n_treated <- length(treated_idx)
-  if (n_treated == 0) return(1)
+  if (n_treated == 0) {
+    stop(sprintf("compute_lambda_max_outcome: no observations with A_val=%d.",
+                 A_val), call. = FALSE)
+  }
 
   X_tr <- cbind(1, W_outcome[treated_idx, , drop = FALSE])
   Y_tr <- Y[treated_idx]
@@ -400,6 +431,10 @@ compute_lambda_max_outcome <- function(W_outcome, Y, A, gamma_s,
   } else {
     Z_tr <- cbind(1, W_outcome[treated_idx, , drop = FALSE])
   }
+  if (length(gamma_s) < ncol(Z_tr)) {
+    stop("compute_lambda_max_outcome: gamma_s is shorter than the intercept-augmented density-ratio design.",
+         call. = FALSE)
+  }
 
   g_val <- as.numeric(Z_tr %*% gamma_s[1:ncol(Z_tr)])
   if (calibrated) {
@@ -408,17 +443,19 @@ compute_lambda_max_outcome <- function(W_outcome, Y, A, gamma_s,
   weights <- exp(-g_val)
   weights <- pmin(pmax(weights, WEIGHT_MIN), WEIGHT_MAX)
 
-  # h(0) = ψ'(0) for the GLM at β = 0: the response (mean) function, not its derivative.
-  # The GLM loss gradient is ∇_j ℓ|_{β=0} = (1/n) Σ w_i (h(0) - Y_i) X_{ij}
-  # where h(η) = H'(η) is the inverse link (response) function.
-  psi_prime_0 <- if (family_int == 1L) {
-    0.5           # binomial/logit: h(0) = logistic(0) = 0.5
+  weight_sum <- sum(weights)
+  if (!is.finite(weight_sum) || weight_sum <= 0) {
+    stop("compute_lambda_max_outcome: density-ratio weights must have positive finite sum.",
+         call. = FALSE)
+  }
+  weighted_y <- sum(weights * Y_tr) / weight_sum
+  mu0 <- if (family_int == FAMILY_BINOMIAL || link_int == LINK_LOGIT) {
+    pmin(pmax(weighted_y, OUTCOME_PRED_LOWER), OUTCOME_PRED_UPPER)
   } else {
-    0.0           # gaussian/identity: h(0) = 0
+    weighted_y
   }
 
-  # grad_j = (1/n_total) * sum(w_i * (ψ'(0) - Y_i) * X_ij)
-  residuals <- weights * (psi_prime_0 - Y_tr)
+  residuals <- weights * (mu0 - Y_tr)
   grad <- colSums(X_tr * residuals) / n_total
 
   lambda_max <- max(abs(grad[-1]))

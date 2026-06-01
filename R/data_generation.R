@@ -1,4 +1,4 @@
-# data_generation.R - Simulation data generation for FACE-C algorithms
+# data_generation.R - Simulation data generation for FACE-HD algorithms
 #
 # This file contains functions to generate synthetic data for Monte Carlo
 # simulations following the data generating process described in main.tex.
@@ -6,8 +6,8 @@
 # Contents:
 #   1. Covariate Generation
 #   2. Site/Treatment Assignment
-#   3. Outcome Generation (FACE-C DGP)
-#   4. Full Simulation Data Generation (FACE-C DGP)
+#   3. Outcome Generation (FACE-HD DGP)
+#   4. Full Simulation Data Generation (FACE-HD DGP)
 #   4b. FACE Paper DGP → extracted to R/data_generation_face.R
 #   5. Data Splitting Utilities
 
@@ -33,7 +33,7 @@ generate_base_covariates <- function(n, p = 4) {
 #' Apply nonlinear transformations to covariates
 #' @param X matrix of base covariates
 #' @param transform_type type of transformation:
-#'   - "strong" (default): original aggressive transformations (exp, cube, square)
+#'   - "strong": original aggressive transformations (exp, cube, square)
 #'   - "mild": gentle transformations (square, interaction) that preserve IF orthogonality
 #'   - "none": no transformation (X_dagger = X)
 #' @return matrix of transformed covariates
@@ -102,9 +102,9 @@ transform_covariates <- function(X, transform_type = "strong") {
 #' $\boldsymbol{\gamma}_{s_j,a} = (c_0, \epsilon_{j,a,1}, \epsilon_{j,a,2}, \mathbf{0}_{p-2})
 #' $$
 #' where $\epsilon_{j,a,k} \sim \mathcal{N}(0, \sigma_\epsilon^2)$ with
-#' $\sigma_\epsilon = \texttt{sigma\_epsilon} \times \texttt{shift\_strength}$ (default 0.1),
+#' $\sigma_\epsilon = \texttt{sigma\_epsilon} \times \texttt{shift\_strength}$,
 #' and $c_0 = \texttt{GAMMA\_BALANCE\_INTERCEPT}$ is a negative intercept chosen so that
-#' $P(R=t) \approx 1/(K+1)$ under the baseline (shift\_strength = 1) setting.
+#' $P(R=t) \approx 1/(K+1)$ under the unit-strength setting.
 #'
 #' **Balancing derivation:** In the multinomial logistic model the target is
 #' the baseline category (all-zero γ).  Each of the 2K source categories has
@@ -122,9 +122,10 @@ transform_covariates <- function(X, transform_type = "strong") {
 #' @param p number of covariates (excluding intercept)
 #' @param sigma_epsilon base standard deviation for variations (default 0.1)
 #' @param shift_strength multiplier for sigma_epsilon controlling covariate shift
-#'        intensity (default 1.0; e.g., 2.0 doubles the shift)
+#'        intensity (default \code{FACEHD_SHIFT_STRENGTH_DEFAULT})
 #' @return list with γ parameters for each site and treatment combination
-generate_site_model_parameters <- function(K, p, sigma_epsilon = 0.1, shift_strength = 1.0) {
+generate_site_model_parameters <- function(K, p, sigma_epsilon = 0.1,
+                                           shift_strength = FACEHD_SHIFT_STRENGTH_DEFAULT) {
   gamma_list <- list()
 
   for (j in 1:K) {
@@ -144,7 +145,7 @@ generate_site_model_parameters <- function(K, p, sigma_epsilon = 0.1, shift_stre
 
     # Add small variations to first 2 covariate parameters
     if (p >= 2) {
-      # shift_strength scales the variation: 1.0 = default, >1 = stronger covariate shift
+      # shift_strength scales the variation: larger values produce stronger covariate shift.
       epsilon_0 <- rnorm(2, 0, sigma_epsilon * shift_strength)
       epsilon_1 <- rnorm(2, 0, sigma_epsilon * shift_strength)
 
@@ -303,7 +304,7 @@ generate_site_treatment_assignments <- function(n, site_probs, K) {
     site_nums <- ceiling((source_outcomes - 1) / 2)
     R[source_idx] <- paste0("s", site_nums)
     # Treatment: even outcomes (2,4,6,...) -> 0; odd outcomes (3,5,7,...) -> 1
-    A[source_idx] <- (source_outcomes - 1) %% 2
+    A[source_idx] <- source_outcomes %% 2
   }
   
   return(list(R = R, A = as.integer(A)))
@@ -326,7 +327,7 @@ generate_site_treatment_assignments <- function(n, site_probs, K) {
 #'   - "strong": ~80%% change in 2 non-zero coefficients for all source sites
 #'   - "partial": only first half of source sites have mild heterogeneity
 #' @return observed outcomes (binary: 0/1 for binary; continuous for continuous)
-generate_outcomes <- function(W, A, R, alpha1, alpha0, noise_sd = FACEC_NOISE_SD_DEFAULT,
+generate_outcomes <- function(W, A, R, alpha1, alpha0, noise_sd = FACEHD_NOISE_SD_DEFAULT,
                               outcome_type = "binary",
                               heterogeneity_type = "none") {
   n <- length(A)
@@ -430,134 +431,125 @@ generate_outcomes <- function(W, A, R, alpha1, alpha0, noise_sd = FACEC_NOISE_SD
 #'
 #' @param p number of base covariates
 #' @param K number of source sites (needed for site probability calculation)
-#' @param config configuration ("C1", "C2", "C3", or "C4")
+#' @param config configuration ("C1", "C2", "C3", or "C4"). The FACE-HD
+#'   superpopulation truth is fixed across configurations; \code{config}
+#'   is validated here for interface consistency with \code{generate_simulation_data()}.
 #' @param n_ref size of reference population for Monte Carlo integration (default 100000)
 #' @param ref_seed fixed seed for reference population (default 99999)
 #' @param transform_type type of covariate transformation ("strong", "mild", or "none")
 #' @return list with mu1_superpop (E_t[Y(1)]) and mu0_superpop (E_t[Y(0)])
 #' @details
 #' The TARGET-SPECIFIC superpopulation parameter is defined as:
-#'   E_t[Y(1)] = E[Y(1)|R=t] = E_X[logistic(X^T α_1) * P(R=t|X)] / E_X[P(R=t|X)]
+#'   E_t[Y(1)] = E[Y(1)|R=t] = E_X[logistic(X^\dagger{}^T α_1) * P(R=t|X^\dagger)] / E_X[P(R=t|X^\dagger)]
 #' 
 #' This is computed via importance-weighted Monte Carlo integration:
 #' 1. Generate large reference population with fixed seed
 #' 2. Generate fixed alpha parameters (for consistent site probabilities)
-#' 3. Compute P(R=t|X) for each observation
-#' 4. Weight potential outcomes by P(R=t|X) to get target-specific expectation
+#' 3. Compute P(R=t|X_dagger) for each observation
+#' 4. Weight potential outcomes by P(R=t|X_dagger) to get target-specific expectation
 #'
 #' The same seeds ensure all simulations use the same true value.
 #' 
 #' **Why target-specific?**
-#' FACE-C estimates μ^1_t = E_t[Y(1)], the potential outcome mean in the TARGET 
+#' FACE-HD estimates μ^1_t = E_t[Y(1)], the potential outcome mean in the TARGET 
 #' population. Due to covariate shift, this differs from the overall E[Y(1)].
 #' Using target-specific superpopulation truth ensures we're evaluating the
 #' estimator against the correct inferential target.
 calculate_superpopulation_truth <- function(p, K = 3, config,
-                                          n_ref = 100000, ref_seed = 99999,
-                                          transform_type = "strong",
-                                          site_allocation = "model",
-                                          outcome_type = "binary",
-                                          shift_strength = 1.0) {
+                                            n_ref = 100000, ref_seed = 99999,
+                                            transform_type = "mild",
+                                            site_allocation = "model",
+                                            outcome_type = "binary",
+                                            shift_strength = FACEHD_SHIFT_STRENGTH_DEFAULT) {
+  if (!(config %in% VALID_CONFIGS)) {
+    stop(sprintf("Invalid config: '%s'. Must be one of: %s",
+                 config, paste(VALID_CONFIGS, collapse = ", ")))
+  }
+
   with_seed(ref_seed, {
-  # IMPORTANT: generate gamma_params FIRST before any other RNG calls.
-  # This ensures the same RNG state as in generate_simulation_data(),
-  # which also calls with_seed(99999, generate_site_model_parameters(...)).
-  gamma_params <- generate_site_model_parameters(K, p, shift_strength = shift_strength)
-  
-  # Generate large reference population (RNG state continues after gamma generation)
-  #
-  # For independent allocation, R is deterministic and the estimand is
-  # E[Y(1) | R=t] under the TARGET site's covariate distribution.
-  # To match generate_simulation_data(..., site_allocation="independent"),
-  # we therefore integrate over the target covariate distribution used there.
-  if (site_allocation == "independent") {
-    X_ref <- matrix(rnorm(n_ref * p), nrow = n_ref, ncol = p)
-    X_ref <- apply(X_ref, 2, clip_to_range)
-    colnames(X_ref) <- paste0("X", 1:p)
-  } else {
-    X_ref <- generate_base_covariates(n_ref, p)
-  }
-  X_dagger_ref <- transform_covariates(X_ref, transform_type = transform_type)
-  
-  # Determine which covariates to use for site assignment based on config
-  # C1, C2: Site assignment correctly specified (uses X_dagger)
-  # C3, C4: Site assignment misspecified (uses X)
-  if (config %in% c("C1", "C2")) {
+    # IMPORTANT: generate gamma_params FIRST before any other RNG calls.
+    # This ensures the same RNG state as in generate_simulation_data(),
+    # which also calls with_seed(99999, generate_site_model_parameters(...)).
+    gamma_params <- generate_site_model_parameters(K, p, shift_strength = shift_strength)
+
+    # Generate large reference population (RNG state continues after gamma generation)
+    #
+    # For independent allocation, R is deterministic and the estimand is
+    # E[Y(1) | R=t] under the TARGET site's covariate distribution.
+    # To match generate_simulation_data(..., site_allocation="independent"),
+    # we therefore integrate over the target covariate distribution used there.
+    if (site_allocation == "independent") {
+      X_ref <- matrix(rnorm(n_ref * p), nrow = n_ref, ncol = p)
+      X_ref <- apply(X_ref, 2, clip_to_range)
+      colnames(X_ref) <- paste0("X", 1:p)
+    } else {
+      X_ref <- generate_base_covariates(n_ref, p)
+    }
+    X_dagger_ref <- transform_covariates(X_ref, transform_type = transform_type)
+
+    # The FACE-HD DGP is fixed across C1-C4. Configurations only change the
+    # fitted working bases exposed to estimators in generate_simulation_data().
     Z_site_ref <- X_dagger_ref
-  } else {
-    Z_site_ref <- X_ref
-  }
-  
-  # Calculate site probabilities P(R=t|X), P(R=s_j,A=a|X)
-  site_probs <- calculate_site_probabilities(Z_site_ref, gamma_params, K)
-  
-  # Target probability weights depend on allocation method.
-  # For model allocation, P(R=t|X) varies with X (covariate shift).
-  # For non-model allocations where R is independent of X, E_t[·] = E[·].
-  # For independent allocation, we already generated X_ref from the target
-  # distribution, so uniform weights are appropriate.
-  if (site_allocation == "model") {
-    p_target <- site_probs$p_target
-  } else {
-    p_target <- rep(1, n_ref)  # uniform weights → marginal expectation
-  }
-  
-  # Determine W_outcome based on config
-  # C1, C3: Outcome correctly specified (uses X_dagger)
-  # C2, C4: Outcome misspecified (uses X)
-  if (config %in% c("C1", "C3")) {
     W_ref <- X_dagger_ref
-  } else {
-    W_ref <- X_ref
-  }
-  
-  # True outcome parameters (single source of truth)
-  alphas <- get_true_outcome_parameters(p)
-  alpha1 <- alphas$alpha1
-  alpha0 <- alphas$alpha0
-  
-  # Design matrix with intercept
-  W_design <- cbind(1, W_ref)
-  
-  # Compute conditional means E[Y(a)|X] = logistic(X^T α_a)
-  # Note: For superpopulation, we use target site parameters (no heterogeneity adjustment)
-  eta1 <- as.numeric(W_design %*% alpha1)
-  eta0 <- as.numeric(W_design %*% alpha0)
-  
-  mu1_given_x <- logistic(eta1)
-  mu0_given_x <- logistic(eta0)
-  
-  # For continuous outcomes, truth is identity link (no logistic)
-  if (outcome_type == "continuous") {
-    mu1_given_x <- eta1
-    mu0_given_x <- eta0
-  }
-  
-  # TARGET-SPECIFIC superpopulation parameters using importance weighting:
-  # E_t[Y(a)] = E[Y(a)|R=t] = E_X[μ_a(X) * P(R=t|X)] / E_X[P(R=t|X)]
-  # This is the normalized importance-weighted estimator
-  normalizing_constant <- mean(p_target)
-  mu1_superpop <- sum(mu1_given_x * p_target) / sum(p_target)
-  mu0_superpop <- sum(mu0_given_x * p_target) / sum(p_target)
-  
-  # Also compute overall (marginal) superpopulation for reference
-  mu1_overall <- mean(mu1_given_x)
-  mu0_overall <- mean(mu0_given_x)
-  
-  return(list(
-    # Target-specific superpopulation (what FACE-C estimates)
-    mu1_superpop = mu1_superpop,
-    mu0_superpop = mu0_superpop,
-    ate_superpop = mu1_superpop - mu0_superpop,
-    # Overall (marginal) superpopulation for reference
-    mu1_overall = mu1_overall,
-    mu0_overall = mu0_overall,
-    ate_overall = mu1_overall - mu0_overall,
-    # Diagnostics
-    mean_p_target = normalizing_constant,
-    n_ref = n_ref,
-    ref_seed = ref_seed
-  ))
+
+    # Calculate site probabilities P(R=t|X_dagger), P(R=s_j,A=a|X_dagger)
+    site_probs <- calculate_site_probabilities(Z_site_ref, gamma_params, K)
+
+    # Target probability weights depend on allocation method.
+    # For model allocation, P(R=t|X_dagger) varies with X (covariate shift).
+    # For non-model allocations where R is independent of X, E_t[.] = E[.].
+    # For independent allocation, we already generated X_ref from the target
+    # distribution, so uniform weights are appropriate.
+    if (site_allocation == "model") {
+      p_target <- site_probs$p_target
+    } else {
+      p_target <- rep(1, n_ref)
+    }
+
+    # True outcome parameters (single source of truth)
+    alphas <- get_true_outcome_parameters(p)
+    alpha1 <- alphas$alpha1
+    alpha0 <- alphas$alpha0
+
+    # Design matrix with intercept
+    W_design <- cbind(1, W_ref)
+
+    # Compute conditional means E[Y(a)|X_dagger] = logistic(X_dagger^T alpha_a)
+    eta1 <- as.numeric(W_design %*% alpha1)
+    eta0 <- as.numeric(W_design %*% alpha0)
+
+    mu1_given_x <- logistic(eta1)
+    mu0_given_x <- logistic(eta0)
+
+    # For continuous outcomes, truth is identity link (no logistic)
+    if (outcome_type == "continuous") {
+      mu1_given_x <- eta1
+      mu0_given_x <- eta0
+    }
+
+    # Target-specific superpopulation parameters via importance weighting.
+    normalizing_constant <- mean(p_target)
+    mu1_superpop <- sum(mu1_given_x * p_target) / sum(p_target)
+    mu0_superpop <- sum(mu0_given_x * p_target) / sum(p_target)
+
+    # Also compute overall (marginal) superpopulation for reference.
+    mu1_overall <- mean(mu1_given_x)
+    mu0_overall <- mean(mu0_given_x)
+
+    return(list(
+      # Target-specific superpopulation (what FACE-HD estimates)
+      mu1_superpop = mu1_superpop,
+      mu0_superpop = mu0_superpop,
+      ate_superpop = mu1_superpop - mu0_superpop,
+      # Overall (marginal) superpopulation for reference
+      mu1_overall = mu1_overall,
+      mu0_overall = mu0_overall,
+      ate_overall = mu1_overall - mu0_overall,
+      # Diagnostics
+      mean_p_target = normalizing_constant,
+      n_ref = n_ref,
+      ref_seed = ref_seed
+    ))
   })  # end with_seed
 }
 
@@ -575,16 +567,16 @@ calculate_superpopulation_truth <- function(p, K = 3, config,
 #' @param K number of source sites
 #' @param p number of base covariates
 #' @param config configuration ("C1", "C2", "C3", or "C4")
-#'   - C1: Both models correctly specified (site: X†, outcome: X†)
-#'   - C2: Outcome model misspecified (site: X†, outcome: X)
-#'   - C3: Site/propensity model misspecified (site: X, outcome: X†)
-#'   - C4: Both models misspecified (site: X, outcome: X) - tests DR boundary
+#'   - C1: fitted site/outcome bases both use X† (both correctly specified)
+#'   - C2: fitted site basis uses X†, fitted outcome basis uses X
+#'   - C3: fitted site basis uses X, fitted outcome basis uses X†
+#'   - C4: fitted site/outcome bases both use X (tests DR boundary)
 #' @param estimand_type type of estimand to use for true value calculation:
 #'   - "sample": sample-specific true value E_n[Y(1)] based on realized
 #'     covariates. This varies across simulations and is appropriate for 
 #'     conditional inference. SE should be compared with SD(bias).
 #'   - "superpopulation" (default): fixed superpopulation parameter
-#'     E[Y(1)] = E_X[logistic(X^T α)] computed via Monte Carlo integration.
+#'     E[Y(1)] = E_X[logistic(X_dagger^T α)] computed via Monte Carlo integration.
 #'     This is the same across all simulations and appropriate for
 #'     unconditional/marginal inference. SE should be compared with SD(estimate).
 #' @param site_allocation method for site allocation:
@@ -599,7 +591,7 @@ calculate_superpopulation_truth <- function(p, K = 3, config,
 #'   propensity P(A=1|X) as the model allocation to maintain consistent
 #'   confounding structure.
 #' @param transform_type type of covariate transformation:
-#'   - "strong" (default): aggressive nonlinear transformations (original)
+#'   - "strong": aggressive nonlinear transformations (original)
 #'   - "mild": gentle transformations that preserve IF orthogonality
 #'   - "none": no transformation (X_dagger = X)
 #' @return list with all generated data
@@ -607,13 +599,13 @@ calculate_superpopulation_truth <- function(p, K = 3, config,
 #' The choice of estimand_type affects how to validate SE estimates:
 #' 
 #' **sample:**
-#' - True value = mean(logistic(X_target^T α)) for realized sample X_target
+#' - True value = mean(logistic(X_dagger,target^T α)) for realized sample target covariates
 #' - Different simulations have different true values
 #' - Correct comparison: SE vs SD(bias), where bias = estimate - true_value_i
 #' - Coverage: should be ~95% when SE is correctly estimated
 #' 
 #' **superpopulation (default):**
-#' - True value = E_X[logistic(X^T α)] (fixed across simulations)
+#' - True value = E_X[logistic(X_dagger^T α)] (fixed across simulations)
 #' - All simulations use the same true value
 #' - Correct comparison: SE vs SD(estimate)
 #' - Coverage: may be <95% due to additional variability from true value estimation
@@ -627,18 +619,39 @@ calculate_superpopulation_truth <- function(p, K = 3, config,
 #' - "independent": each site generates data independently (federated-realistic),
 #'   covariate shift comes from different site-specific distributions
 #' @export
-generate_simulation_data <- function(n_total, K = 3, p = 4, config = "C1",
-                                   estimand_type = "superpopulation",
-                                   site_allocation = "model",
-                                   transform_type = "mild",
-                                   outcome_type = "binary",
-                                   heterogeneity_type = "none",
-                                   shift_strength = 1.0,
-                                   # FACE paper DGP parameters (only used when dgp_type = "face")
-                                   dgp_type = "facec",
+generate_simulation_data <- function(n_total = NULL, K = 3, p = 4, config = "C1",
+                                     estimand_type = "superpopulation",
+                                     site_allocation = "model",
+                                     transform_type = "mild",
+                                     outcome_type = "binary",
+                                     heterogeneity_type = "none",
+                                     shift_strength = FACEHD_SHIFT_STRENGTH_DEFAULT,
+                                   # DGP selector: "face" (FACE negative-transfer DGP, default)
+                                   # or "facehd" (FACE-HD DGP). ate_deviation / n_deviated_sites
+                                   # apply only when dgp_type = "face".
+                                   dgp_type = "face",
                                    ate_deviation   = 0.0,
                                    n_deviated_sites = 0L,
+                                   # Explicit per-site sample sizes (FACE DGP only)
+                                   n_target         = NULL,
+                                   n_source_sizes   = NULL,
                                    warn_ignored = TRUE) {
+  # Explicit per-site sample sizes are a FACE-DGP feature. Reject them for the
+  # facehd DGP (which controls site sizes via site_allocation) rather than
+  # silently ignoring the request.
+  if ((!is.null(n_source_sizes) || !is.null(n_target)) && dgp_type != "face") {
+    stop("n_target / n_source_sizes (explicit per-site sizes) are supported only ",
+         "for dgp_type = 'face'; the facehd DGP sets site sizes via site_allocation.",
+         call. = FALSE)
+  }
+  # In per-site mode, derive a concrete n_total (and K) so the centralized
+  # validation and result bookkeeping see values consistent with the allocation.
+  if (!is.null(n_source_sizes)) {
+    site_sizes <- resolve_face_site_sizes(n_total, n_target, n_source_sizes, K)
+    n_total    <- site_sizes$n_total
+    K          <- site_sizes$K
+  }
+
   # Validate all parameters via centralized function (single source of truth)
   validate_simulation_params(
     estimand_type    = estimand_type,
@@ -659,7 +672,7 @@ generate_simulation_data <- function(n_total, K = 3, p = 4, config = "C1",
 
   # ---- FACE paper DGP (Han et al., JASA 2023, Section 5.1) ----
   # Self-contained early return: all data generation for this DGP is handled
-  # here so that the existing FACE-C code below is not affected in any way.
+  # here so that the existing FACE-HD code below is not affected in any way.
   if (dgp_type == "face") {
     return(
       generate_face_data(
@@ -670,7 +683,9 @@ generate_simulation_data <- function(n_total, K = 3, p = 4, config = "C1",
         estimand_type    = estimand_type,
         outcome_type     = outcome_type,
         ate_deviation    = ate_deviation,
-        n_deviated_sites = as.integer(n_deviated_sites)
+        n_deviated_sites = as.integer(n_deviated_sites),
+        n_target         = n_target,
+        n_source_sizes   = n_source_sizes
       )
     )
   }
@@ -696,8 +711,9 @@ generate_simulation_data <- function(n_total, K = 3, p = 4, config = "C1",
     # Generate deterministic site-specific shift vectors (fixed across simulations)
     # Uses a different seed (99998) from gamma_params (99999) to avoid correlation.
     # Shift magnitude controlled by shift_strength (INDEPENDENT_SHIFT_SD from constants.R):
-    #   shift_strength = 1.0 → mild shift (~INDEPENDENT_SHIFT_SD SD in first 4 covariates)
-    #   shift_strength = 2.0 → moderate shift (~2*INDEPENDENT_SHIFT_SD SD)
+    #   shift_strength = 0.5 -> default moderate shift
+    #   shift_strength = 1.0 -> stronger shift
+    #   shift_strength = 2.0 -> stress-test shift
     site_shifts <- with_seed(99998, {
       shifts_list <- list()
       for (j in 1:K) {
@@ -733,26 +749,40 @@ generate_simulation_data <- function(n_total, K = 3, p = 4, config = "C1",
     # Shared-pool generation: all subjects drawn from common distribution
     X <- generate_base_covariates(n_total, p)
   }
-  
+
   # Generate transformed covariates
   X_dagger <- transform_covariates(X, transform_type = transform_type)
-  
-  # Determine which covariates to use for site assignment based on config
-  # C1, C2: Site assignment correctly specified (uses X_dagger)
-  # C3, C4: Site assignment misspecified (uses X)
+
+  # True FACE-HD DGP bases. These stay fixed across C1-C4 so configurations
+  # only change the fitted working bases exposed to estimators.
+  Z_site_true <- X_dagger
+  W_outcome_true <- X_dagger
+
+  # Determine fitted site basis based on config.
+  # C1, C2: correctly specified (uses X_dagger)
+  # C3, C4: misspecified (uses X)
   if (config %in% c("C1", "C2")) {
-    Z_site <- X_dagger  # Correct specification for site assignment
+    Z_site <- X_dagger
   } else {
-    Z_site <- X  # Misspecified for site assignment (C3, C4)
+    Z_site <- X
   }
-  
+
+  # Determine fitted outcome basis based on config.
+  # C1, C3: correctly specified (uses X_dagger)
+  # C2, C4: misspecified (uses X)
+  if (config %in% c("C1", "C3")) {
+    W_outcome <- X_dagger
+  } else {
+    W_outcome <- X
+  }
+
   # ---- Site membership & treatment assignment ----
   # All allocation methods share the same covariate-dependent treatment propensity
   # P(A=1|X) derived from the multinomial γ parameters. Only the mechanism that
   # assigns subjects to sites differs. This keeps the confounding structure
   # constant so that differences in estimation accuracy are attributable solely
   # to site-size proportions, not to changes in the treatment mechanism.
-  site_probs <- calculate_site_probabilities(Z_site, gamma_params, K)
+  site_probs <- calculate_site_probabilities(Z_site_true, gamma_params, K)
   p_treat_true <- calculate_treatment_propensity(site_probs, K, n_total)
 
   if (site_allocation == "model") {
@@ -783,24 +813,15 @@ generate_simulation_data <- function(n_total, K = 3, p = 4, config = "C1",
     # Treatment from covariate-dependent propensity (same formula as model allocation)
     A <- rbinom(n_total, 1, p_treat_true)
   }
-  
-  # Determine which covariates to use for outcome model based on config
-  # C1, C3: Outcome correctly specified (uses X_dagger)
-  # C2, C4: Outcome misspecified (uses X)
-  if (config %in% c("C1", "C3")) {
-    W_outcome <- X_dagger  # Correct specification for outcome
-  } else {
-    W_outcome <- X  # Misspecified for outcome (C2, C4)
-  }
-  
+
   # True outcome parameters (single source of truth)
   alphas <- get_true_outcome_parameters(p)
   alpha1 <- alphas$alpha1
   alpha0 <- alphas$alpha0
 
   # Generate outcomes
-  Y <- generate_outcomes(W_outcome, A, R, alpha1, alpha0, 
-                         noise_sd = FACEC_NOISE_SD_DEFAULT,
+  Y <- generate_outcomes(W_outcome_true, A, R, alpha1, alpha0,
+                         noise_sd = FACEHD_NOISE_SD_DEFAULT,
                          outcome_type = outcome_type,
                          heterogeneity_type = heterogeneity_type)
   
@@ -809,34 +830,34 @@ generate_simulation_data <- function(n_total, K = 3, p = 4, config = "C1",
   # Y_0: potential outcome under treatment A=0
   A_ones <- rep(1, n_total)
   A_zeros <- rep(0, n_total)
-  
-  Y_1 <- generate_outcomes(W_outcome, A_ones, R, alpha1, alpha0, 
-                          noise_sd = FACEC_NOISE_SD_DEFAULT,
-                          outcome_type = outcome_type,
-                          heterogeneity_type = heterogeneity_type)
-  Y_0 <- generate_outcomes(W_outcome, A_zeros, R, alpha1, alpha0, 
-                          noise_sd = FACEC_NOISE_SD_DEFAULT,
-                          outcome_type = outcome_type,
-                          heterogeneity_type = heterogeneity_type)
+
+  Y_1 <- generate_outcomes(W_outcome_true, A_ones, R, alpha1, alpha0,
+                           noise_sd = FACEHD_NOISE_SD_DEFAULT,
+                           outcome_type = outcome_type,
+                           heterogeneity_type = heterogeneity_type)
+  Y_0 <- generate_outcomes(W_outcome_true, A_zeros, R, alpha1, alpha0,
+                           noise_sd = FACEHD_NOISE_SD_DEFAULT,
+                           outcome_type = outcome_type,
+                           heterogeneity_type = heterogeneity_type)
   
   # Calculate true potential outcome means
   # The interpretation depends on estimand_type:
   #   - "sample": sample-specific E_n[Y(1)] based on realized target covariates
-  #   - "superpopulation": fixed E_X[Y(1)] = E[logistic(X^T α)] over covariate distribution
+  #   - "superpopulation": fixed E_X[Y(1)] = E[logistic(X_dagger^T α)] over covariate distribution
   target_idx <- R == "t"
   
   if (estimand_type == "sample") {
     # Sample-specific true values (original behavior)
     # These vary across simulations due to different realized covariates
     # mu1_sample = (1/n_t) * sum_{i in target} logistic(X_i^T α_1)
-    W_target <- W_outcome[target_idx, , drop = FALSE]
+    W_target <- W_outcome_true[target_idx, , drop = FALSE]
     W_target_design <- cbind(1, W_target)
     
     eta1_target <- as.numeric(W_target_design %*% alpha1)
     eta0_target <- as.numeric(W_target_design %*% alpha0)
     
-    mu1_true <- mean(logistic(eta1_target))  # E_n[logistic(X^T α_1)]
-    mu0_true <- mean(logistic(eta0_target))  # E_n[logistic(X^T α_0)]
+    mu1_true <- mean(logistic(eta1_target))  # E_n[logistic(X_dagger^T α_1)]
+    mu0_true <- mean(logistic(eta0_target))  # E_n[logistic(X_dagger^T α_0)]
     
     # For continuous outcomes, truth is identity link (no logistic)
     if (outcome_type == "continuous") {
@@ -862,9 +883,9 @@ generate_simulation_data <- function(n_total, K = 3, p = 4, config = "C1",
     )
     mu1_true <- superpop_truth$mu1_superpop
     mu0_true <- superpop_truth$mu0_superpop
-    
+
     # Also compute sample-specific values for reference
-    W_target <- W_outcome[target_idx, , drop = FALSE]
+    W_target <- W_outcome_true[target_idx, , drop = FALSE]
     W_target_design <- cbind(1, W_target)
     eta1_target <- as.numeric(W_target_design %*% alpha1)
     eta0_target <- as.numeric(W_target_design %*% alpha0)
@@ -897,11 +918,13 @@ generate_simulation_data <- function(n_total, K = 3, p = 4, config = "C1",
     alpha1_true = alpha1,
     alpha0_true = alpha0,
     config = config,
+    Z_site_true = Z_site_true,
+    W_outcome_true = W_outcome_true,
     Z_site = Z_site,
     W_outcome = W_outcome,
     estimand_type = estimand_type,  # Record which estimand type was used
     outcome_type = outcome_type,    # Record outcome type
-    dgp_type = "facec"              # Record DGP type
+    dgp_type = "facehd"              # Record DGP type
   )
   
   return(data)
@@ -925,6 +948,8 @@ split_data_by_site <- function(data) {
       X_dagger = data$X_dagger[idx, , drop = FALSE],
       A = data$A[idx],
       Y = data$Y[idx],
+      Z_site_true = (data$Z_site_true %||% data$Z_site)[idx, , drop = FALSE],
+      W_outcome_true = (data$W_outcome_true %||% data$W_outcome)[idx, , drop = FALSE],
       Z_site = data$Z_site[idx, , drop = FALSE],
       W_outcome = data$W_outcome[idx, , drop = FALSE]
     )

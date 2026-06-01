@@ -1,4 +1,4 @@
-# parallel_utils.R - Parallelization utilities for FACE-C cross-fitting
+# parallel_utils.R - Parallelization utilities for FACE-HD cross-fitting
 #
 # Provides setup_parallel() and parallel_lapply() used by cross_fitting_algorithms.R
 # to process multiple source sites in parallel.
@@ -13,29 +13,48 @@
 #'   If -1, uses all available cores minus 1.
 #' @return Number of cores to use (1 for sequential)
 setup_parallel <- function(n_cores = NULL) {
-  if (is.null(n_cores) || n_cores == 1) {
+  if (is.null(n_cores)) {
     return(1)
+  }
+  if (length(n_cores) != 1L || !is.numeric(n_cores) || is.na(n_cores) ||
+      abs(n_cores - round(n_cores)) > sqrt(.Machine$double.eps)) {
+    stop("setup_parallel: n_cores must be NULL, -1, or a positive integer.",
+         call. = FALSE)
+  }
+  if (n_cores == 1) {
+    return(1)
+  }
+  if (n_cores == 0 || n_cores < -1) {
+    stop("setup_parallel: n_cores must be NULL, -1, or a positive integer.",
+         call. = FALSE)
   }
   
   # Load parallel package
   if (!requireNamespace("parallel", quietly = TRUE)) {
-    warning(sprintf(
-      "setup_parallel: 'parallel' namespace not available; falling back to sequential processing (requested n_cores=%s).",
+    stop(sprintf(
+      "setup_parallel: requested n_cores=%s but the 'parallel' namespace is not available.",
       format(n_cores)
     ), call. = FALSE)
-    return(1)
   }
   
   max_cores <- parallel::detectCores()
+  if (length(max_cores) != 1L || is.na(max_cores) || max_cores < 1L) {
+    stop("setup_parallel: parallel::detectCores() did not return a positive core count.",
+         call. = FALSE)
+  }
   
   if (n_cores == -1) {
     # Use all cores minus 1
     n_cores <- max(1, max_cores - 1)
-  } else {
-    n_cores <- min(n_cores, max_cores)
+  } else if (n_cores > max_cores) {
+    warning(sprintf(
+      "setup_parallel: requested n_cores=%d exceeds detected cores=%d; using %d cores.",
+      as.integer(n_cores), as.integer(max_cores), as.integer(max_cores)
+    ), call. = FALSE)
+    n_cores <- max_cores
   }
   
-  return(max(1, n_cores))
+  return(as.integer(max(1, n_cores)))
 }
 
 #' Apply function over list with optional parallelization
@@ -57,10 +76,11 @@ parallel_lapply <- function(x, fun, n_cores = 1, ...) {
     on.exit(parallel::stopCluster(cl), add = TRUE)
     # Export only the functions transitively needed by 'fun' to workers.
     # Data variables are captured via fun's closure automatically.
+    if (!requireNamespace("codetools", quietly = TRUE)) {
+      stop("parallel_lapply: codetools is required for Windows socket workers; install codetools or run with n_cores = 1.",
+           call. = FALSE)
+    }
     needed_fns <- tryCatch({
-      if (!requireNamespace("codetools", quietly = TRUE)) {
-        stop("codetools not available")
-      }
       available_fns <- Filter(function(nm) is.function(get(nm, envir = globalenv())),
                               ls(envir = globalenv()))
       # Recursively find all global functions referenced by fun and its callees
@@ -74,20 +94,16 @@ parallel_lapply <- function(x, fun, n_cores = 1, ...) {
         sub_refs <- tryCatch(
           codetools::findGlobals(get(fn_name, envir = globalenv()), merge = FALSE)$functions,
           error = function(e) {
-            warning(sprintf("parallel_lapply: codetools::findGlobals failed for '%s': %s. Skipping transitive deps.",
-                            fn_name, conditionMessage(e)))
-            character(0)
+            stop(sprintf("parallel_lapply: codetools::findGlobals failed for '%s': %s",
+                         fn_name, conditionMessage(e)), call. = FALSE)
           }
         )
         queue <- c(queue, setdiff(intersect(sub_refs, available_fns), seen))
       }
       seen
     }, error = function(e) {
-      # Fallback: export all global functions if static analysis fails
-      warning(sprintf("parallel_lapply: static dependency analysis failed: %s. Exporting all global functions.",
-                      conditionMessage(e)))
-      Filter(function(nm) is.function(get(nm, envir = globalenv())),
-             ls(envir = globalenv()))
+      stop(sprintf("parallel_lapply: static dependency analysis failed; refusing to export all global functions automatically. Original error: %s",
+                   conditionMessage(e)), call. = FALSE)
     })
     if (length(needed_fns) > 0) {
       parallel::clusterExport(cl, needed_fns, envir = globalenv())

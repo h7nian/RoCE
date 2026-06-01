@@ -1,0 +1,10 @@
+[2026-05-28 04:36:33] config seed=40 n=5000 K=3 p=10 C2 folds=10 nlambda_init=100 methods=oracle_dr,one_round_crossfit,two_round_crossfit nuisance_rule=1se agg_rule=min
+[2026-05-28 04:36:34] data truth=0.58528775 mu1_realized=0.59060457 n_t=1400 n_sources=1086,1125,1389
+[2026-05-28 04:36:34] method_start oracle_dr
+[2026-05-28 04:36:34] method_done oracle_dr estimate=0.58741334 bias=0.00212560 se=0.01148251 elapsed_sec=0.0
+[2026-05-28 04:36:34] crossfit_start one_round_crossfit
+[2026-05-28 04:37:16] crossfit_done one_round_crossfit estimate=0.56438086 bias=-0.02090688 se=0.01072433 target_bias=-0.04382155 weight_l1=0.6823 elapsed_sec=40.9
+[2026-05-28 04:37:16] crossfit_start two_round_crossfit
+[2026-05-28 04:37:53] crossfit_done two_round_crossfit estimate=0.55980190 bias=-0.02548585 se=0.01062435 target_bias=-0.04382155 weight_l1=0.6878 elapsed_sec=36.5
+[2026-05-28 04:37:53] output runs=c2_core_intermediate_output/20260528_043633_job9874703_seed40_nuis1se_aggmin_method_runs.csv
+[2026-05-28 04:37:53] output contracts=c2_core_intermediate_output/20260528_043633_job9874703_seed40_nuis1se_aggmin_paper_contracts.csv

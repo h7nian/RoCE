@@ -1,0 +1,14 @@
+[2026-05-25 21:59:55] config seed=240001 n=5000 K=5 p=50 C2 folds=10 nlambda_init=100 methods=target_only,federated_dr,pooled_dr,tilted_aipw,oracle_dr nuisance_rule=min agg_rule=min
+[2026-05-25 21:59:57] data truth=0.58914556 mu1_realized=0.59072769 n_t=962 n_sources=812,734,772,835,885
+[2026-05-25 21:59:57] method_start target_only
+[2026-05-25 21:59:58] method_done target_only estimate=0.54273024 bias=-0.04641532 se=0.02312002 elapsed_sec=1.4
+[2026-05-25 21:59:58] method_start federated_dr
+[2026-05-25 22:00:08] method_done federated_dr estimate=0.57571091 bias=-0.01343465 se=0.01405934 elapsed_sec=9.7
+[2026-05-25 22:00:17] method_start pooled_dr
+[2026-05-25 22:00:27] method_done pooled_dr estimate=0.57233005 bias=-0.01681550 se=0.01500509 elapsed_sec=9.9
+[2026-05-25 22:00:27] method_start tilted_aipw
+[2026-05-25 22:00:28] method_done tilted_aipw estimate=0.56739167 bias=-0.02175389 se=0.01364178 elapsed_sec=0.5
+[2026-05-25 22:00:28] method_start oracle_dr
+[2026-05-25 22:00:28] method_done oracle_dr estimate=0.58844895 bias=-0.00069661 se=0.01210179 elapsed_sec=0.0
+[2026-05-25 22:00:28] output runs=c2_core_intermediate_output/20260525_215955_method_runs.csv
+[2026-05-25 22:00:28] output contracts=c2_core_intermediate_output/20260525_215955_paper_contracts.csv

@@ -1,0 +1,2 @@
+"sim_id","method","estimate","se","bias","coverage","ci_width","n_total","K","p","config","heterogeneity_type","estimand_type","dgp_type"
+353001,"target_only",0.574656487264747,0.0518964417087567,-0.00644749364712982,TRUE,0.203430313349891,500,2,10,"C2","none","superpopulation","facec"

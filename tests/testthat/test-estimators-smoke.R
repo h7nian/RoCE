@@ -22,14 +22,17 @@ library(testthat)
 
 # Uses shared make_small_data_split() from helper-data.R. The K=2 split gives
 # SSW / IVW more than one source site so the random-effects variance has a
-# well-defined Cochran's-Q step.
+# well-defined Cochran's-Q step. n_per_site is kept comfortably large so that the
+# per-site treated-arm outcome CV folds are never degenerate (a single treated
+# fold with one outcome class makes estimate_target_only_crossfit fail-fast); the
+# comparison methods are happy-path estimators, not meant for pathologically tiny sites.
 
 .estimator_smoke_cache <- new.env(parent = emptyenv())
 
 .get_estimator_smoke <- function() {
   if (!exists("payload", envir = .estimator_smoke_cache, inherits = FALSE)) {
     data_split <- make_small_data_split(
-      n_per_site = 60L, K = 2L, p = 4L,
+      n_per_site = 200L, K = 2L, p = 4L,
       seed = 2026L, n_folds = 3L,
       outcome_type = "binary"
     )
@@ -120,7 +123,7 @@ test_that("estimate_oracle_dr: runs with true nuisance parameters and is finite"
   payload <- .get_estimator_smoke()
   data <- payload$data
   skip_if(is.null(data$gamma_params) || is.null(data$alpha1_true),
-          message = "FACE-C truth (gamma_params + alpha1_true) not exposed.")
+          message = "FACE-HD truth (gamma_params + alpha1_true) not exposed.")
 
   res <- estimate_oracle_dr(
     payload$data_split,
@@ -131,6 +134,25 @@ test_that("estimate_oracle_dr: runs with true nuisance parameters and is finite"
     lambda_selection = 0.05
   )
   .check_point_estimator(res, "oracle_dr", require_ci = FALSE)
+})
+
+test_that("estimate_oracle_dr: default CV uses legacy min aggregation rule", {
+  skip_if_not(exists("fit_general_glm_cpp"), message = "C++ not compiled")
+  payload <- .get_estimator_smoke()
+  data <- payload$data
+  skip_if(is.null(data$gamma_params) || is.null(data$alpha1_true),
+          message = "FACE-HD truth (gamma_params + alpha1_true) not exposed.")
+
+  res <- estimate_oracle_dr(
+    payload$data_split,
+    alpha1_true  = data$alpha1_true,
+    gamma_params = data$gamma_params,
+    outcome_type = "binary",
+    A_val        = 1L,
+    lambda_grid  = c(0.01, 0.05, 0.1)
+  )
+  .check_point_estimator(res, "oracle_dr", require_ci = FALSE)
+  expect_equal(res$aggregation_lambda_rule, "min")
 })
 
 # ============================================================================

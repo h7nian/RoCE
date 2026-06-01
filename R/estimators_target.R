@@ -7,7 +7,7 @@
 # Contents:
 #   1. estimate_target_only (main entry point)
 #   2. estimate_target_only_crossfit (standalone cross-fitting)
-#   3. estimate_target_only_from_complement (for use inside FACE-C outer loop)
+#   3. estimate_target_only_from_complement (for use inside FACE-HD outer loop)
 
 #' Target-only estimator using doubly robust AIPW
 #' @param data_split split data by site
@@ -38,7 +38,7 @@ estimate_target_only <- function(data_split, family = "binomial",
 #'
 #' @note This function performs its OWN internal K-fold cross-fitting and is
 #'   intended for **standalone** use (e.g., comparison methods, ATE estimation
-#'   in main.R). When called inside the outer cross-fitting loop of FACE-C
+#'   in main.R). When called inside the outer cross-fitting loop of FACE-HD
 #'   algorithms (\code{run_crossfit(..., communication_mode = "one_round"/"two_round")}), use
 #'   \code{\link{estimate_target_only_from_complement}} instead to avoid
 #'   nested cross-fitting that inflates \code{V_ot}.
@@ -60,7 +60,12 @@ estimate_target_only_crossfit <- function(target_data, n_folds = 3,
   
   y <- target_data$Y
   tr <- target_data$A
-  x <- as.matrix(target_data$W_outcome)
+  x_or <- as.matrix(target_data$W_outcome)
+  x_ps <- if (!is.null(target_data$Z_site)) {
+    as.matrix(target_data$Z_site)
+  } else {
+    x_or
+  }
   n <- target_data$n
   
   if (sum(tr == A_val) == 0) {
@@ -74,14 +79,15 @@ estimate_target_only_crossfit <- function(target_data, n_folds = 3,
   treated_idx <- which(tr == 1)
   control_idx <- which(tr == 0)
   
-  if (length(treated_idx) >= n_folds && length(control_idx) >= n_folds) {
-    # Stratified assignment: shuffle each arm separately
-    fold_ids[treated_idx] <- sample(rep(1:n_folds, length.out = length(treated_idx)))
-    fold_ids[control_idx] <- sample(rep(1:n_folds, length.out = length(control_idx)))
-  } else {
-    # Fallback: random assignment when too few in one arm
-    fold_ids <- sample(rep(1:n_folds, length.out = n))
+  if (length(treated_idx) < n_folds || length(control_idx) < n_folds) {
+    stop(sprintf(
+      "estimate_target_only_crossfit: too few treated or control units for %d stratified folds (treated=%d, control=%d). Reduce n_folds or provide data with at least one observation per treatment arm in every fold.",
+      n_folds, length(treated_idx), length(control_idx)
+    ), call. = FALSE)
   }
+  # Stratified assignment: shuffle each arm separately
+  fold_ids[treated_idx] <- sample(rep(1:n_folds, length.out = length(treated_idx)))
+  fold_ids[control_idx] <- sample(rep(1:n_folds, length.out = length(control_idx)))
   
   # Initialize output vectors
   prop_scores_oof <- numeric(n)
@@ -92,10 +98,17 @@ estimate_target_only_crossfit <- function(target_data, n_folds = 3,
     val_idx <- which(fold_ids == k)
     train_idx <- which(fold_ids != k)
     
-    if (length(val_idx) == 0 || length(train_idx) == 0) next
+    if (length(val_idx) == 0 || length(train_idx) == 0) {
+      stop(sprintf(
+        "estimate_target_only_crossfit: fold %d has an empty validation or training split (n_val=%d, n_train=%d).",
+        k, length(val_idx), length(train_idx)
+      ), call. = FALSE)
+    }
     
-    X_train <- x[train_idx, , drop = FALSE]
-    X_val <- x[val_idx, , drop = FALSE]
+    X_or_train <- x_or[train_idx, , drop = FALSE]
+    X_or_val <- x_or[val_idx, , drop = FALSE]
+    X_ps_train <- x_ps[train_idx, , drop = FALSE]
+    X_ps_val <- x_ps[val_idx, , drop = FALSE]
     y_train <- y[train_idx]
     tr_train <- tr[train_idx]
     
@@ -107,7 +120,7 @@ estimate_target_only_crossfit <- function(target_data, n_folds = 3,
       ), call. = FALSE)
     }
     ps_fit <- fit_glmnet_cv(
-      x_train = X_train, y_train = as.numeric(tr_train), x_predict = X_val,
+      x_train = X_ps_train, y_train = as.numeric(tr_train), x_predict = X_ps_val,
       family = "binomial",
       caller_name = "estimate_target_only_crossfit", model_name = "PS",
       fold_id = k
@@ -123,11 +136,11 @@ estimate_target_only_crossfit <- function(target_data, n_folds = 3,
         k, length(treated_train_idx), A_val, MIN_TREATED_FOR_MODEL
       ), call. = FALSE)
     }
-    X_treated_train <- X_train[treated_train_idx, , drop = FALSE]
+    X_treated_train <- X_or_train[treated_train_idx, , drop = FALSE]
     y_treated_train <- y_train[treated_train_idx]
 
     or_fit <- fit_glmnet_cv(
-      x_train = X_treated_train, y_train = y_treated_train, x_predict = X_val,
+      x_train = X_treated_train, y_train = y_treated_train, x_predict = X_or_val,
       family = glm_spec$glmnet_family,
       clip_fn = function(pred) clip_outcome_pred(pred, family),
       caller_name = "estimate_target_only_crossfit", model_name = "OR",
@@ -171,7 +184,7 @@ estimate_target_only_crossfit <- function(target_data, n_folds = 3,
 #' This avoids the nested cross-fitting that inflates V_ot when called on
 #' small per-fold data.
 #'
-#' Intended to be used **inside** the main cross-fitting loop of FACE-C
+#' Intended to be used **inside** the main cross-fitting loop of FACE-HD
 #' algorithms (\code{run_crossfit(..., communication_mode = "one_round"/"two_round")}) where the
 #' outer loop already provides cross-fitting structure. For standalone use
 #' (no outer loop), use \code{\link{estimate_target_only_crossfit}} instead.
@@ -206,10 +219,20 @@ estimate_target_only_from_complement <- function(target_folds, k1, n_folds,
   eval_fold <- if (is.null(k2)) k1 else k2
   eval_data <- materialize_fold(target_folds, eval_fold)
 
-  x_train <- as.matrix(train_data$W_outcome)
+  x_or_train <- as.matrix(train_data$W_outcome)
+  x_ps_train <- if (!is.null(train_data$Z_site)) {
+    as.matrix(train_data$Z_site)
+  } else {
+    x_or_train
+  }
   y_train <- train_data$Y
   tr_train <- train_data$A
-  x_eval <- as.matrix(eval_data$W_outcome)
+  x_or_eval <- as.matrix(eval_data$W_outcome)
+  x_ps_eval <- if (!is.null(eval_data$Z_site)) {
+    as.matrix(eval_data$Z_site)
+  } else {
+    x_or_eval
+  }
   y_eval <- eval_data$Y
   tr_eval <- eval_data$A
   n_eval <- eval_data$n
@@ -224,7 +247,8 @@ estimate_target_only_from_complement <- function(target_folds, k1, n_folds,
     "k1=", k1,
     ";k2=", if (is.null(k2)) "NA" else as.character(k2),
     ";eval=", eval_fold,
-    ";exclude=", paste(sort(exclude_folds), collapse = ",")
+    ";exclude=", paste(sort(exclude_folds), collapse = ","),
+    ";ps_basis=Z_site"
   )
 
   # --- Propensity score model: train on complement, predict on eval fold ---
@@ -238,7 +262,7 @@ estimate_target_only_from_complement <- function(target_folds, k1, n_folds,
       ), call. = FALSE)
     }
     prop_scores_eval <- fit_glmnet_cv(
-      x_train = x_train, y_train = as.numeric(tr_train), x_predict = x_eval,
+      x_train = x_ps_train, y_train = as.numeric(tr_train), x_predict = x_ps_eval,
       family = "binomial",
       clip_fn = clip_propensity,
       caller_name = "estimate_complement_fold_aipw", model_name = "PS"
@@ -250,7 +274,7 @@ estimate_target_only_from_complement <- function(target_folds, k1, n_folds,
   prop_scores_eval <- clip_propensity(prop_scores_eval)
 
   # --- Outcome model: train on treated in complement, predict on fold k1 ---
-  X_treated_train <- x_train[treated_train_idx, , drop = FALSE]
+  X_treated_train <- x_or_train[treated_train_idx, , drop = FALSE]
   y_treated_train <- y_train[treated_train_idx]
 
   if (length(treated_train_idx) < MIN_TREATED_FOR_MODEL) {
@@ -261,7 +285,7 @@ estimate_target_only_from_complement <- function(target_folds, k1, n_folds,
     ), call. = FALSE)
   }
   m_pred_eval <- fit_glmnet_cv(
-    x_train = X_treated_train, y_train = y_treated_train, x_predict = x_eval,
+    x_train = X_treated_train, y_train = y_treated_train, x_predict = x_or_eval,
     family = glm_spec$glmnet_family,
     clip_fn = function(pred) clip_outcome_pred(pred, family),
     caller_name = "estimate_complement_fold_aipw", model_name = "OR"

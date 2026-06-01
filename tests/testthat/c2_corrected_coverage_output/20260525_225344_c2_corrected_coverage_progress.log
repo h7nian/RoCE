@@ -1,0 +1,4 @@
+[2026-05-25 22:53:44] start job=1/1 rep=1 seed=353001 n=500 K=2 p=10
+[2026-05-25 22:53:44] method_start job=1/1 rep=1 seed=353001 n=500 K=2 p=10 method=target_only
+[2026-05-25 22:53:45] method_done job=1/1 rep=1 seed=353001 n=500 K=2 p=10 method=target_only estimate=0.574656 se=0.051896 elapsed_sec=0.4
+[2026-05-25 22:53:45] done job=1/1 rep=1 seed=353001 n=500 K=2 p=10 runner=direct rows=1 elapsed_sec=1.1

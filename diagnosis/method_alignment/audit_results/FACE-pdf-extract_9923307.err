@@ -1,0 +1,4 @@
+  File "diagnosis/method_alignment/extract_method_pdfs.py", line 12
+    from __future__ import annotations
+    ^
+SyntaxError: future feature annotations is not defined

@@ -1,0 +1,1888 @@
+\newif\ifFACEHDSTANDALONE
+\ifdefined\FACEHDINMAIN
+  \FACEHDSTANDALONEfalse
+\else
+  \FACEHDSTANDALONEtrue
+\fi
+
+\ifFACEHDSTANDALONE
+\documentclass{article}
+
+\usepackage[a4paper, margin=1in]{geometry}
+\usepackage{amssymb}
+\usepackage{amsmath}
+\usepackage{amsthm}
+\usepackage{mathtools} % For \coloneqq
+\usepackage{bm} % For \boldsymbol
+\usepackage[dvipsnames]{xcolor} % Use dvipsnames for Maroon color if needed
+\usepackage[authoryear]{natbib}
+\usepackage{enumitem}
+\usepackage{face_hd_common}
+\usepackage{refcount}
+\usepackage{xr-hyper}
+\usepackage[colorlinks=true,linkcolor=blue,citecolor=Blue,urlcolor=Blue]{hyperref}
+\usepackage[nameinlink,noabbrev]{cleveref}
+\crefname{equation}{Eq.}{Eqs.}
+\Crefname{equation}{Equation}{Equations}
+\crefname{assumption}{Assumption}{Assumptions}
+\Crefname{assumption}{Assumption}{Assumptions}
+\crefname{definition}{Definition}{Definitions}
+\Crefname{definition}{Definition}{Definitions}
+\crefname{lemma}{Lemma}{Lemmas}
+\Crefname{lemma}{Lemma}{Lemmas}
+\crefname{theorem}{Theorem}{Theorems}
+\Crefname{theorem}{Theorem}{Theorems}
+\crefname{corollary}{Corollary}{Corollaries}
+\Crefname{corollary}{Corollary}{Corollaries}
+\crefname{proposition}{Proposition}{Propositions}
+\Crefname{proposition}{Proposition}{Propositions}
+\crefname{remark}{Remark}{Remarks}
+\Crefname{remark}{Remark}{Remarks}
+\crefname{section}{Section}{Sections}
+\Crefname{section}{Section}{Sections}
+\crefname{subsection}{Section}{Sections}
+\Crefname{subsection}{Section}{Sections}
+\crefname{appendix}{Supplemental Material}{Supplemental Material}
+\Crefname{appendix}{Supplemental Material}{Supplemental Material}
+\crefname{subappendix}{Supplemental Material}{Supplemental Material}
+\Crefname{subappendix}{Supplemental Material}{Supplemental Material}
+\crefname{paragraph}{Section}{Sections}
+\Crefname{paragraph}{Section}{Sections}
+\setlength{\emergencystretch}{3em}
+\sloppy
+
+% Import labels from main.tex while ignoring BibTeX citation definitions in main.aux
+% (otherwise natbib will warn about multiply-defined citations).
+\makeatletter
+\let\XR@old@bibcite\bibcite
+\renewcommand\bibcite[2]{}
+\externaldocument[main-]{main}
+\let\bibcite\XR@old@bibcite
+\makeatother
+\fi
+
+\providecommand{\hj}[1]{\textcolor{Maroon}{[Marquis: #1]}}
+\newcommand{\maincref}[1]{\ifFACEHDSTANDALONE\cref{main-#1}\else\cref{#1}\fi}
+\ifFACEHDSTANDALONE
+  \newcommand{\FACEHDEndDocument}{\end{document}}
+\else
+  \newcommand{\FACEHDEndDocument}{}
+\fi
+
+\ifFACEHDSTANDALONE
+% --- Document Start ---
+\begin{document}
+
+\title{Supplemental Material for FACE-HD}
+\author{Sinian Zhang}
+\date{}
+\maketitle
+
+\appendix
+\renewcommand{\thesection}{S\arabic{section}}
+\renewcommand{\thesubsection}{S\arabic{section}.\arabic{subsection}}
+\setcounter{section}{0}
+
+\section*{Supplemental Material}
+\addcontentsline{toc}{section}{Supplemental Material}
+\providecommand{\suppcontentsline}[2]{%
+  \noindent\hyperref[#1]{\makebox[3.8em][l]{\ref*{#1}}#2}\dotfill\pageref*{#1}\par}
+\providecommand{\suppsubcontentsline}[2]{%
+  \noindent\hspace*{1.5em}\hyperref[#1]{\makebox[4.8em][l]{\ref*{#1}}#2}\dotfill\pageref*{#1}\par}
+
+\subsection*{Contents}
+\suppcontentsline{app:asymptotic_pairwise}{Asymptotic Normality of the Cross-Fitted Estimator}
+\suppsubcontentsline{app:setup_notation}{Setup and Notation}
+\suppsubcontentsline{app:assumptions}{Assumptions}
+\suppsubcontentsline{app:main_theorem_proof}{Main Theorem and Proof}
+\suppsubcontentsline{app:technical_lemmas}{Technical Lemmas}
+\suppsubcontentsline{sec:ate_extension}{Extension to the Control Mean and the TATE}
+\suppcontentsline{sec:agg_proofs}{Aggregated Estimator: FACE-HD}
+\suppsubcontentsline{app:agg_setup}{Setup and Notation for Aggregation}
+\suppsubcontentsline{app:penalized_variance}{Penalized Variance Estimation}
+\suppsubcontentsline{app:informative_sources}{Informative Source Sites}
+\suppsubcontentsline{app:agg_main_results}{Main Results for Aggregation}
+\suppsubcontentsline{app:agg_supporting_lemmas}{Supporting Lemmas for Aggregation}
+\suppsubcontentsline{app:agg_main_proofs}{Proofs of Main Results for Aggregation}
+
+\clearpage
+\else
+\clearpage
+\fi
+
+\hj{A few general comments: 
+\begin{enumerate}
+    \item The main ideas and techniques are ready from existing literatures, so they look correct enough. 
+    \item Please survey all definitions made inside your theory. Decide if you want to disband them or move them to the ``Setup and Notation'' (should be a separate section). 
+    \item Need to clean up the assumptions. Quite a few seem redundant and obscure. Perhaps organize all assumptions in one place and provide a comprehensive discussion. 
+    \item Reconsider the organization of the document. Even if you applied existing theorems for proving the oracle inequality, it should be useful to state the conclusion in a separate section before the asymptotic normality. 
+    \item Add the theory for selective aggregation. 
+\end{enumerate}
+}
+
+We use the same mathematical notation as the main manuscript throughout this Supplemental Material. The theory is organized in a theorem-first format: setup and notation, assumptions, main limit statements, variance estimation, and then the supporting lemmas. Aggregation is treated in its own section, where the covariance structure, penalized weight estimation, source selection, and final oracle-limit theorem are stated before the proof details.
+
+\section{Asymptotic Normality of the Cross-Fitted Estimator}\label{app:asymptotic_pairwise}
+\subsection{Setup and Notation}\label{app:setup_notation}
+
+This section is organized in the standard theorem-driven order used in high-dimensional inference: we first state the setup and assumptions, then give the main asymptotic-normality result and variance estimator, and finally collect the supporting lemmas used in the proof. Readers interested only in the main pairwise limit theory may read \cref{thm:main}, \cref{lem:var_est}, and \cref{cor:ate} first, and return to the technical lemmas later.
+
+We analyze the asymptotic properties of the $K_f$-fold cross-fitted estimator for a single target-source pair $(t, s)$, derived using the two-level cross-fitting strategy described in \maincref{app:two_level_cf}.
+Let $K_f$ be a fixed integer (e.g., 5 or 10). The data $\mathcal{D} = \mathcal{D}_t \cup \mathcal{D}_s$ is partitioned into $K_f$ folds, $\mathcal{D} = \cup_{k=1}^{K_f} \mathcal{D}_k$, where $\mathcal{D}_k = \mathcal{D}_{t,k} \cup \mathcal{D}_{s,k}$. Let $N_k = |\mathcal{D}_k| \approx N/K_f$.
+For notational simplicity, we assume the folds are balanced within each site (e.g., $N_t$ and $N_s$ are divisible by $K_f$) so that $|\mathcal{D}_{t,k}|=N_t/K_f$ and $|\mathcal{D}_{s,k}|=N_s/K_f$ for all $k$; the minor rounding effects in practice are $o_p(N^{-1/2})$ and do not affect the first-order results.
+For $r\in\{t,s\}$, $\E_r[\cdot]$ denotes expectation conditional on site membership $R=r$.
+Define the target-site potential outcome means $\mu^1 \coloneqq \E_t[Y(1)]$ and $\mu^0 \coloneqq \E_t[Y(0)]$, and the target average treatment effect (TATE) $\tau\coloneqq \mu^1-\mu^0$.
+For any function $f(D)$ of a single observation $D=(R,\boldsymbol{X},A,Y)$, we write $\tildeE_k[f(D)] \coloneqq \frac{1}{N_k}\sum_{i \in \mathcal{D}_k} f(D_i)$ for the empirical average over the combined $k$-th fold.
+Let $\mathcal{D}^{(-k)} = \mathcal{D} \setminus \mathcal{D}_k$ denote the out-of-fold data used for training nuisance models evaluated on fold $k$. The crucial aspect of cross-fitting is that the data used for training, $\mathcal{D}^{(-k)}$, is independent of the data used for evaluation, $\mathcal{D}_k$.
+
+Let $\vartheta = (\boldsymbol{\alpha}^1, \boldsymbol{\gamma}_1)$ be the vector of nuisance parameters. For this fixed pair $(t,s)$ we write $\boldsymbol{\alpha}^1 \equiv \boldsymbol{\alpha}_{t,s}^1$ and $\boldsymbol{\gamma}_1 \equiv \boldsymbol{\gamma}_{s,1}$. Let $\vartheta^* = (\boldsymbol{\alpha}^{1,*}, \boldsymbol{\gamma}_1^*)$ denote the population targets of the calibrated estimation step (\maincref{eq:gamma_calibrated_loss} and \maincref{eq:alpha_calibrated_loss} in the main manuscript), and let $\widehat{\vartheta}^{(-k)} = (\widehat{\boldsymbol{\alpha}}_{t,s}^{1,(-k)}, \widehat{\boldsymbol{\gamma}}_{s,1}^{(-k)})$ be the nuisance estimators trained on data $\mathcal{D}^{(-k)}$ using the two-level cross-fitting procedure.
+Here the superscript $(-k)$ denotes the \emph{final} two-level cross-fitted nuisance estimators used for evaluating fold $k$ (including the fold-summed calibration over secondary folds), and hence $\widehat{\vartheta}^{(-k)}$ is independent of $\mathcal{D}_k$.
+The inner construction follows the SMMAL two-level calibration device: for each outer fold $k_1$, every secondary fold $k_2\neq k_1$ supplies one calibrated-loss contribution, and the initial nuisance fits entering that contribution are trained on $\mathcal{D}\setminus(\mathcal{D}_{k_1}\cup\mathcal{D}_{k_2})$. The final $\widehat{\vartheta}^{(-k_1)}$ is obtained by minimizing the average of these fold-specific calibrated losses, so it uses all outer-training folds while keeping the initial plug-in for each contribution disjoint from that contribution's calibration fold.
+
+To ensure numerical stability and theoretical regularity (bounded weights), we define a truncation function $\mathcal{T}(x) = \text{sign}(x)\min(|x|, M_{\tau})$, where $M_{\tau}=M_{\tau,N}$ is allowed to depend on $N$ (notation suppressed). (We avoid the symbol $\tau(\cdot)$ to prevent collision with the TATE $\tau$ in the main manuscript.)
+\hj{If we always use $\phi(\boldsymbol{X})$ when involve the covariate $\boldsymbol{X}$, let us just drop $\phi$ and claim $\boldsymbol{X}$ is the covariate after proper transformation. This is methodologically trivial.}
+Equivalently, one may define the working covariate vector $Z=\phi(\boldsymbol{X})$ and write all nuisance models directly in terms of $Z$. We keep the notation $\phi(\boldsymbol{X})$ only to match the main manuscript and to distinguish raw covariates from the fixed feature/basis expansion. All tail, sparsity, and restricted-curvature conditions below are imposed on this working covariate vector.
+The truncated weighting function is defined as:
+\[
+w_\tau(\boldsymbol{X}; \boldsymbol{\gamma}) \coloneqq \frac{I(A=1)}{e^{\mathcal{T}(\phi(\boldsymbol{X})^T \boldsymbol{\gamma})}}.
+\]
+Define also the (untruncated) weight
+\[
+w(\boldsymbol{X}; \boldsymbol{\gamma}) \coloneqq \frac{I(A=1)}{e^{\phi(\boldsymbol{X})^T \boldsymbol{\gamma}}}.
+\]
+The truncation function $\mathcal{T}$ is applied \textit{only in the calibrated loss functions} (\maincref{eq:gamma_calibrated_loss} and \maincref{eq:alpha_calibrated_loss} in the main manuscript) to ensure numerical stability during nuisance estimation; the estimators and influence functions below use the untruncated weight $w(\boldsymbol{X};\boldsymbol{\gamma})$, consistent with the main manuscript. Under \cref{asmp:overlap}(c), truncation is asymptotically inactive at the population targets (so $w_\tau(\boldsymbol{X};\boldsymbol{\gamma}_1^*) = w(\boldsymbol{X};\boldsymbol{\gamma}_1^*)$ and $\psi'(\mathcal{T}(\phi(\boldsymbol{X})^T\boldsymbol{\alpha}^{1,*}))=\psi'(\phi(\boldsymbol{X})^T\boldsymbol{\alpha}^{1,*})$ w.p.a.1), and hence the population first-order conditions induced by the calibrated losses are unchanged up to an $o(1)$ term.
+
+This corresponds to using a finite $M_{\tau}$ during nuisance optimization, while inference is based on the untruncated final DR estimating equation, equivalently $M_{\tau,\mathrm{inference}}=\infty$. Setting a finite $M_{\tau,\mathrm{inference}}$ would instead define a clipped estimating equation, as discussed below.
+
+If, instead, one \emph{also} clips the weights in the final AIPW/DR estimating equation (i.e., replaces $w$ by $w_\tau$ inside $\widehat{\mu}^1_{t,s}$), then the resulting estimator has a different influence function in finite samples. Under \cref{asmp:overlap}(c) (clipping probability $o(N^{-1})$ at the population targets), the difference between the clipped and unclipped estimators is $o_p(N^{-1/2})$ and the first-order limit theory is unchanged; otherwise, the clipping-induced bias must be accounted for (see, e.g., \citet{tan2020model}).
+
+The proofs below use three conventions that keep the asymptotic argument aligned with the estimator analyzed: foldwise IF components are centered when forming variance and covariance estimators; clipping is used only during nuisance fitting and is asymptotically inactive for the final estimating equation under \cref{asmp:overlap}(c); and any finite-sample symmetrization or ridge stabilization used in the aggregation quadratic program is treated as a numerical device that vanishes asymptotically.
+\hj{The table by itself is not very informative.}
+Rather than relying on a standalone table, the Supplemental Material now states the role of each block in prose. \cref{lem:ident_dr_mu} identifies the target mean under either nuisance-model correctness; \crefrange{asmp:data}{asmp:rsc} collect the sampling, overlap/moment, and nuisance-rate requirements; \cref{thm:main} gives the pairwise cross-fitted CLT; \cref{lem:var_est} proves variance consistency; and \cref{sec:agg_proofs} extends these ingredients to adaptive aggregation and source selection.
+
+We assume $\phi(\boldsymbol{X})$ includes an intercept term.
+Let $p \coloneqq \dim(\phi(\boldsymbol{X}))$.
+When the feature expansion is fixed in advance, one may equivalently regard $\phi(\boldsymbol{X})$ as the working covariate vector; we keep the notation $\phi(\boldsymbol{X})$ only to match the main manuscript.
+For a real-valued random variable $Z$, $\|Z\|_{\psi_2}$ denotes the sub-Gaussian Orlicz norm.
+For a vector $v\in\R^p$, $\|v\|_0$ denotes its sparsity level.
+For canonical exponential-family GLMs, we use the standard notation that the negative log-likelihood takes the form $-Y\theta+\Psi(\theta)$ with linear predictor $\theta=\phi(\boldsymbol{X})^T\boldsymbol{\alpha}$, and that $\psi(\theta)=\Psi'(\theta)$; $\psi'(\theta)$ denotes the derivative with respect to $\theta$. We also use the shorthand $\psi(\phi(\boldsymbol{X});\boldsymbol{\alpha}) \equiv \psi(\phi(\boldsymbol{X})^T\boldsymbol{\alpha})$.
+To avoid confusion with the notation used in the reference PDFs (in the \texttt{proof ref} folder), we consistently follow the main manuscript's notation: $\phi(\boldsymbol{X})$ denotes the feature/basis expansion and $\psi(\cdot)$ denotes the GLM conditional mean. (For example, some references use $\phi(\cdot)$ and $\Phi(\cdot)$ for a Normal density/CDF; we do \emph{not} use that convention here.)
+
+As in the main manuscript, the target estimand is the target-site treated potential outcome mean $\mu^1 \equiv \E_t[Y(1)]$.
+Define the target-site treated regression function by
+\[
+m_t^1(\boldsymbol{X}) \coloneqq \E_t[Y\mid A=1,\boldsymbol{X}].
+\]
+The $K_f$-fold cross-fitted estimator for $\mu^1$ is:
+\begin{align*}
+\widehat{\mu}^{1,\mathrm{CF}}_{t,s}
+= \frac{1}{K_f}\sum_{k=1}^{K_f}
+\Big\{
+    \tildeE_{t,k}\big[\psi(\phi(\boldsymbol{X}); \widehat{\boldsymbol{\alpha}}_{t,s}^{1,(-k)})\big]
+    + \tildeE_{s,k}\!\left[
+        w(\boldsymbol{X};\widehat{\boldsymbol{\gamma}}_{s,1}^{(-k)})
+        \big(Y - \psi(\phi(\boldsymbol{X}); \widehat{\boldsymbol{\alpha}}_{t,s}^{1,(-k)})\big)
+    \right]
+\Big\}.
+\end{align*}
+Here,
+\[
+\tildeE_{t,k}[g(D)] \coloneqq \frac{1}{N_{t,k}}\sum_{i \in \mathcal{D}_{t,k}} g(D_i),
+\qquad
+\tildeE_{s,k}[g(D)] \coloneqq \frac{1}{N_{s,k}}\sum_{i \in \mathcal{D}_{s,k}} g(D_i),
+\]
+denote sample averages over the $k$-th fold of the target and source data, with $N_{t,k} = |\mathcal{D}_{t,k}|$, $N_{s,k} = |\mathcal{D}_{s,k}|$, and $N_k = N_{t,k}+N_{s,k}$.
+Let $N = N_t + N_s$ be the total sample size, and let $\rho_t = N_t/N$ and $\rho_s = N_s/N$.
+We write $\E[\cdot]$ for expectation under the pooled distribution, i.e., $\E[g(D)] = \rho_t \E_t[g(D)] + \rho_s \E_s[g(D)]$.
+Throughout the asymptotics we consider the standard two-sample (multi-sample) regime with sampling fractions bounded away from $0$ and $1$, i.e., $N_t/N\to\rho_t\in(0,1)$ and $N_s/N\to\rho_s\in(0,1)$. Under overlap/positivity for the relevant treatment arm, the effective sample sizes within each arm also scale linearly with $N$ (e.g., $\sum_{i\in\mathcal{D}_s}I(A_i=1)=\Theta_p(N_s)$), so writing high-dimensional rates in terms of $N$ is equivalent (up to constants) to writing them in terms of the arm-specific sample sizes.
+Under the balanced-fold assumption above, the estimator can equivalently be written using the combined-fold empirical average as
+\[
+\widehat{\mu}^{1,\mathrm{CF}}_{t,s}
+= \frac{1}{K_f}\sum_{k=1}^{K_f}\tildeE_k\!\left[\widetilde{\varphi}_{t,s}(D; \widehat{\vartheta}^{(-k)})\right],
+\]
+which matches the $\tildeE_k$ notation used in the remainder decomposition below.
+
+Define the (uncentered) score contribution at a generic nuisance parameter $\vartheta = (\boldsymbol{\alpha}^1, \boldsymbol{\gamma}_1)$:
+\begin{align*}
+\widetilde{\varphi}_{t,s}(D_i; \vartheta)
+&:= \frac{I(R_i=t)}{\rho_t}\psi(\phi(\boldsymbol{X}_i); \boldsymbol{\alpha}^1)
++ \frac{I(R_i=s)}{\rho_s} w(\boldsymbol{X}_i;\boldsymbol{\gamma}_1)\{Y_i - \psi(\phi(\boldsymbol{X}_i); \boldsymbol{\alpha}^1)\}.
+\end{align*}
+Define the corresponding population estimand at $\vartheta$ as
+\begin{align*}
+\mu^1(\vartheta)
+&:= \E[\widetilde{\varphi}_{t,s}(D; \vartheta)]
+= \E_t[\psi(\phi(\boldsymbol{X}); \boldsymbol{\alpha}^1)]
++ \E_s[w(\boldsymbol{X};\boldsymbol{\gamma}_1)\{Y - \psi(\phi(\boldsymbol{X}); \boldsymbol{\alpha}^1)\}].
+\end{align*}
+
+\hj{Defining the notations inside the Lemma is confusing. Either use $\E_t[Y\mid A=1,\boldsymbol{X}]$ (not very long) or define $m_t^1$ in notation.}
+\begin{lemma}[Identification / double robustness for $\mu^1(\vartheta^*)$]\label{lem:ident_dr_mu}
+Assume the target causal parameter is identified as $\mu^1=\E_t[Y(1)]$ (e.g., by consistency and ignorability/overlap on the target site), so that $\mu^1=\E_t[m_t^1(\boldsymbol{X})]$.
+Recall $\phi(\boldsymbol{X})$ includes an intercept.
+Let $\vartheta^*=(\boldsymbol{\alpha}^{1,*},\boldsymbol{\gamma}_1^*)$ denote the population targets of the calibrated losses.
+Then $\mu^1(\vartheta^*)=\mu^1$ holds under either of the following conditions.
+\begin{enumerate}
+    \item \textbf{Outcome-model correctness.} If $\psi(\phi(\boldsymbol{X});\boldsymbol{\alpha}^{1,*})=m_t^1(\boldsymbol{X})$ almost surely, then the calibrated outcome loss implies the population moment condition
+    \(
+    \E_s[w(\boldsymbol{X};\boldsymbol{\gamma}_1^*)\,\phi(\boldsymbol{X})\{Y-\psi(\phi(\boldsymbol{X});\boldsymbol{\alpha}^{1,*})\}]=\mathbf{0}
+    \)
+    (see \cref{lem:ortho_foc}(ii) below). In particular, the intercept component yields
+    \(
+    \E_s[w(\boldsymbol{X};\boldsymbol{\gamma}_1^*)\{Y-\psi(\phi(\boldsymbol{X});\boldsymbol{\alpha}^{1,*})\}]=0
+    \),
+    and therefore $\mu^1(\vartheta^*)=\E_t[\psi(\phi(\boldsymbol{X});\boldsymbol{\alpha}^{1,*})]=\E_t[m_t^1(\boldsymbol{X})]=\mu^1$.
+    \item \textbf{Weight-model correctness.} Suppose the weighting model is correct in the sense that for any square-integrable measurable function $h(\boldsymbol{X})$,
+    \[
+    \E_s[w(\boldsymbol{X};\boldsymbol{\gamma}_1^*)\,h(\boldsymbol{X})]=\E_t[h(\boldsymbol{X})],
+    \]
+    and, for the treated potential outcome, the usual covariate-shift/transportability condition holds for this pair $(t,s)$:
+    \(
+    \E_s[Y(1)\mid \boldsymbol{X}] = \E_t[Y(1)\mid \boldsymbol{X}]
+    \)
+    almost surely.
+    Then for any outcome model $m(\boldsymbol{X})$,
+    \[
+    \E_s\!\left[w(\boldsymbol{X};\boldsymbol{\gamma}_1^*)\{Y(1)-m(\boldsymbol{X})\}\right]
+    =
+    \E_t\!\left[Y(1)-m(\boldsymbol{X})\right],
+    \]
+    and hence $\mu^1(\boldsymbol{\alpha},\boldsymbol{\gamma}_1^*)=\mu^1$ for any $\boldsymbol{\alpha}$, in particular $\mu^1(\vartheta^*)=\mu^1$ even if the outcome model is misspecified.
+\end{enumerate}
+\end{lemma}
+
+Define the centered influence function at the population parameters $\vartheta^*$:
+\begin{align*}
+\varphi_{t,s}(D_i; \vartheta^*)
+&:= \widetilde{\varphi}_{t,s}(D_i; \vartheta^*) - \mu^1(\vartheta^*) \\
+&= \frac{I(R_i=t)}{\rho_t}\Big(\psi(\phi(\boldsymbol{X}_i); \boldsymbol{\alpha}^{1,*}) - \mu^1_t(\boldsymbol{\alpha}^{1,*})\Big) \\
+&\quad+ \frac{I(R_i=s)}{\rho_s}\Big(
+    w(\boldsymbol{X}_i;\boldsymbol{\gamma}_1^*)
+    \{Y_i - \psi(\phi(\boldsymbol{X}_i); \boldsymbol{\alpha}^{1,*})\}
+    - \delta^1_s(\vartheta^*)
+\Big).
+\end{align*}
+where $\mu^1_t(\boldsymbol{\alpha}^{1,*}) = \E_t[\psi(\phi(\boldsymbol{X}); \boldsymbol{\alpha}^{1,*})]$ and $\delta^1_s(\vartheta^*) = \E_s[w(\boldsymbol{X};\boldsymbol{\gamma}_1^*) \{Y - \psi(\phi(\boldsymbol{X}); \boldsymbol{\alpha}^{1,*})\}]$.
+More generally, for any $\vartheta$ we define $\varphi_{t,s}(D;\vartheta) \coloneqq \widetilde{\varphi}_{t,s}(D;\vartheta) - \mu^1(\vartheta)$.
+Let $V^*_{t,s} := \Var\!\big(\varphi_{t,s}(D; \vartheta^*)\big)$.
+
+\begin{definition}[Sparsity bookkeeping]\label{def:sparsity}
+Let
+\[
+s_\alpha\coloneqq \|\boldsymbol{\alpha}^{1,*}\|_0,\qquad
+s_\gamma\coloneqq \|\boldsymbol{\gamma}_1^*\|_0.
+\]
+When the initial nuisance estimators have distinct population targets, define
+$s_{\alpha,\mathrm{init}}\coloneqq\|\boldsymbol{\alpha}^{1,*}_{\mathrm{init}}\|_0$ and
+$s_{\gamma,\mathrm{init}}\coloneqq\|\boldsymbol{\gamma}^{*}_{1,\mathrm{init}}\|_0$.
+These are bookkeeping quantities for the high-dimensional rates rather than separate modeling assumptions. The growth restrictions are imposed explicitly in the theorems and, when initial nuisance rates are needed, we assume $s_{\alpha,\mathrm{init}}+s_{\gamma,\mathrm{init}}=O(s_\alpha+s_\gamma)$.
+\end{definition}
+
+\subsection{Assumptions}\label{app:assumptions}
+The assumptions below are stated in the style commonly used in high-dimensional doubly robust inference: \cref{asmp:data} collects sampling and working-covariate tail conditions; \cref{asmp:overlap} collects overlap, moment, and smoothness conditions ensuring a valid influence-function expansion; and \cref{asmp:rsc} collects the nuisance-estimation conditions needed for high-dimensional rates. Sparsity levels are defined in \cref{def:sparsity}, and their allowed growth is stated directly in the theorems. This organization is closest in spirit to \citet{tan2020model}, \citet{hou2025efficient}, and \citet{chernozhukov2018double}.
+
+\hj{Define Orlicz norm in notation not in the assumptions. Sparsity is a definition not assumption.}
+\begin{assumption}[Sampling and Working-Covariate Tails]\label{asmp:data}
+\begin{enumerate}[label=(\alph*)]
+    \item The target and source samples are independent, each sample is i.i.d.\ within site, and the site fractions satisfy $N_t/N\to \rho_t\in(0,1)$ and $N_s/N\to \rho_s\in(0,1)$.
+    \item The working covariates $\phi(\boldsymbol{X})$ include an intercept and satisfy $\max_{1\le j\le p}\|\phi_j(\boldsymbol{X})\|_{\psi_2}\le K_\phi$ under both $R=t$ and $R=s$.
+\end{enumerate}
+\end{assumption}
+
+\begin{assumption}[Overlap, Smoothness, and Moments]\label{asmp:overlap}
+\begin{enumerate}[label=(\alph*)]
+    \item \textbf{Overlap and weight regularity.} The ideal density-ratio weight is well-defined on the relevant target support: $P_s\{A=1\mid \boldsymbol{X}\}>0$ almost surely on that support. For the main proofs we require the following local weight envelope condition: for some $\delta>0$,
+    \[
+        \sup_{\boldsymbol{\gamma}\in\mathcal{N}(\boldsymbol{\gamma}_1^*)}\E_s\!\left[w(\boldsymbol{X};\boldsymbol{\gamma})^{2+\delta}\right] < \infty,
+    \]
+    and, coordinatewise,
+    \[
+        \max_{1\le j\le p}\sup_{\boldsymbol{\gamma}\in\mathcal{N}(\boldsymbol{\gamma}_1^*)}
+        \E_s\!\left[w(\boldsymbol{X};\boldsymbol{\gamma})^{2+\delta} |\phi_j(\boldsymbol{X})|^{2+\delta}\right] < \infty.
+    \]
+    A simple sufficient condition is an upper-overlap bound $w(\boldsymbol{X};\boldsymbol{\gamma})\le B_w<\infty$ almost surely for all $\boldsymbol{\gamma}\in\mathcal{N}(\boldsymbol{\gamma}_1^*)$, together with coordinatewise $(2+\delta)$ moments of $\phi(\boldsymbol{X})$. No uniform bound on $\|\phi(\boldsymbol{X})\|_2$ is imposed; in high dimensions this norm may scale as $\sqrt{p}$.
+    \hj{Need to be specific. I would consider the weights need an upper bound (but not necessarily a lower bound)? }
+    \hj{The first assumption is essentially an overlapping condition. The second assumption needs clarification: the $\|\phi(\boldsymbol{X})\|_2 \propto \sqrt{p}$, so there would not be an upper bound. Otherwise, we probably just need 4-th moments? Probably just follow the standard overlapping assumption.}
+    \item \textbf{Smoothness and moments.} The GLM mean function $\psi$ is continuously differentiable with bounded derivative and Lipschitz slope:
+    \[
+        \sup_{u\in\mathbb{R}}|\psi'(u)|\le L_\psi<\infty,
+        \qquad
+        |\psi'(u_1)-\psi'(u_2)|\le L_{\psi'}|u_1-u_2|.
+    \]
+    Moreover, under both $R=t$ and $R=s$, the outcome has finite $(2+\delta)$-moment and the uncentered estimating-function contribution is locally $(2+\delta)$-integrable:
+    \[
+        \E[|Y|^{2+\delta}\mid R=r]<\infty,
+        \qquad
+        \sup_{\vartheta\in\mathcal{N}(\vartheta^*)}\E\!\left[\left|\widetilde{\varphi}_{t,s}(D;\vartheta)\right|^{2+\delta}\right]<\infty.
+    \]
+    \hj{IF? Try to use the consistent notation. If you assume sub-Gaussian covariates and outcomes, you should be able to derive the bound for moments}
+    A sufficient condition, used in the concentration arguments below, is the upper-overlap bound above plus sub-Gaussian tails for $Y\mid(A=1,R=r)$ and for the coordinates of $\phi(\boldsymbol{X})$; then products such as $w\{Y-\psi(\phi(\boldsymbol{X});\boldsymbol{\alpha})\}$ have the required finite $(2+\delta)$ moments in a local neighborhood of $\vartheta^*$.
+    \item \textbf{Asymptotically inactive truncation.} With $M_{\tau,N}$ as in the definition of $\mathcal{T}(\cdot)$,
+\[
+\begin{aligned}
+P\!\left(\left|\phi(\boldsymbol{X})^T \boldsymbol{\alpha}^{1,*}\right| > M_{\tau,N}\,\middle|\, R=r\right)
+&=o(N^{-1}) \quad \text{for } r\in\{t,s\}, \\
+P\!\left(\left|\phi(\boldsymbol{X})^T \boldsymbol{\gamma}_1^*\right| > M_{\tau,N}\,\middle|\, R=s\right)
+&=o(N^{-1}).
+\end{aligned}
+\]
+    This condition is stronger than strictly necessary, but it cleanly guarantees that clipping has no first-order effect on the final estimating equation.
+\end{enumerate}
+\end{assumption}
+
+\hj{Use ``enumerate'' to list assumptions (customizable via ``enumitem'' package)}
+\begin{assumption}[Nuisance Model Properties]\label{asmp:rsc}
+\begin{enumerate}[label=(\alph*)]
+    \item \textbf{Restricted curvature.} The population versions of the calibrated losses in \maincref{eq:gamma_calibrated_loss} and \maincref{eq:alpha_calibrated_loss} are convex and satisfy restricted strong convexity in neighborhoods of $\vartheta^*$ compatible with the relevant sparse cones.
+    \item \textbf{Cross-fitting.} For each fold $k$, the nuisance estimator $\widehat{\vartheta}^{(-k)}$ is trained on $\mathcal{D}^{(-k)}$ only and is independent of the evaluation fold $\mathcal{D}_k$.
+    \item \textbf{Two-level alignment.} Let $(\boldsymbol{\alpha}^{1,*}_{\mathrm{init}}, \boldsymbol{\gamma}^{*}_{1,\mathrm{init}})$ denote the population limits of the initial nuisance estimators used inside the calibrated losses. These limits coincide with the calibrated targets:
+    \[
+        \boldsymbol{\alpha}^{1,*}_{\mathrm{init}}=\boldsymbol{\alpha}^{1,*},
+        \qquad
+        \boldsymbol{\gamma}^{*}_{1,\mathrm{init}}=\boldsymbol{\gamma}^{*}_{1}.
+    \]
+    \item \textbf{Optional foldwise score-centering.} If one wants to invoke the sharpened \textbf{Special} rate in \cref{lem:nuisance_rates}, then the foldwise conditional score-centering condition there is assumed for the calibrated losses. This is analogous to the foldwise score-centering condition used in \citet{hou2025efficient}. Without this strengthening, the theorem uses the \textbf{General} rate in \cref{lem:nuisance_rates}.
+\end{enumerate}
+\end{assumption}
+
+\begin{remark}[On the alignment condition]\label{rem:alignment}
+\cref{asmp:rsc}(c) is a technical device to avoid tracking multiple population limits induced by the nested/coupled optimization. It is satisfied, for example, when (i) the population calibrated losses have unique minimizers $(\boldsymbol{\alpha}^{1,*},\boldsymbol{\gamma}_1^*)$ (by strict convexity in the relevant restricted set), and (ii) the mapping from an initial plug-in value to the population minimizer of the next calibrated update is continuous at $(\boldsymbol{\alpha}^{1,*},\boldsymbol{\gamma}_1^*)$, so that any consistent initialization converges to the same fixed point. In practice, the same calibrated estimating equations are solved throughout the nuisance-estimation pipeline, making the alignment natural under uniqueness.
+\end{remark}
+
+\subsection{Main Theorem and Proof}\label{app:main_theorem_proof}
+
+\begin{theorem}[Asymptotic Normality of $\widehat{\mu}^{1,\mathrm{CF}}_{t,s}$]\label{thm:main}
+Suppose \cref{asmp:data}, \cref{asmp:overlap}, and \cref{asmp:rsc}(a)--\cref{asmp:rsc}(c) hold. (\cref{asmp:rsc}(d) is an optional strengthening used only to invoke the \textbf{Special} rate in \cref{lem:nuisance_rates}; the theorem also holds under the \textbf{General} rate condition there.) Assume $\vartheta^*$ is the unique population target pair induced by the calibrated losses under the alignment condition in \cref{asmp:rsc}(c), implying \cref{lem:ortho_foc} holds. If further, at least one nuisance model (outcome or weighting) is correctly specified in the sense of \cref{lem:ident_dr_mu} (so $\mu^1(\vartheta^*)=\mu^1$), the calibrated nuisance sparsities satisfy
+\[
+\frac{(s_\alpha+s_\gamma)^2 \log^2(p)}{N} \longrightarrow 0,
+\]
+and $V^*_{t,s}>0$, then the cross-fitted estimator is asymptotically normal:
+\hj{no need to define this notation. Also, do you specify the sparsities of initial and calibrated coefficients?}
+Here $s_\alpha$ and $s_\gamma$ are the calibrated population sparsities from \cref{def:sparsity}. If the initial nuisance estimators are estimated by separate penalized fits, their population sparsities are $s_{\alpha,\mathrm{init}}$ and $s_{\gamma,\mathrm{init}}$ and are assumed to be of the same order, so the initialization error is covered by \cref{asmp:rsc}(c) and \cref{lem:nuisance_rates}.
+\[
+\sqrt{N}\,\big(\widehat{\mu}^{1,\mathrm{CF}}_{t,s} - \mu^1\big)
+\;\xrightarrow{d}\; \mathcal{N}\!\big(0,\,V^*_{t,s}\big).
+\]
+If the initial nuisance estimators enter the two-level algorithm separately from the calibrated update, their stochastic error is required only through \cref{asmp:rsc}(c), which aligns their population limits with $(\boldsymbol{\alpha}^{1,*},\boldsymbol{\gamma}_1^*)$.
+Moreover, the finite-sample KKT perturbation from the $\ell_1$ penalties is absorbed in the remainder term (via \cref{lem:nuisance_rates}) and is $o_p(N^{-1/2})$ under the stated sparsity/rate condition.
+\end{theorem}
+
+\begin{proof}
+Suppose in addition that at least one nuisance model is correctly specified in the sense of \cref{lem:ident_dr_mu}, so that $\mu^1(\vartheta^*)=\mu^1$. We may then center the expansion at $\mu^1$.
+\hj{Good to define ``Term I'' and ``Term II'' this way. However, please use a math notation instead of text if you want to use them in equations.}
+\[
+S_N \coloneqq \frac{1}{N}\sum_{i=1}^{N} \varphi_{t,s}(D_i; \vartheta^*),
+\qquad
+\mathrm{Rem}_N \coloneqq \widehat{\mu}^{1,\mathrm{CF}}_{t,s} - \mu^1 - S_N.
+\]
+Then
+\[
+\widehat{\mu}^{1,\mathrm{CF}}_{t,s} - \mu^1 = S_N + \mathrm{Rem}_N,
+\]
+where $\E[\varphi_{t,s}(D; \vartheta^*)]=0$ by construction, and $\mu^1(\vartheta^*) = \mu^1_t(\boldsymbol{\alpha}^{1,*}) + \delta^1_s(\vartheta^*)$.
+By \cref{lem:clt},
+\[
+\frac{1}{\sqrt{N}}\sum_{i=1}^{N}\varphi_{t,s}(D_i; \vartheta^*) \xrightarrow{d} \mathcal{N}(0, V^*_{t,s}),
+\]
+hence $\sqrt{N}\,S_N \xrightarrow{d} \mathcal{N}(0, V^*_{t,s})$.
+Using the foldwise representation of $\widehat{\mu}^{1,\mathrm{CF}}_{t,s}$ and adding/subtracting $\widetilde{\varphi}_{t,s}(D;\vartheta^*)$ inside each fold average,
+\[
+\mathrm{Rem}_N = \frac{1}{K_f} \sum_{k=1}^{K_f} (R_{1,k} + R_{2,k}),
+\]
+where
+\[
+R_{1,k}
+=
+\left(\tildeE_k - \E[\cdot \mid \mathcal{D}^{(-k)}]\right)\left[
+\widetilde{\varphi}_{t,s}(D; \widehat{\vartheta}^{(-k)}) - \widetilde{\varphi}_{t,s}(D; \vartheta^*)
+\right]
+\]
+and
+\[
+R_{2,k}
+=
+\E[\widetilde{\varphi}_{t,s}(D; \widehat{\vartheta}^{(-k)}) - \widetilde{\varphi}_{t,s}(D; \vartheta^*) \mid \mathcal{D}^{(-k)}].
+\]
+\hj{Expand the details}.
+$R_{1,k}$ is the conditional empirical process fluctuation of the \emph{difference} score:
+\[
+R_{1,k} = \left(\tildeE_k - \E[\cdot \mid \mathcal{D}^{(-k)}]\right)\left[
+\widetilde{\varphi}_{t,s}(D; \widehat{\vartheta}^{(-k)}) - \widetilde{\varphi}_{t,s}(D; \vartheta^*)
+\right].
+\]
+By cross-fitting, conditional on $\mathcal{D}^{(-k)}$, the summands are independent (with a two-sample/triangular-array structure) on fold $k$ with mean zero. Using \cref{lem:bias_bound} (Part 2),
+\[
+\E\!\left[\left(\widetilde{\varphi}_{t,s}(D; \widehat{\vartheta}^{(-k)}) - \widetilde{\varphi}_{t,s}(D; \vartheta^*)\right)^2 \,\middle|\, \mathcal{D}^{(-k)}\right]
+\le C\!\left(\|\widehat{\boldsymbol{\alpha}}_{t,s}^{1,(-k)}-\boldsymbol{\alpha}^{1,*}\|_2^2
+\!+\!
+\|\widehat{\boldsymbol{\gamma}}_{s,1}^{(-k)}-\boldsymbol{\gamma}_{1}^{*}\|_2^2\right),
+\]
+and therefore the conditional variance of $R_{1,k}$ obeys
+\[
+\Var(R_{1,k}\mid \mathcal{D}^{(-k)})
+=
+\Var\!\left(
+\tildeE_k\!\left[\Delta_k(D)\right]\middle|\mathcal{D}^{(-k)}
+\right)
+\le
+\frac{1}{N_k}\E\!\left[\Delta_k(D)^2\mid \mathcal{D}^{(-k)}\right],
+\]
+where $\Delta_k(D)\coloneqq \widetilde{\varphi}_{t,s}(D; \widehat{\vartheta}^{(-k)}) - \widetilde{\varphi}_{t,s}(D; \vartheta^*)$.
+Here we used that, conditional on $\mathcal{D}^{(-k)}$, the $\{\Delta_k(D_i): i\in\mathcal{D}_k\}$ are independent, so
+\[
+\begin{aligned}
+\Var\!\left(\tildeE_k[\Delta_k(D)]\mid\mathcal{D}^{(-k)}\right)
+&=
+\Var\!\left(\tildeE_k[\Delta_k(D)]-\E[\Delta_k(D)\mid\mathcal{D}^{(-k)}]\mid\mathcal{D}^{(-k)}\right) \\
+&\le
+\frac{1}{N_k}\E\!\left[(\Delta_k(D)-\E[\Delta_k(D)\mid\mathcal{D}^{(-k)}])^2\mid\mathcal{D}^{(-k)}\right] \\
+&\le
+\frac{1}{N_k}\E\!\left[\Delta_k(D)^2\mid\mathcal{D}^{(-k)}\right].
+\end{aligned}
+\]
+Since $N_k\asymp N$ for fixed $K_f$, Chebyshev's inequality yields
+\[
+|R_{1,k}| = O_p\!\left(\frac{
+\|\widehat{\boldsymbol{\alpha}}_{t,s}^{1,(-k)}-\boldsymbol{\alpha}^{1,*}\|_2
+\!+\!
+\|\widehat{\boldsymbol{\gamma}}_{s,1}^{(-k)}-\boldsymbol{\gamma}_{1}^{*}\|_2
+}{\sqrt{N}}\right)
+= O_p\!\left(\frac{\sqrt{(s_\alpha+s_\gamma)\log(p)}}{N}\right)
+= o_p(N^{-1/2}).
+\]
+
+$R_{2,k}$ is the first-order bias remainder, conditional on $\mathcal{D}^{(-k)}$:
+\[
+R_{2,k} = \E[\widetilde{\varphi}_{t,s}(D; \widehat{\vartheta}^{(-k)}) - \widetilde{\varphi}_{t,s}(D; \vartheta^*) \mid \mathcal{D}^{(-k)}]
+\]
+By \cref{lem:bias_bound} (Part 1), which relies on the orthogonality conditions derived in \cref{lem:ortho_foc}, this bias is bounded by a second-order term:
+\[
+|R_{2,k}| \le C \cdot \left(
+\lVert \widehat{\boldsymbol{\alpha}}_{t,s}^{1,(-k)} - \boldsymbol{\alpha}^{1,*} \rVert_2^2
++
+\lVert \widehat{\boldsymbol{\gamma}}_{s,1}^{(-k)} - \boldsymbol{\gamma}_1^* \rVert_2^2
++
+\lVert \widehat{\boldsymbol{\alpha}}_{t,s}^{1,(-k)} - \boldsymbol{\alpha}^{1,*} \rVert_2
+\lVert \widehat{\boldsymbol{\gamma}}_{s,1}^{(-k)} - \boldsymbol{\gamma}_1^* \rVert_2
+\right)
+\]
+Using the nuisance rates from \cref{lem:nuisance_rates}:
+\[
+|R_{2,k}| = O_p\left(\frac{s_\alpha \log(p)}{N}\right) + O_p\left(\frac{s_\gamma \log(p)}{N}\right) + O_p\left( \frac{\sqrt{s_\alpha s_\gamma} \log(p)}{N} \right)
+= O_p\left( \frac{(s_\alpha+s_\gamma) \log(p)}{N} \right).
+\]
+Averaging over $k$ gives the total bias remainder:
+\[
+R_2 = \frac{1}{K_f}\sum_{k=1}^{K_f} R_{2,k} = O_p\left( \frac{(s_\alpha+s_\gamma) \log(p)}{N} \right)
+\]
+We require $\sqrt{N} \cdot R_2 \to 0$, i.e., $O_p((s_\alpha+s_\gamma) \log(p) / \sqrt{N}) \to 0$. Squaring both sides, this is implied by the theorem's condition $\frac{(s_\alpha+s_\gamma)^2 \log^2(p)}{N} \to 0$.
+Thus, the total remainder $\mathrm{Rem}_N$ satisfies $\sqrt{N}\,\mathrm{Rem}_N=o_p(1)$, and hence
+\[
+\sqrt{N}\,\big(\widehat{\mu}^{1,\mathrm{CF}}_{t,s} - \mu^1\big)
+=
+\frac{1}{\sqrt{N}}\sum_{i=1}^{N}\varphi_{t,s}(D_i;\vartheta^*) + o_p(1).
+\]
+Together with \cref{lem:clt}, this yields $\sqrt{N}\,(\widehat{\mu}^{1,\mathrm{CF}}_{t,s} - \mu^1)\xrightarrow{d}\mathcal{N}(0,V^*_{t,s})$ by Slutsky's theorem.
+\end{proof}
+
+\begin{lemma}[Variance Estimation]\label{lem:var_est}
+\hj{Should be lemma not remark. Also, you might need the variance bounded away from zero.}
+The asymptotic variance $V^*_{t,s}$ can be consistently estimated using a plug-in estimator based on the empirical influence function evaluated within each fold $k$ using the out-of-fold nuisance estimates $\widehat{\vartheta}^{(-k)}$:
+\[
+\widehat{V}_{t,s} = \frac{1}{K_f} \sum_{k=1}^{K_f} \tildeE_k \left[ \left( \widetilde{\varphi}_{t,s}(D; \widehat{\vartheta}^{(-k)}) - \widehat{\mu}^{1,\mathrm{CF}}_{t,s} \right)^2 \right] \xrightarrow{p} V^*_{t,s}.
+\]
+For consistency of the variance estimator itself no lower bound is needed beyond finiteness. For Wald inference and studentization we assume, as in \cref{thm:main}, that $V^*_{t,s}$ is bounded away from zero.
+\textbf{Consistency Argument:} The consistency of $\widehat{V}_{t,s}$ relies on three key ingredients:
+\begin{enumerate}
+    \item \textit{Nuisance Consistency}: By \cref{lem:nuisance_rates}, $\|\widehat{\vartheta}^{(-k)} - \vartheta^*\|_2 = o_p(1)$.
+    \item \textit{$L_2$-Lipschitz Continuity}: Under \cref{asmp:overlap}(b), the score contribution is locally Lipschitz in $\vartheta$ in mean-square, i.e., there exists $C<\infty$ such that for $\vartheta_1,\vartheta_2$ in a neighborhood of $\vartheta^*$,
+    \[
+    \E\!\left[\left(\widetilde{\varphi}_{t,s}(D; \vartheta_1) - \widetilde{\varphi}_{t,s}(D; \vartheta_2)\right)^2\right] \le C \|\vartheta_1 - \vartheta_2\|_2^2.
+    \]
+	    \item \textit{Uniform Integrability}: By the $(2+\delta)$ moment condition in \cref{asmp:overlap}(b), $\{\widetilde{\varphi}_{t,s}(D; \widehat{\vartheta}^{(-k)})^2\}_{k,N}$ is uniformly integrable.
+\end{enumerate}
+We now give a detailed proof (not just a sketch).
+
+	\textbf{Step 1 (Reduce to within-fold centering).}
+	For each fold $k$, define the foldwise score
+	\[
+	Z_{i}^{(k)} \coloneqq \widetilde{\varphi}_{t,s}(D_i;\widehat{\vartheta}^{(-k)}),
+	\qquad i\in\mathcal{D}_k,
+	\]
+		and the foldwise mean $\widehat{\mu}_k\coloneqq \tildeE_k[Z^{(k)}]$.
+		Since $\widehat{\mu}^{1,\mathrm{CF}}_{t,s}=\frac{1}{K_f}\sum_{k=1}^{K_f}\widehat{\mu}_k$, we have the identity
+		\[
+		\tildeE_k\!\left[(Z^{(k)}-\widehat{\mu}^{1,\mathrm{CF}}_{t,s})^2\right]
+		=
+		\tildeE_k\!\left[(Z^{(k)}-\widehat{\mu}_k)^2\right]
+		+
+		\left(\widehat{\mu}_k-\widehat{\mu}^{1,\mathrm{CF}}_{t,s}\right)^2,
+		\]
+		where the cross term vanishes because $\tildeE_k[Z^{(k)}-\widehat{\mu}_k]=0$ by definition of $\widehat{\mu}_k$.
+		Therefore,
+		\[
+		\widehat{V}_{t,s}
+		=
+		\frac{1}{K_f}\sum_{k=1}^{K_f}\tildeE_k\!\left[(Z^{(k)}-\widehat{\mu}_k)^2\right]
+		+
+		\frac{1}{K_f}\sum_{k=1}^{K_f}\left(\widehat{\mu}_k-\widehat{\mu}^{1,\mathrm{CF}}_{t,s}\right)^2.
+		\]
+	By \cref{lem:nuisance_rates},
+    $\|\widehat{\vartheta}^{(-k)}-\vartheta^*\|_2=o_p(1)$, and by the conditional LLN below we have $\widehat{\mu}_k=\mu^1(\vartheta^*)+o_p(1)$ for each fixed $k$. Since $K_f$ is fixed, this implies
+	\(
+	\max_{1\le k\le K_f}\left|\widehat{\mu}_k-\widehat{\mu}^{1,\mathrm{CF}}_{t,s}\right| = o_p(1)
+	\),
+	and hence the second term is $o_p(1)$. Thus it suffices to show
+	\[
+	\frac{1}{K_f}\sum_{k=1}^{K_f}\tildeE_k\!\left[(Z^{(k)}-\widehat{\mu}_k)^2\right]\xrightarrow{p}V^*_{t,s}.
+	\]
+
+\textbf{Step 2 (Conditional LLN for first and second moments).}
+Fix a fold $k$. Conditional on the training sample $\mathcal{D}^{(-k)}$, the nuisance estimate $\widehat{\vartheta}^{(-k)}$ is fixed and independent of $\mathcal{D}_k$.
+Therefore, conditional on $\mathcal{D}^{(-k)}$, the random variables $\{Z_i^{(k)}:i\in\mathcal{D}_k\}$ are independent with finite $(2+\delta)$ moments uniformly in $N$ by \cref{asmp:overlap}(b).
+By the (conditional) weak law of large numbers,
+\[
+\widehat{\mu}_k - \E\!\left[Z^{(k)}\mid \mathcal{D}^{(-k)}\right] = o_p(1),
+\qquad
+\tildeE_k\!\left[(Z^{(k)})^2\right] - \E\!\left[(Z^{(k)})^2\mid \mathcal{D}^{(-k)}\right] = o_p(1).
+\]
+Since $\tildeE_k[(Z^{(k)}-\widehat{\mu}_k)^2]=\tildeE_k[(Z^{(k)})^2]-\widehat{\mu}_k^{\,2}$, combining the two displays yields
+\[
+\tildeE_k\!\left[(Z^{(k)}-\widehat{\mu}_k)^2\right]
+-
+\left\{
+\E\!\left[(Z^{(k)})^2\mid \mathcal{D}^{(-k)}\right]
+-
+\E\!\left[Z^{(k)}\mid \mathcal{D}^{(-k)}\right]^2
+\right\}
+=o_p(1).
+\]
+
+\textbf{Step 3 (Plug-in stability: conditional expectations converge to population targets).}
+It remains to show that the bracketed conditional variance converges in probability to $V^*_{t,s}$.
+First, by nuisance consistency (Ingredient 1) and the $L_2$-Lipschitz property (Ingredient 2),
+\[
+\E\!\left[\left(Z^{(k)}-\widetilde{\varphi}_{t,s}(D;\vartheta^*)\right)^2\right]
+=
+\E\!\left[\left(\widetilde{\varphi}_{t,s}(D;\widehat{\vartheta}^{(-k)})-\widetilde{\varphi}_{t,s}(D;\vartheta^*)\right)^2\right]
+\le C\|\widehat{\vartheta}^{(-k)}-\vartheta^*\|_2^2
+\xrightarrow{p}0.
+\]
+Next we establish convergence of the \emph{conditional} first and second moments.
+Let
+\[
+m_k \coloneqq \E\!\left[Z^{(k)}\mid \mathcal{D}^{(-k)}\right],
+\qquad
+q_k \coloneqq \E\!\left[(Z^{(k)})^2\mid \mathcal{D}^{(-k)}\right],
+\qquad
+\mu^* \coloneqq \mu^1(\vartheta^*)=\E[\widetilde{\varphi}_{t,s}(D;\vartheta^*)].
+\]
+Then
+\[
+m_k-\mu^*
+=
+\E\!\left[\widetilde{\varphi}_{t,s}(D;\widehat{\vartheta}^{(-k)})-\widetilde{\varphi}_{t,s}(D;\vartheta^*)\;\middle|\;\mathcal{D}^{(-k)}\right],
+\]
+so by conditional Jensen,
+\[
+(m_k-\mu^*)^2
+\le
+\E\!\left[\left(\widetilde{\varphi}_{t,s}(D;\widehat{\vartheta}^{(-k)})-\widetilde{\varphi}_{t,s}(D;\vartheta^*)\right)^2\;\middle|\;\mathcal{D}^{(-k)}\right].
+\]
+Taking expectations and using the $L_2$-Lipschitz bound in Ingredient 2 gives $\E[(m_k-\mu^*)^2]\to 0$, hence $m_k\to_p \mu^*$.
+Similarly, write
+\[
+q_k-\E[\widetilde{\varphi}_{t,s}(D;\vartheta^*)^2]
+=
+\E\!\left[(Z^{(k)})^2-\widetilde{\varphi}_{t,s}(D;\vartheta^*)^2\;\middle|\;\mathcal{D}^{(-k)}\right].
+\]
+Using $(a^2-b^2)=(a-b)(a+b)$ and conditional Cauchy--Schwarz,
+\[
+\begin{aligned}
+|q_k-\E[\widetilde{\varphi}_{t,s}(D;\vartheta^*)^2]|
+&=
+\left|
+\E\!\left[(Z^{(k)})^2-\widetilde{\varphi}_{t,s}(D;\vartheta^*)^2\;\middle|\;\mathcal{D}^{(-k)}\right]
+\right| \\
+&\le
+\E\!\left[\left|Z^{(k)}-\widetilde{\varphi}_{t,s}(D;\vartheta^*)\right|\cdot\left|Z^{(k)}+\widetilde{\varphi}_{t,s}(D;\vartheta^*)\right|\;\middle|\;\mathcal{D}^{(-k)}\right] \\
+&\le
+\left(
+\E\!\left[\left(Z^{(k)}-\widetilde{\varphi}_{t,s}(D;\vartheta^*)\right)^2\;\middle|\;\mathcal{D}^{(-k)}\right]
+\right)^{1/2}
+\left(
+\E\!\left[\left(Z^{(k)}+\widetilde{\varphi}_{t,s}(D;\vartheta^*)\right)^2\;\middle|\;\mathcal{D}^{(-k)}\right]
+\right)^{1/2}.
+\end{aligned}
+\]
+The first factor converges to 0 in probability by the $L_2$-Lipschitz bound in Ingredient 2 and nuisance consistency (Ingredient 1).
+The second factor is $O_p(1)$ by the $(2+\delta)$ moment assumption in \cref{asmp:overlap}(b) (uniform integrability).
+Therefore $q_k\to_p \E[\widetilde{\varphi}_{t,s}(D;\vartheta^*)^2]$.
+Consequently, since $m_k\to_p \mu^*$,
+\[
+\E\!\left[(Z^{(k)})^2\mid \mathcal{D}^{(-k)}\right]
+-
+\E\!\left[Z^{(k)}\mid \mathcal{D}^{(-k)}\right]^2
+\xrightarrow{p}
+\E\!\left[\widetilde{\varphi}_{t,s}(D;\vartheta^*)^2\right]-\mu^1(\vartheta^*)^2
+=
+\Var\!\left(\widetilde{\varphi}_{t,s}(D;\vartheta^*)\right)
+=V^*_{t,s}.
+\]
+
+\textbf{Step 4 (Average over folds).}
+Since $K_f$ is fixed, combining Step 2 and Step 3 and averaging over $k$ yields $\widehat{V}_{t,s}\xrightarrow{p}V^*_{t,s}$.
+
+\textbf{Extension to the aggregated estimator.}
+For the weighted aggregated estimator with inner $M$-fold cross-fitted weights $\widehat{\boldsymbol{\eta}}^{(-k)}$, we define per-observation \emph{uncentered} scaled influence functions that serve as the unified estimating equation for both the point estimate and the variance.
+
+\textbf{Unified estimating equation.}
+For each observation $i$ evaluated on fold $\mathcal{D}_{k(i)}$, define the uncentered IF
+\[
+\widehat{\Phi}_i \coloneqq
+\begin{cases}
+\displaystyle\frac{N_{\mathrm{all}}}{N_t}\biggl[(1-\textstyle\sum_j \widehat{\eta}_j^{(-k(i))})\,\widetilde{Y}_{ot,i} + \textstyle\sum_j \widehat{\eta}_j^{(-k(i))}\,\psi(\phi(\boldsymbol{X}_i);\widehat{\boldsymbol{\alpha}}_{t,s_j}^{1,(-k(i))})\biggr], & i\in\mathcal{D}_t,\\[8pt]
+\displaystyle\frac{N_{\mathrm{all}}}{N_{s_j}}\,\widehat{\eta}_j^{(-k(i))}\,w(\boldsymbol{X}_i;\widehat{\boldsymbol{\gamma}}_{s_j,1}^{(-k(i))})\bigl(Y_i - \psi(\phi(\boldsymbol{X}_i);\widehat{\boldsymbol{\alpha}}_{t,s_j}^{1,(-k(i))})\bigr), & i\in\mathcal{D}_{s_j},
+\end{cases}
+\]
+Here $\widetilde{Y}_{ot,i}$ is the \emph{uncentered} AIPW pseudo-outcome for the target-only estimator,
+\[
+\widetilde{Y}_{ot,i}
+  \coloneqq \frac{A_i Y_i}{\widehat{\pi}_{ot}(\boldsymbol{X}_i)}
+  - \biggl(\frac{A_i}{\widehat{\pi}_{ot}(\boldsymbol{X}_i)} - 1\biggr)
+    \psi\bigl(\phi(\boldsymbol{X}_i);\,\widehat{\boldsymbol{\alpha}}_{ot}^{1,(-k(i))}\bigr),
+\]
+so that the centered IF satisfies $\widehat{\varphi}_{ot,i} = \widetilde{Y}_{ot,i} - \widehat{\mu}^1_{ot,k(i)}$.
+Likewise, $\widehat{\zeta}_{t,s_j,i} = \psi(\phi(\boldsymbol{X}_i);\widehat{\boldsymbol{\alpha}}_{t,s_j}^{1,(-k(i))}) - \tildeE_{t,k(i)}[\psi(\cdot)]$.
+	All nuisance parameters $\widehat{\boldsymbol{\alpha}}_{t,s_j}^{1,(-k)}$, $\widehat{\boldsymbol{\gamma}}_{s_j,1}^{(-k)}$, and $\widehat{\pi}_{ot}^{(-k)}$ are trained on data excluding the evaluation fold $\mathcal{D}_k$ (with the fold-summed calibration over secondary folds described above), and $\widehat{\boldsymbol{\eta}}^{(-k)}$ is estimated via the FACE-style inner validation loop within $\mathcal{T}_k = \mathcal{D}\setminus\mathcal{D}_k$.
+Note that the source contribution is written in uncentered form; subtracting the fold-specific correction $\widehat{\delta}_{t,s_j}^{(-k)} = \tildeE_{s_j,k}[w(Y-\psi)]$ yields the centered influence component $\widehat{\xi}_{t,s_j,i}$ used in the variance-component derivations above.
+
+The point estimate and variance are then derived from the \emph{same} set $\{\widehat{\Phi}_i\}_{i=1}^{N_{\mathrm{all}}}$:
+\begin{align*}
+\widehat{\mu}^1_{\mathrm{agg}} &= \bar{\Phi} \coloneqq \frac{1}{N_{\mathrm{all}}}\sum_{i=1}^{N_{\mathrm{all}}} \widehat{\Phi}_i, \\[4pt]
+\widehat{V}_{\mathrm{agg}} &= \frac{1}{N_{\mathrm{all}}^2}\sum_{g\in\{t,s_1,\ldots,s_K\}}\;\sum_{i\in\mathcal{D}_g} \bigl(\widehat{\Phi}_i - \bar{\Phi}_g\bigr)^2,
+\end{align*}
+where $\bar{\Phi}_g \coloneqq \frac{1}{N_g}\sum_{i\in\mathcal{D}_g}\widehat{\Phi}_i$ is the \emph{within-group} mean for group $g\in\{t,s_1,\ldots,s_K\}$.
+In the ANOVA decomposition $\text{TSS}=\text{WSS}+\text{BSS}$, the estimator $\widehat{V}_{\mathrm{agg}}$ uses only the within-group sum of squares $\text{WSS}/N_{\mathrm{all}}^2$; the between-group sum of squares $\text{BSS}/N_{\mathrm{all}}^2$ is excluded.
+
+\textbf{Why within-group centering is necessary.}
+Because $\widehat{\Phi}_i$ is scaled by $N_{\mathrm{all}}/N_g$ (i.e., $N_{\mathrm{all}}/N_t$ for target, $N_{\mathrm{all}}/N_{s_j}$ for source), the conditional expectations differ across groups:
+$\E[\widehat{\Phi}_i\mid i\in\mathcal{D}_t]\approx (N_{\mathrm{all}}/N_t)\mu^1$ and
+$\E[\widehat{\Phi}_i\mid i\in\mathcal{D}_{s_j}]\approx 0$ (when $\delta^*_{t,s_j}=0$).
+The inferential target here is
+\[
+\frac{1}{N_{\mathrm{all}}^2}\sum_{i=1}^{N_{\mathrm{all}}}\Var(\Phi_i),
+\]
+rather than $\Var(\Phi)$ under a pooled-mixture distribution.
+Global centering at $\bar{\Phi}$ estimates the latter object and introduces an additional between-group term
+\[
+\sum_g \rho_g\,(\mu_g-\mu)^2,
+\]
+equivalently the ANOVA component $\text{BSS}/N_{\mathrm{all}}^2$, which is of the same order as $V^*_{\mathrm{agg}}/N_{\mathrm{all}}$ and therefore does not vanish.
+By contrast, $\text{WSS}/N_{\mathrm{all}}^2$ expands as
+\[
+\widehat{V}_{\mathrm{agg}}
+= \frac{1}{N_t}\,\widehat{\sigma}^2_{T}
+  + \sum_{j=1}^{K}\frac{1}{N_{s_j}}\,\widehat{\eta}_j^2\,\widehat{\sigma}^2_{S_j},
+\]
+where
+\[
+\widehat{\sigma}^2_T
+=\widehat{\Var}_t\!\left((1-\sum_j\widehat{\eta}_j)\widehat{\varphi}_{ot,i}+\sum_j\widehat{\eta}_j\widehat{\zeta}_{t,s_j,i}\right).
+\]
+Hence $\widehat{\sigma}^2_T$ is not a target-only variance term; it already contains the shared-target cross-covariances (including terms corresponding to $\Cov(\widehat{\varphi}_{ot},\widehat{\zeta}_{t,s_j})$ and $\Cov(\widehat{\zeta}_{t,s_j},\widehat{\zeta}_{t,s_k})$ for $j\neq k$), fully consistent with the $\widehat{C}_{ot,s_j}$ and $\widehat{C}_{t,s_j,s_k}$ terms in \maincref{eq:final_opt}.
+
+With balanced folds ($|\mathcal{D}_{t,k}|=N_t/K_f$, $|\mathcal{D}_{s_j,k}|=N_{s_j}/K_f$), $\bar{\Phi}$ coincides with the fold-average $(1/K_f)\sum_k \widehat{\mu}^1_{\mathrm{agg},k}$; with minor fold imbalance the difference is $O(N_{\mathrm{all}}^{-1})$.
+
+This unified form ensures $\widehat{\mu}^1_{\mathrm{agg}} - \mu^1 = \frac{1}{N_{\mathrm{all}}}\sum_{i=1}^{N_{\mathrm{all}}}(\widehat{\Phi}_i - \mu^1)$, so the DML representation of the estimation error as an IF average is preserved. By the same arguments as above (nuisance consistency, $L_2$-Lipschitz continuity, and $\widehat{\boldsymbol{\eta}}^{(-k)}\to_p \boldsymbol{\eta}^*$), $\widehat{V}_{\mathrm{agg}} \xrightarrow{p} V^*_{\mathrm{agg}}$.
+\end{lemma}
+
+\subsection{Technical Lemmas}\label{app:technical_lemmas}
+
+\begin{lemma}[CLT for IF Average]\label{lem:clt}
+Under \cref{asmp:data} and \cref{asmp:overlap}, the influence function average is asymptotically normal:
+\[
+\frac{1}{\sqrt{N}}\sum_{i=1}^{N}\varphi_{t,s}(D_i;\vartheta^*)
+\;\xrightarrow{d}\; \mathcal{N}(0,V^*_{t,s}).
+\]
+\end{lemma}
+\begin{proof}
+The observations consist of two independent samples: $\{D_i: i \in \mathcal{D}_t\}$ drawn i.i.d.\ from the target distribution and $\{D_i: i \in \mathcal{D}_s\}$ drawn i.i.d.\ from the source distribution, with $N_t/N \to \rho_t \in (0,1)$ and $N_s/N \to \rho_s$.
+Thus the summands $\{\varphi_{t,s}(D_i;\vartheta^*)\}_{i=1}^N$ are independent (but not identically distributed), have mean zero, and have finite $(2+\delta)$ moments by \cref{asmp:overlap}(b). In particular, the Lindeberg condition holds.
+We verify a Lyapunov condition, which implies the Lindeberg condition for this independent triangular array.
+Let $X_{i,N}\coloneqq \varphi_{t,s}(D_i;\vartheta^*)$ so that $\E[X_{i,N}]=0$ and $\sum_{i=1}^{N}\Var(X_{i,N})=NV^*_{t,s}+o(N)$.
+By \cref{asmp:overlap}(b), $\sup_{i,N}\E[|X_{i,N}|^{2+\delta}]<\infty$ for some $\delta>0$.
+Therefore,
+\[
+\frac{1}{(NV^*_{t,s})^{1+\delta/2}}\sum_{i=1}^{N}\E[|X_{i,N}|^{2+\delta}]
+\le
+\frac{C N}{N^{1+\delta/2}}
+=
+CN^{-\delta/2}\to 0,
+\]
+which is the Lyapunov condition. Hence the Lindeberg--Feller CLT yields
+\(
+\frac{1}{\sqrt{N}}\sum_{i=1}^{N}X_{i,N}\xrightarrow{d}\mathcal{N}(0,V^*_{t,s})
+\),
+proving the lemma.
+\end{proof}
+
+\subsection{Extension to the Control Mean and the TATE}\label{sec:ate_extension}
+
+The results above were stated for the treated potential outcome mean $\mu^1=\E_t[Y(1)]$ for notational simplicity. The same proof strategy applies to the control mean $\mu^0$ by replacing the treatment level $1$ by $0$ throughout (including the corresponding nuisance parameters $(\boldsymbol{\alpha}^0,\boldsymbol{\gamma}_0)$ and weights).
+In particular, define the control-arm weight
+\[
+w^{0}(\boldsymbol{X};\boldsymbol{\gamma}_0)\coloneqq \frac{I(A=0)}{e^{\phi(\boldsymbol{X})^T \boldsymbol{\gamma}_0}},
+\]
+and the cross-fitted estimator
+\[
+\widehat{\mu}^{0,\mathrm{CF}}_{t,s}
+= \frac{1}{K_f}\sum_{k=1}^{K_f}
+\Big\{
+    \tildeE_{t,k}\big[\psi(\phi(\boldsymbol{X}); \widehat{\boldsymbol{\alpha}}_{t,s}^{0,(-k)})\big]
+    + \tildeE_{s,k}\!\left[
+        w^{0}(\boldsymbol{X};\widehat{\boldsymbol{\gamma}}_{s,0}^{(-k)})
+        \big(Y - \psi(\phi(\boldsymbol{X}); \widehat{\boldsymbol{\alpha}}_{t,s}^{0,(-k)})\big)
+    \right]
+\Big\}.
+\]
+Let $\vartheta^{0,*}=(\boldsymbol{\alpha}^{0,*},\boldsymbol{\gamma}_0^*)$ denote the population targets of the control-arm calibrated losses (the same construction as for $\mu^1$ but with $I(A=0)$), and define the corresponding centered influence function $\varphi^{0}_{t,s}(D;\vartheta^{0,*})$ analogously.
+
+\begin{theorem}[Asymptotic Normality of $\widehat{\mu}^{0,\mathrm{CF}}_{t,s}$]\label{thm:main_mu0}
+Under the analogues of \crefrange{asmp:data}{asmp:rsc} for the control arm, and assuming identification of $\mu^0(\vartheta^{0,*})=\mu^0$ under outcome-model or weight-model correctness (control-arm analogue of \cref{lem:ident_dr_mu}), if the total sparsity satisfies $\frac{s_{\mathrm{tot}}^2\log^2(p)}{N}\to 0$, then
+\[
+\sqrt{N}\,\big(\widehat{\mu}^{0,\mathrm{CF}}_{t,s} - \mu^0\big)
+\;\xrightarrow{d}\;
+\mathcal{N}\!\big(0,\,V^{0,*}_{t,s}\big),
+\qquad
+V^{0,*}_{t,s}\coloneqq \Var\!\big(\varphi^{0}_{t,s}(D;\vartheta^{0,*})\big).
+\]
+\end{theorem}
+
+\begin{proof}
+The proof is identical to that of \cref{thm:main} after replacing the treatment level $1$ by $0$ in the definition of the score contribution, the calibrated moment conditions, and the corresponding nuisance estimators.
+\end{proof}
+
+\begin{corollary}[Asymptotic Normality of the TATE]\label{cor:ate}
+With $\tau=\mu^1-\mu^0$ as defined above, define the cross-fitted TATE estimator
+\[
+\widehat{\tau}^{\mathrm{CF}}_{t,s}\coloneqq \widehat{\mu}^{1,\mathrm{CF}}_{t,s}-\widehat{\mu}^{0,\mathrm{CF}}_{t,s}.
+\]
+Under the conditions of \cref{thm:main} and \cref{thm:main_mu0}, we have the asymptotic linear representation
+\[
+\sqrt{N}\,\big(\widehat{\tau}^{\mathrm{CF}}_{t,s}-\tau\big)
+=
+\frac{1}{\sqrt{N}}\sum_{i=1}^N
+\Big(
+\varphi_{t,s}(D_i;\vartheta^*)
+-
+\varphi^{0}_{t,s}(D_i;\vartheta^{0,*})
+\Big)
++o_p(1),
+\]
+and hence
+\[
+\sqrt{N}\,\big(\widehat{\tau}^{\mathrm{CF}}_{t,s}-\tau\big)
+\;\xrightarrow{d}\;
+\mathcal{N}\!\big(0,\,V^{\tau,*}_{t,s}\big),
+\qquad
+V^{\tau,*}_{t,s}\coloneqq \Var\!\Big(\varphi_{t,s}(D;\vartheta^*)-\varphi^{0}_{t,s}(D;\vartheta^{0,*})\Big).
+\]
+\end{corollary}
+
+\begin{lemma}[Cross-fitted $\ell_1$-penalized nuisance rates (adapted from \citet{hou2025efficient}, Lemma A21)]\label{lem:nuisance_rates}
+Fix a constant number of folds $K_f$. Let the full sample $\mathcal{D}=\{D_1,\ldots,D_N\}$ be partitioned into folds $\mathcal{D}=\bigcup_{k=1}^{K_f}\mathcal{D}_k$, and let $\mathcal{D}^{(-k)}=\mathcal{D}\setminus\mathcal{D}_k$ denote the out-of-fold data. For each fold $k$, let $\widehat{\boldsymbol{\gamma}}^{(-k)}$ be an estimator trained on $\mathcal{D}^{(-k)}$ (hence independent of $\mathcal{D}_k$).
+For an observation index $i\in\{1,\ldots,N\}$, let $\mathrm{fold}(i)\in\{1,\ldots,K_f\}$ denote the fold index such that $D_i\in\mathcal{D}_{\mathrm{fold}(i)}$; we use $\widehat{\boldsymbol{\gamma}}^{(-\mathrm{fold}(i))}$ to denote the out-of-fold nuisance estimate used when evaluating the loss contribution from $D_i$.
+Consider the cross-fitted $\ell_1$-penalized estimator
+\[
+\widehat{\boldsymbol{\beta}}
+\;\in\;
+\arg\min_{\boldsymbol{\beta}\in\R^p}
+\left\{
+\frac{1}{K_f}\sum_{k=1}^{K_f}\ell_k(\boldsymbol{\beta};\widehat{\boldsymbol{\gamma}}^{(-k)})
+\;+\;
+\lambda\|\boldsymbol{\beta}\|_1
+\right\},
+\qquad
+\ell_k(\boldsymbol{\beta};\boldsymbol{\gamma})
+\coloneqq
+\tildeE_k\!\big[\ell(D;\boldsymbol{\beta},\boldsymbol{\gamma})\big],
+\]
+where $\ell(D;\boldsymbol{\beta},\boldsymbol{\gamma})$ is convex in $\boldsymbol{\beta}$.
+Define also the fold-averaged empirical risk
+\[
+L_N(\boldsymbol{\beta}) \coloneqq \frac{1}{K_f}\sum_{k=1}^{K_f}\ell_k(\boldsymbol{\beta};\widehat{\boldsymbol{\gamma}}^{(-k)}).
+\]
+Let $\overline{\boldsymbol{\beta}}$ be the population minimizer at a population nuisance target $\overline{\boldsymbol{\gamma}}$,
+\[
+\overline{\boldsymbol{\beta}}\in\arg\min_{\boldsymbol{\beta}\in\R^p}\E[\ell(D;\boldsymbol{\beta},\overline{\boldsymbol{\gamma}})],
+\qquad s_\beta\coloneqq\|\overline{\boldsymbol{\beta}}\|_0.
+\]
+Assume the following high-dimensional regularity conditions (cf.\ Assumption 6 of \citet{hou2025efficient} and the RSC framework of \citet{negahban2012unified}):
+\begin{enumerate}
+    \item[(a)] (Sub-Gaussian covariates) Each coordinate of $\phi(\boldsymbol{X})$ is sub-Gaussian with $\max_{1\le j\le p}\|\phi_j(\boldsymbol{X})\|_{\psi_2}\le K_\phi$ (allowing $\|\phi(\boldsymbol{X})\|_\infty$ to grow at the usual $\sqrt{\log p}$ rate).
+    \item[(b)] (Response/link tails and smoothness) $Y$ is uniformly sub-Gaussian (or bounded), and the GLM mean function and its derivative are uniformly bounded on a neighborhood of $\overline{\boldsymbol{\beta}}$.
+    \item[(c)] (Identifiability) The population Gram matrix is non-degenerate: $\lambda_{\min}(\E[\phi(\boldsymbol{X})\phi(\boldsymbol{X})^T])\ge c>0$.
+    \item[(d)] (Weight regularity) Any weights induced by $\boldsymbol{\gamma}$ (e.g., density-ratio type weights) have finite moments and are locally Lipschitz in $\boldsymbol{\gamma}$ on a neighborhood of $\overline{\boldsymbol{\gamma}}$ (sufficient for the score stability bound used below).
+    \item[(e)] (Restricted strong convexity) With probability tending to 1, $L_N(\cdot)$ satisfies an RSC inequality on the standard cone associated with $\mathrm{supp}(\overline{\boldsymbol{\beta}})$.
+\end{enumerate}
+In our FACE-HD setting, we impose these regularity conditions in addition to \cref{asmp:data}, \cref{asmp:overlap}, and \cref{asmp:rsc} (noting that (a) matches \cref{asmp:data}(a), while (d) is ensured by the overlap/weight-moment assumptions and local smoothness). Choose $\lambda\asymp\sqrt{\log(p)/N}$. Then:
+\begin{remark}[On the choice of $N$ in $\lambda$]
+The scaling $\lambda\asymp\sqrt{\log(p)/N}$ is stated in terms of the total sample size $N$ for notational simplicity. In applications where the nuisance loss for a given arm/site pair is effectively averaged over an arm-specific subsample (e.g., treated units in the source), one may equivalently write $\lambda\asymp\sqrt{\log(p)/N_{\mathrm{eff}}}$ where $N_{\mathrm{eff}}$ is the corresponding effective sample size. Under the sampling-fraction regime and overlap/positivity conditions stated above, $N_{\mathrm{eff}}\asymp N$, so the rate statements are unchanged.
+\end{remark}
+\begin{enumerate}
+    \item \textbf{(General)} 
+    \[
+    \|\widehat{\boldsymbol{\beta}}-\overline{\boldsymbol{\beta}}\|_2
+    =
+    O_p\!\left(\sqrt{\frac{s_\beta\log(p)}{N}}\right)
+    \;+\;
+    O_p\!\left(\sup_{1\le k\le K_f}\|\widehat{\boldsymbol{\gamma}}^{(-k)}-\overline{\boldsymbol{\gamma}}\|_2\right).
+    \]
+    \item \textbf{(Special)} If, for each fold $k$, the conditional foldwise score at $\overline{\boldsymbol{\beta}}$ satisfies
+    \[
+    \E\!\left[\nabla_{\boldsymbol{\beta}}\ell(D;\overline{\boldsymbol{\beta}},\widehat{\boldsymbol{\gamma}}^{(-k)})\,\middle|\,\mathcal{D}^{(-k)}\right]
+    =\mathbf{0},
+    \]
+    then the plug-in score term disappears and
+    \[
+    \|\widehat{\boldsymbol{\beta}}-\overline{\boldsymbol{\beta}}\|_2
+    =
+    O_p\!\left(\sqrt{\frac{s_\beta\log(p)}{N}}\right).
+    \]
+\end{enumerate}
+Moreover, we can convert the $\ell_2$-rate to an $\ell_1$-rate by an explicit cone argument.
+Let $\Delta\coloneqq \widehat{\boldsymbol{\beta}}-\overline{\boldsymbol{\beta}}$ and $\mathcal{J}\coloneqq \mathrm{supp}(\overline{\boldsymbol{\beta}})$ with $|\mathcal{J}|=s_\beta$.
+From the proof below (see the KKT-based cone inequality leading to \cref{eq:cone_ineq}), on a high-probability event we have
+\[
+\|\Delta_{\mathcal{J}^c}\|_1 \le 3\|\Delta_{\mathcal{J}}\|_1 + \frac{2}{\lambda}\|B\|_\infty\|\Delta\|_1,
+\]
+where $\|B\|_\infty$ is the plug-in score term induced by cross-fitting.
+With $\lambda\asymp\sqrt{\log(p)/N}$ and $\|B\|_\infty=O_p(\sqrt{\log(p)/N})$ (proved below), we have $(2/\lambda)\|B\|_\infty\le 1/2$ w.p.a.1, and hence
+\[
+\|\Delta\|_1
+=
+\|\Delta_{\mathcal{J}}\|_1+\|\Delta_{\mathcal{J}^c}\|_1
+\le
+4\|\Delta_{\mathcal{J}}\|_1
+\le
+4\sqrt{s_\beta}\|\Delta\|_2.
+\]
+Combining this with the $\ell_2$ bounds above yields the corresponding $\ell_1$-rate:
+\[
+\|\widehat{\boldsymbol{\beta}}-\overline{\boldsymbol{\beta}}\|_1
+=
+O_p\!\left(s_\beta\sqrt{\frac{\log(p)}{N}}\right)
+\;+\;
+O_p\!\left(\sqrt{s_\beta}\sup_{1\le k\le K_f}\|\widehat{\boldsymbol{\gamma}}^{(-k)}-\overline{\boldsymbol{\gamma}}\|_2\right),
+\]
+with the second term dropping in the special case.
+
+\textbf{Instantiation for FACE-HD calibrated losses.} In our application, $\boldsymbol{\beta}$ is instantiated as either $\boldsymbol{\alpha}^1$ or $\boldsymbol{\gamma}_1$. If \cref{asmp:rsc}(d) holds (as in the foldwise score-centering condition used by \citet{hou2025efficient}), then we may invoke the \textbf{(Special)} case above and obtain
+\[
+\lVert \widehat{\boldsymbol{\alpha}}^{1,(-k)}_{t,s} - \boldsymbol{\alpha}^{1,*}\rVert_q
+= O_p\!\left(s_\alpha^{1-1/q}\sqrt{\frac{\log(p)}{N}}\right),
+\qquad
+\lVert \widehat{\boldsymbol{\gamma}}^{(-k)}_{s,1} - \boldsymbol{\gamma}^{*}_1\rVert_q
+= O_p\!\left(s_\gamma^{1-1/q}\sqrt{\frac{\log(p)}{N}}\right),
+\qquad q\in\{1,2\}.
+\]
+\end{lemma}
+\begin{proof}
+We give a detailed argument in our notation; it follows the structure of \citet{hou2025efficient} (proof of Lemma A21).
+Write the (random) fold-averaged empirical loss as
+\[
+L_N(\boldsymbol{\beta}) \coloneqq \frac{1}{K_f}\sum_{k=1}^{K_f}\ell_k(\boldsymbol{\beta};\widehat{\boldsymbol{\gamma}}^{(-k)}),
+\qquad
+\widehat{\boldsymbol{\beta}}\in\arg\min_{\boldsymbol{\beta}}\{L_N(\boldsymbol{\beta})+\lambda\|\boldsymbol{\beta}\|_1\}.
+\]
+Let $\Delta\coloneqq \widehat{\boldsymbol{\beta}}-\overline{\boldsymbol{\beta}}$, and let $\mathcal{J}\coloneqq \mathrm{supp}(\overline{\boldsymbol{\beta}})$ with $|\mathcal{J}|=s_\beta$.
+
+\textbf{Step 1 (Basic inequality).}
+By optimality,
+\[
+L_N(\overline{\boldsymbol{\beta}}+\Delta)+\lambda\|\overline{\boldsymbol{\beta}}+\Delta\|_1
+\le
+L_N(\overline{\boldsymbol{\beta}})+\lambda\|\overline{\boldsymbol{\beta}}\|_1,
+\]
+so
+\[
+L_N(\overline{\boldsymbol{\beta}}+\Delta)-L_N(\overline{\boldsymbol{\beta}})
+\le
+\lambda(\|\overline{\boldsymbol{\beta}}\|_1-\|\overline{\boldsymbol{\beta}}+\Delta\|_1)
+\le
+\lambda(\|\Delta_{\mathcal{J}}\|_1-\|\Delta_{\mathcal{J}^c}\|_1).
+\]
+
+\textbf{Step 2 (RSC expansion).}
+By convexity,
+\[
+L_N(\overline{\boldsymbol{\beta}}+\Delta)-L_N(\overline{\boldsymbol{\beta}})
+\ge
+\nabla L_N(\overline{\boldsymbol{\beta}})^T\Delta
+\;+\;
+\mathcal{R}_N(\Delta),
+\]
+where the remainder $\mathcal{R}_N(\Delta)$ satisfies the RSC lower bound (\cref{asmp:rsc}(a) as applied to this loss)
+\[
+\mathcal{R}_N(\Delta)
+\ge
+\kappa_1\|\Delta\|_2^2-\kappa_2\frac{\log(p)}{N}\|\Delta\|_1^2
+\]
+on the standard restricted cone. Combining with Step 1 yields
+\begin{equation}\label{eq:nuis_prelim_bound}
+\kappa_1\|\Delta\|_2^2
+\le
+\|\nabla L_N(\overline{\boldsymbol{\beta}})\|_\infty\|\Delta\|_1
+\;+\;
+\lambda(\|\Delta_{\mathcal{J}}\|_1-\|\Delta_{\mathcal{J}^c}\|_1)
+\;+\;
+\kappa_2\frac{\log(p)}{N}\|\Delta\|_1^2.
+\end{equation}
+
+\textbf{Step 3 (Score decomposition and choice of $\lambda$).}
+Decompose the score
+\[
+\nabla L_N(\overline{\boldsymbol{\beta}})
+=
+\underbrace{\big(\nabla L_N(\overline{\boldsymbol{\beta}})-\E[\nabla L_N(\overline{\boldsymbol{\beta}})\mid \{\mathcal{D}^{(-k)}\}_{k=1}^{K_f}]\big)}_{\text{stochastic term }A}
+\;+\;
+\underbrace{\E[\nabla L_N(\overline{\boldsymbol{\beta}})\mid \{\mathcal{D}^{(-k)}\}_{k=1}^{K_f}]}_{\text{plug-in term }B}.
+\]
+By cross-fitting, conditional on $\{\mathcal{D}^{(-k)}\}$, each fold average $\tildeE_k[\nabla_{\boldsymbol{\beta}}\ell(D;\overline{\boldsymbol{\beta}},\widehat{\boldsymbol{\gamma}}^{(-k)})]$ is an average of independent sub-exponential random vectors with uniformly controlled coordinates, so a union bound with Bernstein/Hoeffding inequalities gives
+\[
+\|A\|_\infty = O_p\!\left(\sqrt{\frac{\log(p)}{N}}\right).
+\]
+Choose $\lambda\asymp\sqrt{\log(p)/N}$ so that $\lambda\ge 2\|A\|_\infty$ w.p.a.1.
+
+For the plug-in term, note that
+\[
+B-\E[\nabla_{\boldsymbol{\beta}}\ell(D;\overline{\boldsymbol{\beta}},\overline{\boldsymbol{\gamma}})]
+=
+\E[\nabla_{\boldsymbol{\beta}}\ell(D;\overline{\boldsymbol{\beta}},\widehat{\boldsymbol{\gamma}}^{(-\mathrm{fold}(D))})
+-\nabla_{\boldsymbol{\beta}}\ell(D;\overline{\boldsymbol{\beta}},\overline{\boldsymbol{\gamma}})
+\mid \{\mathcal{D}^{(-k)}\}],
+\]
+and the weight-regularity/Lipschitz condition implies
+\[
+\|B-\E[\nabla_{\boldsymbol{\beta}}\ell(D;\overline{\boldsymbol{\beta}},\overline{\boldsymbol{\gamma}})]\|_2
+\le
+C\sup_{1\le k\le K_f}\|\widehat{\boldsymbol{\gamma}}^{(-k)}-\overline{\boldsymbol{\gamma}}\|_2.
+\]
+In the special case, $\E[\nabla_{\boldsymbol{\beta}}\ell(D;\overline{\boldsymbol{\beta}},\widehat{\boldsymbol{\gamma}}^{(-k)})\mid\mathcal{D}^{(-k)}]=0$ for all $k$, hence $B=\mathbf{0}$.
+
+\textbf{Step 4 (Cone property and $\ell_2$ rate).}
+Plugging $\|\nabla L_N(\overline{\boldsymbol{\beta}})\|_\infty\le \|A\|_\infty+\|B\|_\infty$ into \cref{eq:nuis_prelim_bound} and using $\lambda\ge 2\|A\|_\infty$ yields the cone inequality
+\begin{equation}\label{eq:cone_ineq}
+\|\Delta_{\mathcal{J}^c}\|_1 \le 3\|\Delta_{\mathcal{J}}\|_1 + \frac{2}{\lambda}\|B\|_\infty\|\Delta\|_1.
+\end{equation}
+On the event $\{(2/\lambda)\|B\|_\infty\le 1/2\}$, \cref{eq:cone_ineq} implies $\|\Delta_{\mathcal{J}^c}\|_1\le 7\|\Delta_{\mathcal{J}}\|_1$ and hence $\|\Delta\|_1\le 8\|\Delta_{\mathcal{J}}\|_1\le 8\sqrt{s_\beta}\|\Delta\|_2$.
+Plugging this back into the RSC lower bound (\cref{asmp:rsc}(a) as applied to this loss) absorbs the $\kappa_2(\log(p)/N)\|\Delta\|_1^2$ term and yields
+\[
+\|\Delta\|_2
+=
+O_p(\sqrt{s_\beta}\lambda)
+\;+\;
+O_p\!\left(\sup_{1\le k\le K_f}\|\widehat{\boldsymbol{\gamma}}^{(-k)}-\overline{\boldsymbol{\gamma}}\|_2\right).
+\]
+This is the general-case $\ell_2$ rate. In the special case, $B=\mathbf{0}$ and the second term drops.
+
+\textbf{Step 5 ($\ell_1$ rate).}
+From the cone property and $\|\Delta_{\mathcal{J}}\|_1\le \sqrt{s_\beta}\|\Delta\|_2$,
+\[
+\|\Delta\|_1
+=
+O_p(s_\beta\lambda)
+\;+\;
+O_p\!\left(\sqrt{s_\beta}\sup_{1\le k\le K_f}\|\widehat{\boldsymbol{\gamma}}^{(-k)}-\overline{\boldsymbol{\gamma}}\|_2\right),
+\]
+with the second term dropping in the special case.
+
+Finally, for FACE-HD, the \textbf{(Special)} conclusion may be invoked for $\boldsymbol{\beta}=\boldsymbol{\alpha}^1$ and $\boldsymbol{\beta}=\boldsymbol{\gamma}_1$ only when the foldwise score-centering condition is assumed/verified as in \cref{asmp:rsc}(d). Otherwise, one should use the \textbf{(General)} bounds, which explicitly propagate the plug-in nuisance error.
+\end{proof}
+
+\begin{lemma}[Orthogonality from Calibrated Losses]\label{lem:ortho_foc}
+Under \cref{asmp:rsc}(c), let $\vartheta^* = (\boldsymbol{\alpha}^{1,*}, \boldsymbol{\gamma}_1^*)$ be the population targets of the calibrated losses in the two-level algorithm (see \maincref{app:two_level_cf}; \maincref{eq:gamma_calibrated_loss} and \maincref{eq:alpha_calibrated_loss}):
+\begin{align*}
+L_{\gamma}(\boldsymbol{\gamma}; \boldsymbol{\alpha}^{1,*}) &= \E_t \left[ \nabla_{\boldsymbol{\alpha}} \psi(\phi(\boldsymbol{X}); \boldsymbol{\alpha}^{1,*})^T \boldsymbol{\gamma} \right] + \E_{s} \left[ I(A=1) e^{-\phi(\boldsymbol{X})^T \boldsymbol{\gamma}} \psi'(\mathcal{T}(\phi(\boldsymbol{X})^T \boldsymbol{\alpha}^{1,*})) \right] \\
+L_{\alpha}(\boldsymbol{\alpha}; \boldsymbol{\gamma}_1^*) &= \E_{s} \left[ w_\tau(\boldsymbol{X}; \boldsymbol{\gamma}_1^*) \left( -Y \cdot (\phi(\boldsymbol{X})^T \boldsymbol{\alpha}) + \Psi(\phi(\boldsymbol{X})^T \boldsymbol{\alpha}) \right) \right]
+\end{align*}
+(Ignoring regularization terms, which vanish in population). For canonical-link GLMs,
+\[
+\nabla_{\boldsymbol{\alpha}} \psi(\phi(\boldsymbol{X}); \boldsymbol{\alpha})
+= \phi(\boldsymbol{X})\,\psi'(\phi(\boldsymbol{X})^T\boldsymbol{\alpha}).
+\]
+\begin{remark}[Penalization and approximate orthogonality]
+The population moment conditions below are derived from the unpenalized population losses. In finite samples, the $\ell_1$ penalty induces a KKT subgradient term of order $\lambda$ in the estimating equations. Under the nuisance rates in \cref{lem:nuisance_rates} and the sparsity scaling used in \cref{thm:main}, this penalty-induced perturbation contributes at most an $o_p(N^{-1/2})$ term to the final DR remainder and therefore does not affect the first-order limit theory.
+\end{remark}
+Under asymptotically inactive truncation (\cref{asmp:overlap}(c)), the population first-order optimality conditions are therefore equivalent to the following moment conditions at $\vartheta^*$:
+\begin{align*}
+(i) \quad & \E_t\big[\nabla_{\boldsymbol{\alpha}} \psi(\phi(\boldsymbol{X}); \boldsymbol{\alpha}^{1,*})\big]
+- \E_s\left[
+    w(\boldsymbol{X};\boldsymbol{\gamma}_1^*)
+    \nabla_{\boldsymbol{\alpha}} \psi(\phi(\boldsymbol{X}); \boldsymbol{\alpha}^{1,*})
+\right] = \mathbf{0} \\
+(ii) \quad & \E_s\left[
+    w(\boldsymbol{X};\boldsymbol{\gamma}_1^*)
+    \phi(\boldsymbol{X})
+    \{Y - \psi(\phi(\boldsymbol{X}); \boldsymbol{\alpha}^{1,*})\}
+\right] = \mathbf{0}.
+\end{align*}
+\end{lemma}
+
+\begin{proof}
+We derive the moment conditions by taking the gradients of the population loss functions $L_\gamma$ and $L_\alpha$ with respect to the parameter being optimized and setting them to zero at the minimum $\vartheta^*$.
+
+\textbf{Condition (i) from FOC of $L_{\gamma}(\boldsymbol{\gamma}; \boldsymbol{\alpha}^{1,*})$ w.r.t. $\boldsymbol{\gamma}$:}
+The gradient of $L_{\gamma}(\boldsymbol{\gamma}; \boldsymbol{\alpha}^{1,*})$ with respect to $\boldsymbol{\gamma}$ is:
+\[
+\begin{aligned}
+\nabla_{\boldsymbol{\gamma}} L_{\gamma}(\boldsymbol{\gamma}; \boldsymbol{\alpha}^{1,*})
+&= \E_t \left[ \nabla_{\boldsymbol{\alpha}} \psi(\phi(\boldsymbol{X}); \boldsymbol{\alpha}^{1,*}) \right] \\
+&\quad + \E_{s} \left[ I(A=1) (-\phi(\boldsymbol{X})) e^{-\phi(\boldsymbol{X})^T \boldsymbol{\gamma}} \psi'(\mathcal{T}(\phi(\boldsymbol{X})^T \boldsymbol{\alpha}^{1,*})) \right]
+\end{aligned}
+\]
+Setting this gradient to zero at $\boldsymbol{\gamma} = \boldsymbol{\gamma}_1^*$ gives:
+\[
+\begin{aligned}
+\E_t \left[ \nabla_{\boldsymbol{\alpha}} \psi(\phi(\boldsymbol{X}); \boldsymbol{\alpha}^{1,*}) \right]
+&= \E_{s} \left[ \phi(\boldsymbol{X}) w(\boldsymbol{X}; \boldsymbol{\gamma}_1^*) \psi'(\mathcal{T}(\phi(\boldsymbol{X})^T \boldsymbol{\alpha}^{1,*})) \right].
+\end{aligned}
+\]
+This equation is constructed to enforce the moment condition (i). Note that for standard GLMs with canonical links,
+\[
+\nabla_{\boldsymbol{\alpha}} \psi(\phi(\boldsymbol{X}); \boldsymbol{\alpha}) = \phi(\boldsymbol{X}) \psi'(\phi(\boldsymbol{X})^T \boldsymbol{\alpha}).
+\]
+
+\textbf{Truncation Error Analysis:} Define the event $\mathcal{E}_{\alpha,N} = \{|\phi(\boldsymbol{X})^T \boldsymbol{\alpha}^{1,*}| \le M_{\tau,N}\}$. By \cref{asmp:overlap}(c), $P(\mathcal{E}_{\alpha,N}^c \mid R=s)=o(N^{-1})$. On $\mathcal{E}_{\alpha,N}$, $\mathcal{T}(\phi(\boldsymbol{X})^T \boldsymbol{\alpha}^{1,*}) = \phi(\boldsymbol{X})^T \boldsymbol{\alpha}^{1,*}$, so $\psi'(\mathcal{T}(\cdot)) = \psi'(\cdot)$ exactly. Therefore, replacing $\psi'(\mathcal{T}(\phi(\boldsymbol{X})^T \boldsymbol{\alpha}^{1,*}))$ by $\psi'(\phi(\boldsymbol{X})^T \boldsymbol{\alpha}^{1,*})$ in the population FOC changes the source-side moment by at most an $o(1)$ term, and condition (i) holds asymptotically.
+
+\textbf{Condition (ii) from FOC of $L_{\alpha}(\boldsymbol{\alpha}; \boldsymbol{\gamma}_1^*)$ w.r.t. $\boldsymbol{\alpha}$:}
+The loss $L_{\alpha}$ is the population weighted GLM log-likelihood. Its gradient with respect to $\boldsymbol{\alpha}$ is:
+\[
+\nabla_{\boldsymbol{\alpha}} L_{\alpha}(\boldsymbol{\alpha}; \boldsymbol{\gamma}_1^*) = \E_{s} \left[ w_\tau(\boldsymbol{X}; \boldsymbol{\gamma}_1^*) \left( -Y \cdot \phi(\boldsymbol{X}) + \nabla_{\boldsymbol{\alpha}}\Psi(\phi(\boldsymbol{X})^T \boldsymbol{\alpha}) \right) \right]
+\]
+Using the GLM identity $\nabla_{\boldsymbol{\alpha}}\Psi(u) = \psi(u) \phi(\boldsymbol{X})$ where $u = \phi(\boldsymbol{X})^T \boldsymbol{\alpha}$:
+\[
+\nabla_{\boldsymbol{\alpha}} L_{\alpha}(\boldsymbol{\alpha}; \boldsymbol{\gamma}_1^*) = \E_{s} \left[ w_\tau(\boldsymbol{X}; \boldsymbol{\gamma}_1^*) \phi(\boldsymbol{X}) \left( \psi(\phi(\boldsymbol{X})^T \boldsymbol{\alpha}) - Y \right) \right]
+\]
+Setting this gradient to zero at $\boldsymbol{\alpha} = \boldsymbol{\alpha}^{1,*}$ gives:
+\[
+\E_{s} \left[ w_\tau(\boldsymbol{X}; \boldsymbol{\gamma}_1^*) \phi(\boldsymbol{X}) \left( Y - \psi(\phi(\boldsymbol{X})^T \boldsymbol{\alpha}^{1,*}) \right) \right] = \mathbf{0}.
+\]
+Finally, under \cref{asmp:overlap}(c), truncation is asymptotically inactive at $\boldsymbol{\gamma}_1^*$, so $w_\tau(\boldsymbol{X};\boldsymbol{\gamma}_1^*) = w(\boldsymbol{X};\boldsymbol{\gamma}_1^*)$ w.p.a.1. This yields condition (ii).
+\end{proof}
+
+\begin{lemma}[Bias-Variance Bounds]\label{lem:bias_bound}
+Let $\vartheta_n = (\boldsymbol{\alpha}_n^1, \boldsymbol{\gamma}_{1,n})$ be a sequence of nuisance parameters converging to $\vartheta^*=(\boldsymbol{\alpha}^{1,*},\boldsymbol{\gamma}_1^*)$.
+\begin{enumerate}
+    \item \textbf{(Bias Bound - Double Robustness)} If $\vartheta^*$ minimizes the population calibrated losses (\cref{lem:ortho_foc} holds), then:
+    \[
+    \begin{aligned}
+    \lvert \E[\widetilde{\varphi}_{t,s}(D; \vartheta_n)] - \E[\widetilde{\varphi}_{t,s}(D; \vartheta^*)] \rvert
+    &\le C \cdot \left(
+        \lVert \boldsymbol{\alpha}_n^1 - \boldsymbol{\alpha}^{1,*} \rVert_2^2
+        +
+        \lVert \boldsymbol{\gamma}_{1,n} - \boldsymbol{\gamma}_1^* \rVert_2^2 \right. \\
+    &\quad\left. +
+        \lVert \boldsymbol{\alpha}_n^1 - \boldsymbol{\alpha}^{1,*} \rVert_2 \cdot \lVert \boldsymbol{\gamma}_{1,n} - \boldsymbol{\gamma}_1^* \rVert_2
+    \right)
+    \end{aligned}
+    \]
+    \item \textbf{(Variance Bound)}
+    \[
+    \Var(\widetilde{\varphi}_{t,s}(D; \vartheta_n) - \widetilde{\varphi}_{t,s}(D; \vartheta^*))
+    \le C \cdot \left( \lVert \boldsymbol{\alpha}_n^1 - \boldsymbol{\alpha}^{1,*} \rVert_2^2 + \lVert \boldsymbol{\gamma}_{1,n} - \boldsymbol{\gamma}_1^* \rVert_2^2 \right)
+    \]
+\end{enumerate}
+\end{lemma}
+\begin{proof}
+We analyze the bias term $\E[\widetilde{\varphi}_{t,s}(D; \vartheta_n) - \widetilde{\varphi}_{t,s}(D; \vartheta^*)]$.
+Let $\Delta_\alpha = \boldsymbol{\alpha}_n^1 - \boldsymbol{\alpha}^{1,*}$ and $\Delta_\gamma = \boldsymbol{\gamma}_{1,n} - \boldsymbol{\gamma}_1^*$.
+We decompose the bias using an intermediate step:
+\[
+\text{Bias} = \underbrace{\E[\widetilde{\varphi}_{t,s}(D; \boldsymbol{\alpha}_n^1, \boldsymbol{\gamma}_{1,n}) - \widetilde{\varphi}_{t,s}(D; \boldsymbol{\alpha}^{1,*}, \boldsymbol{\gamma}_{1,n})]}_{\text{Bias from } \boldsymbol{\alpha}}
++ \underbrace{\E[\widetilde{\varphi}_{t,s}(D; \boldsymbol{\alpha}^{1,*}, \boldsymbol{\gamma}_{1,n}) - \widetilde{\varphi}_{t,s}(D; \boldsymbol{\alpha}^{1,*}, \boldsymbol{\gamma}_1^*)]}_{\text{Bias from } \boldsymbol{\gamma}}
+\]
+
+\textbf{Step 1 (Bias from $\boldsymbol{\alpha}$: mean-value expansion + orthogonality).}
+Define the path $h_\alpha(t)\coloneqq \E[\widetilde{\varphi}_{t,s}(D;\boldsymbol{\alpha}^{1,*}+t\Delta_\alpha,\boldsymbol{\gamma}_{1,n})]$ for $t\in[0,1]$.
+By the fundamental theorem of calculus (and dominated convergence, justified by \cref{asmp:overlap}(b) and local boundedness of the derivatives), we have
+\[
+h_\alpha(1)-h_\alpha(0)
+=
+\int_0^1 h_\alpha'(t)\,dt
+=
+\int_0^1 \E\!\left[\nabla_{\boldsymbol{\alpha}}\widetilde{\varphi}_{t,s}(D;\boldsymbol{\alpha}^{1,*}+t\Delta_\alpha,\boldsymbol{\gamma}_{1,n})\right]^T\Delta_\alpha\,dt.
+\]
+Hence
+\[
+\begin{aligned}
+\text{Bias from } \boldsymbol{\alpha}
+&=
+\left(\E\!\left[\nabla_{\boldsymbol{\alpha}}\widetilde{\varphi}_{t,s}(D;\boldsymbol{\alpha}^{1,*},\boldsymbol{\gamma}_1^*)\right]\right)^T\Delta_\alpha
+\;+\;
+\int_0^1 \Bigl\{
+\E\!\left[\nabla_{\boldsymbol{\alpha}}\widetilde{\varphi}_{t,s}(D;\boldsymbol{\alpha}^{1,*}+t\Delta_\alpha,\boldsymbol{\gamma}_{1,n})\right] \\
+&\qquad\qquad
+-\E\!\left[\nabla_{\boldsymbol{\alpha}}\widetilde{\varphi}_{t,s}(D;\boldsymbol{\alpha}^{1,*},\boldsymbol{\gamma}_1^*)\right]
+\Bigr\}^T\Delta_\alpha\,dt.
+\end{aligned}
+\]
+The first term is zero by \cref{lem:ortho_foc}(i). For the second term, we use Cauchy--Schwarz:
+\[
+\left|\text{Bias from } \boldsymbol{\alpha}\right|
+\le
+\|\Delta_\alpha\|_2 \int_0^1
+\left\|
+\E\!\left[\nabla_{\boldsymbol{\alpha}}\widetilde{\varphi}_{t,s}(D;\boldsymbol{\alpha}^{1,*}+t\Delta_\alpha,\boldsymbol{\gamma}_{1,n})\right]-\E\!\left[\nabla_{\boldsymbol{\alpha}}\widetilde{\varphi}_{t,s}(D;\boldsymbol{\alpha}^{1,*},\boldsymbol{\gamma}_1^*)\right]
+\right\|_2\,dt.
+\]
+The mapping $\vartheta\mapsto \E[\nabla_{\boldsymbol{\alpha}}\widetilde{\varphi}_{t,s}(D;\vartheta)]$ is locally Lipschitz in $\vartheta$ by the explicit derivative formula below, the bounded-slope/Lipschitz condition on $\psi'$ (\cref{asmp:overlap}(b)(i)), and the bounded-weights/moment conditions (\cref{asmp:overlap}(a,b)). Therefore, for $\vartheta_n$ sufficiently close to $\vartheta^*$,
+\[
+\left\|
+\E\!\left[\nabla_{\boldsymbol{\alpha}}\widetilde{\varphi}_{t,s}(D;\boldsymbol{\alpha}^{1,*}+t\Delta_\alpha,\boldsymbol{\gamma}_{1,n})\right]-\E\!\left[\nabla_{\boldsymbol{\alpha}}\widetilde{\varphi}_{t,s}(D;\boldsymbol{\alpha}^{1,*},\boldsymbol{\gamma}_1^*)\right]
+\right\|_2
+\le
+C\left(\|\Delta_\alpha\|_2+\|\Delta_\gamma\|_2\right),
+\]
+uniformly over $t\in[0,1]$, and hence
+\[
+\left|\text{Bias from } \boldsymbol{\alpha}\right|
+\le
+C\left(\|\Delta_\alpha\|_2^2+\|\Delta_\alpha\|_2\|\Delta_\gamma\|_2\right).
+\]
+
+\textbf{Step 2 (Bias from $\boldsymbol{\gamma}$: mean-value expansion + orthogonality).}
+Similarly define $h_\gamma(t)\coloneqq \E[\widetilde{\varphi}_{t,s}(D;\boldsymbol{\alpha}^{1,*},\boldsymbol{\gamma}_1^*+t\Delta_\gamma)]$.
+Then
+\[
+\text{Bias from } \boldsymbol{\gamma}
+=
+\int_0^1 \E\!\left[\nabla_{\boldsymbol{\gamma}}\widetilde{\varphi}_{t,s}(D;\boldsymbol{\alpha}^{1,*},\boldsymbol{\gamma}_1^*+t\Delta_\gamma)\right]^T\Delta_\gamma\,dt.
+\]
+Adding and subtracting $\E[\nabla_{\boldsymbol{\gamma}}\widetilde{\varphi}_{t,s}(D;\boldsymbol{\alpha}^{1,*},\boldsymbol{\gamma}_1^*)]$, the leading term is zero by \cref{lem:ortho_foc}(ii), and the remainder is bounded (again by local Lipschitz continuity and Cauchy--Schwarz) as
+\[
+\left|\text{Bias from } \boldsymbol{\gamma}\right|
+\le
+C\|\Delta_\gamma\|_2^2.
+\]
+
+\textbf{Step 3 (Collecting).}
+Combining the two displays yields the stated second-order bias bound.
+
+\textbf{Derivative identities used above.}
+For example, the gradient w.r.t. $\boldsymbol{\alpha}$ at $(\boldsymbol{\alpha}^{1,*},\boldsymbol{\gamma}_1^*)$ is:
+\[
+\begin{aligned}
+\E\left[ \nabla_{\boldsymbol{\alpha}} \widetilde{\varphi}_{t,s}(D; \boldsymbol{\alpha}^{1,*}, \boldsymbol{\gamma}_1^*) \right]
+&= \E_t\left[ \nabla_{\boldsymbol{\alpha}} \psi(\cdot; \boldsymbol{\alpha}^{1,*}) \right]
+- \E_s\left[ w(\boldsymbol{X}; \boldsymbol{\gamma}_1^*) \nabla_{\boldsymbol{\alpha}} \psi(\cdot; \boldsymbol{\alpha}^{1,*}) \right]
+\end{aligned}
+\]
+where $w(\boldsymbol{X}; \boldsymbol{\gamma}) = I(A=1)/e^{\phi(\boldsymbol{X})^T \boldsymbol{\gamma}}$.
+This is exactly $\mathbf{0}$ by \cref{lem:ortho_foc}(i).
+Similarly, the gradient w.r.t. $\boldsymbol{\gamma}$ is:
+\[
+\begin{aligned}
+\E\left[ \nabla_{\boldsymbol{\gamma}} \widetilde{\varphi}_{t,s}(D; \boldsymbol{\alpha}^{1,*}, \boldsymbol{\gamma}_1^*) \right]
+&= \E_s\left[
+    \nabla_{\boldsymbol{\gamma}}w(\boldsymbol{X}; \boldsymbol{\gamma}_1^*)
+    \{Y - \psi(\phi(\boldsymbol{X}); \boldsymbol{\alpha}^{1,*})\}
+\right] \\
+&= -\E_s\left[
+    w(\boldsymbol{X}; \boldsymbol{\gamma}_1^*)
+    \phi(\boldsymbol{X})
+    \{Y - \psi(\phi(\boldsymbol{X}); \boldsymbol{\alpha}^{1,*})\}
+\right]
+\end{aligned}
+\]
+This is exactly $\mathbf{0}$ by \cref{lem:ortho_foc}(ii).
+This proves part 1.
+
+\textbf{Part 2 (Variance): explicit $L_2$-Lipschitz bound.}
+Write the difference as
+\[
+\widetilde{\varphi}_{t,s}(D;\vartheta_n)-\widetilde{\varphi}_{t,s}(D;\vartheta^*)
+=
+T_t(D)+T_s(D),
+\]
+where
+\[
+T_t(D)\coloneqq \frac{I(R=t)}{\rho_t}\left\{\psi(\phi(\boldsymbol{X});\boldsymbol{\alpha}_n^1)-\psi(\phi(\boldsymbol{X});\boldsymbol{\alpha}^{1,*})\right\},
+\]
+and
+\[
+\begin{aligned}
+T_s(D)
+&\coloneqq \frac{I(R=s)}{\rho_s}\Big(
+w(\boldsymbol{X};\boldsymbol{\gamma}_{1,n})\{Y-\psi(\phi(\boldsymbol{X});\boldsymbol{\alpha}_n^1)\}
+-w(\boldsymbol{X};\boldsymbol{\gamma}_1^*)\{Y-\psi(\phi(\boldsymbol{X});\boldsymbol{\alpha}^{1,*})\}
+\Big) \\
+&= \frac{I(R=s)}{\rho_s}\{T_{s,1}(D)+T_{s,2}(D)\}.
+\end{aligned}
+\]
+where
+\[
+\begin{aligned}
+T_{s,1}(D)
+&\coloneqq
+\{w(\boldsymbol{X};\boldsymbol{\gamma}_{1,n})-w(\boldsymbol{X};\boldsymbol{\gamma}_1^*)\}
+\{Y-\psi(\phi(\boldsymbol{X});\boldsymbol{\alpha}^{1,*})\},\\
+T_{s,2}(D)
+&\coloneqq
+w(\boldsymbol{X};\boldsymbol{\gamma}_{1,n})
+\{\psi(\phi(\boldsymbol{X});\boldsymbol{\alpha}^{1,*})-\psi(\phi(\boldsymbol{X});\boldsymbol{\alpha}_n^1)\}.
+\end{aligned}
+\]
+By $(a+b+c)^2\le 3(a^2+b^2+c^2)$ and $\Var(Z)\le \E[Z^2]$,
+\[
+\Var\!\left(\widetilde{\varphi}_{t,s}(D;\vartheta_n)-\widetilde{\varphi}_{t,s}(D;\vartheta^*)\right)
+\le
+3\E[T_t(D)^2]+3\E[T_{s,1}(D)^2]+3\E[T_{s,2}(D)^2].
+\]
+For $T_t$ and $T_{s,2}$, the bounded-slope assumption on $\psi$ (\cref{asmp:overlap}(b)(i)) implies
+$|\psi(u_1)-\psi(u_2)|\le L_\psi|u_1-u_2|$, hence
+\[
+\E[T_t(D)^2]+\E[T_{s,2}(D)^2]
+\le
+C\,\E\!\left[\|\phi(\boldsymbol{X})\|_2^2\right]\|\Delta_\alpha\|_2^2,
+\]
+using the weight-moment condition (\cref{asmp:overlap}(a)(ii)) and finite second moments of $\phi(\boldsymbol{X})$ (\cref{asmp:data}(a)).
+For $T_{s,1}$, local $L_2$-Lipschitz continuity of $w(\boldsymbol{X};\boldsymbol{\gamma})$ in $\boldsymbol{\gamma}$ (implied by the exponential form of $w$, the overlap/weight-moment assumptions, and the moment condition in \cref{asmp:overlap}(b)) yields
+\[
+\E[T_{s,1}(D)^2]
+\le
+C\|\Delta_\gamma\|_2^2.
+\]
+Combining the bounds gives the stated variance inequality.
+\end{proof}
+
+
+\begin{lemma}[Double Robustness of Bias Terms]\label{lem:dr_terms_revised}
+Let $\Delta_\alpha = \boldsymbol{\alpha}_n^1 - \boldsymbol{\alpha}^{1,*}$ and $\Delta_\gamma = \boldsymbol{\gamma}_{1,n} - \boldsymbol{\gamma}_1^*$. Define the two first-order bias components:
+\begin{align*}
+\Psi_1(\boldsymbol{\alpha}_n^1, \boldsymbol{\gamma}_1^*) &\coloneqq \E[\widetilde{\varphi}_{t,s}(D; \boldsymbol{\alpha}_n^1, \boldsymbol{\gamma}_1^*) - \widetilde{\varphi}_{t,s}(D; \boldsymbol{\alpha}^{1,*}, \boldsymbol{\gamma}_1^*)] \\
+\Psi_2(\boldsymbol{\gamma}_{1,n}, \boldsymbol{\alpha}^{1,*}) &\coloneqq \E[\widetilde{\varphi}_{t,s}(D; \boldsymbol{\alpha}^{1,*}, \boldsymbol{\gamma}_{1,n}) - \widetilde{\varphi}_{t,s}(D; \boldsymbol{\alpha}^{1,*}, \boldsymbol{\gamma}_1^*)]
+\end{align*}
+Under the conditions:
+\begin{enumerate}
+    \item If \cref{lem:ortho_foc}(i) holds (from calibration w.r.t.\ $\boldsymbol{\gamma}$), then $\Psi_1(\boldsymbol{\alpha}_n^1, \boldsymbol{\gamma}_1^*) = O(\lVert \Delta_\alpha \rVert_2^2)$.
+    \item If \cref{lem:ortho_foc}(ii) holds (from calibration w.r.t.\ $\boldsymbol{\alpha}$), then $\Psi_2(\boldsymbol{\gamma}_{1,n}, \boldsymbol{\alpha}^{1,*}) = O(\lVert \Delta_\gamma \rVert_2^2)$.
+\end{enumerate}
+Note: For identification of the target parameter, \cref{thm:main} still requires at least one nuisance model to be correctly specified so that $\mu^1(\vartheta^*)=\mu^1$.
+This is formalized in \cref{lem:ident_dr_mu}.
+\end{lemma}
+
+\begin{proof}
+
+\textbf{1. Analyzing $\Psi_1$ using \cref{lem:ortho_foc}(i) (mean-value expansion).}
+Let $h_1(t)\coloneqq \E[\widetilde{\varphi}_{t,s}(D;\boldsymbol{\alpha}^{1,*}+t\Delta_\alpha,\boldsymbol{\gamma}_1^*)]$ for $t\in[0,1]$.
+Then $\Psi_1=h_1(1)-h_1(0)$ and
+\[
+\Psi_1
+=
+\int_0^1 h_1'(t)\,dt
+=
+\int_0^1 \E\!\left[\nabla_{\boldsymbol{\alpha}}\widetilde{\varphi}_{t,s}(D;\boldsymbol{\alpha}^{1,*}+t\Delta_\alpha,\boldsymbol{\gamma}_1^*)\right]^T\Delta_\alpha\,dt.
+\]
+Add and subtract $\E[\nabla_{\boldsymbol{\alpha}}\widetilde{\varphi}_{t,s}(D;\boldsymbol{\alpha}^{1,*},\boldsymbol{\gamma}_1^*)]$ inside the integral to get
+\[
+\begin{aligned}
+\Psi_1
+&=
+\left(\E\!\left[\nabla_{\boldsymbol{\alpha}}\widetilde{\varphi}_{t,s}(D;\boldsymbol{\alpha}^{1,*},\boldsymbol{\gamma}_1^*)\right]\right)^T\Delta_\alpha
+\;+\;
+\int_0^1\Bigl\{
+\E\!\left[\nabla_{\boldsymbol{\alpha}}\widetilde{\varphi}_{t,s}(D;\boldsymbol{\alpha}^{1,*}+t\Delta_\alpha,\boldsymbol{\gamma}_1^*)\right]\\
+&\qquad\qquad
+-\E\!\left[\nabla_{\boldsymbol{\alpha}}\widetilde{\varphi}_{t,s}(D;\boldsymbol{\alpha}^{1,*},\boldsymbol{\gamma}_1^*)\right]
+\Bigr\}^T\Delta_\alpha\,dt.
+\end{aligned}
+\]
+The first term is zero by \cref{lem:ortho_foc}(i). For the second term, we bound the gradient difference.
+From the definition of $\widetilde{\varphi}_{t,s}$ and the canonical-link GLM identity
+$\nabla_{\boldsymbol{\alpha}}\psi(\phi(\boldsymbol{X});\boldsymbol{\alpha})=\phi(\boldsymbol{X})\psi'(\phi(\boldsymbol{X})^T\boldsymbol{\alpha})$,
+\[
+\nabla_{\boldsymbol{\alpha}}\widetilde{\varphi}_{t,s}(D;\boldsymbol{\alpha},\boldsymbol{\gamma}_1^*)
+=
+\frac{I(R=t)}{\rho_t}\phi(\boldsymbol{X})\psi'(\phi(\boldsymbol{X})^T\boldsymbol{\alpha})
+-\frac{I(R=s)}{\rho_s}w(\boldsymbol{X};\boldsymbol{\gamma}_1^*)\phi(\boldsymbol{X})\psi'(\phi(\boldsymbol{X})^T\boldsymbol{\alpha}).
+\]
+Using the Lipschitz property of $\psi'$ (\cref{asmp:overlap}(b)(i)) and the weight-moment condition (\cref{asmp:overlap}(a)(ii)), we have
+\[
+\left\|
+\E\!\left[\nabla_{\boldsymbol{\alpha}}\widetilde{\varphi}_{t,s}(D;\boldsymbol{\alpha}^{1,*}+t\Delta_\alpha,\boldsymbol{\gamma}_1^*)\right]
+-\E\!\left[\nabla_{\boldsymbol{\alpha}}\widetilde{\varphi}_{t,s}(D;\boldsymbol{\alpha}^{1,*},\boldsymbol{\gamma}_1^*)\right]
+\right\|_2
+\le
+C\,\|\Delta_\alpha\|_2,
+\]
+uniformly over $t\in[0,1]$, where $C<\infty$ depends on $\rho_t,\rho_s$, the moment bound on $\phi(\boldsymbol{X})$ (\cref{asmp:data}(a)), and $L_{\psi'}$.
+Therefore, by Cauchy--Schwarz,
+\[
+|\Psi_1|
+\le
+\int_0^1 C\|\Delta_\alpha\|_2 \cdot \|\Delta_\alpha\|_2\,dt
+=
+O(\|\Delta_\alpha\|_2^2).
+\]
+
+\textbf{2. Analyzing $\Psi_2$ using \cref{lem:ortho_foc}(ii) (mean-value expansion).}
+Let $h_2(t)\coloneqq \E[\widetilde{\varphi}_{t,s}(D;\boldsymbol{\alpha}^{1,*},\boldsymbol{\gamma}_1^*+t\Delta_\gamma)]$.
+Then $\Psi_2=h_2(1)-h_2(0)$ and
+\[
+\Psi_2
+=
+\int_0^1 \E\!\left[\nabla_{\boldsymbol{\gamma}}\widetilde{\varphi}_{t,s}(D;\boldsymbol{\alpha}^{1,*},\boldsymbol{\gamma}_1^*+t\Delta_\gamma)\right]^T\Delta_\gamma\,dt.
+\]
+Add and subtract the gradient at $\boldsymbol{\gamma}_1^*$:
+\[
+\begin{aligned}
+\Psi_2
+&=
+\left(\E\!\left[\nabla_{\boldsymbol{\gamma}}\widetilde{\varphi}_{t,s}(D;\boldsymbol{\alpha}^{1,*},\boldsymbol{\gamma}_1^*)\right]\right)^T\Delta_\gamma
+\;+\;
+\int_0^1\Bigl\{
+\E\!\left[\nabla_{\boldsymbol{\gamma}}\widetilde{\varphi}_{t,s}(D;\boldsymbol{\alpha}^{1,*},\boldsymbol{\gamma}_1^*+t\Delta_\gamma)\right]\\
+&\qquad\qquad
+-\E\!\left[\nabla_{\boldsymbol{\gamma}}\widetilde{\varphi}_{t,s}(D;\boldsymbol{\alpha}^{1,*},\boldsymbol{\gamma}_1^*)\right]
+\Bigr\}^T\Delta_\gamma\,dt.
+\end{aligned}
+\]
+The first term is zero by \cref{lem:ortho_foc}(ii). For the remainder, recall
+$w(\boldsymbol{X};\boldsymbol{\gamma})=I(A=1)\exp(-\phi(\boldsymbol{X})^T\boldsymbol{\gamma})$ so that $\nabla_{\boldsymbol{\gamma}}w(\boldsymbol{X};\boldsymbol{\gamma})=-w(\boldsymbol{X};\boldsymbol{\gamma})\phi(\boldsymbol{X})$.
+Thus
+\[
+\nabla_{\boldsymbol{\gamma}}\widetilde{\varphi}_{t,s}(D;\boldsymbol{\alpha}^{1,*},\boldsymbol{\gamma})
+=
+\frac{I(R=s)}{\rho_s}\nabla_{\boldsymbol{\gamma}}w(\boldsymbol{X};\boldsymbol{\gamma})\{Y-\psi(\phi(\boldsymbol{X});\boldsymbol{\alpha}^{1,*})\}.
+\]
+Under \cref{asmp:overlap}(a,b), the mapping $\boldsymbol{\gamma}\mapsto \E[\nabla_{\boldsymbol{\gamma}}\widetilde{\varphi}_{t,s}(D;\boldsymbol{\alpha}^{1,*},\boldsymbol{\gamma})]$ is locally Lipschitz in $\boldsymbol{\gamma}$, hence
+\[
+\left\|
+\E\!\left[\nabla_{\boldsymbol{\gamma}}\widetilde{\varphi}_{t,s}(D;\boldsymbol{\alpha}^{1,*},\boldsymbol{\gamma}_1^*+t\Delta_\gamma)\right]
+-\E\!\left[\nabla_{\boldsymbol{\gamma}}\widetilde{\varphi}_{t,s}(D;\boldsymbol{\alpha}^{1,*},\boldsymbol{\gamma}_1^*)\right]
+\right\|_2
+\le
+C\|\Delta_\gamma\|_2
+\]
+uniformly over $t\in[0,1]$. Therefore $|\Psi_2|\le \int_0^1 C\|\Delta_\gamma\|_2^2\,dt = O(\|\Delta_\gamma\|_2^2)$.
+
+\textbf{Clarification on Double Robustness:} The key insight is that the calibrated loss functions are designed such that:
+\begin{itemize}
+    \item \cref{lem:ortho_foc}(i) holds \textit{by construction} of $L_\gamma$ at any $\vartheta^*$ that minimizes $L_\gamma$, regardless of whether the weighting model is correct.
+    \item \cref{lem:ortho_foc}(ii) holds \textit{by construction} of $L_\alpha$ at any $\vartheta^*$ that minimizes $L_\alpha$, regardless of whether the outcome model is correct.
+\end{itemize}
+Thus the first-order sensitivity to each nuisance can be removed by calibration; combined with model correctness of at least one nuisance for identification, this yields the double-robust conclusion in \cref{thm:main}.
+\end{proof}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% SECTION 2: AGGREGATED ESTIMATOR PROOFS
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Aggregated Estimator: FACE-HD}
+\label{sec:agg_proofs}
+
+This section follows the same theorem-driven layout. The main aggregation result is \cref{thm:face_hd}; the preceding subsections collect the covariance structure, the penalized weight-estimation problem, and the oracle-selection assumptions needed for that theorem. On a first reading, \cref{lem:agg_cov_structure}, \cref{thm:face_hd}, and \cref{cor:ate_agg} contain the main statistical message, while the later lemmas provide the supporting perturbation and selection arguments.
+ 
+\subsection{Setup and Notation for Aggregation}\label{app:agg_setup}
+
+Following Section 4.3 in the main manuscript, we aggregate the source-assisted estimators $\{\widehat{\mu}^1_{t,s_j}\}_{j=1}^K$ with the target-only estimator $\widehat{\mu}^1_{ot}$ using an adaptive weighting scheme. Let $K$ be the number of source sites.
+Define the global sample size across all participating sites as
+\[
+N_{\mathrm{all}} := N_t + \sum_{j=1}^K N_{s_j},
+\]
+and assume $N_t/N_{\mathrm{all}} \to \rho_t^{\mathrm{all}} \in (0,1)$ and $N_{s_j}/N_{\mathrm{all}} \to \rho_{s_j}^{\mathrm{all}} \in (0,1)$ for each fixed $j$.
+
+\textbf{Notation Correspondence with Main Manuscript:}
+\begin{itemize}
+    \item $\widehat{\mu}^1_{ot}$: Target-only estimator for $\mu^1 = \E_t[Y(1)]$ (uses only target site data)
+    \item $\widehat{\mu}^1_{t,s_j}$: Source-assisted estimator using source site $s_j$, as defined in the main manuscript
+    \item $\widehat{\mu}^1_{\text{agg}}$: Aggregated FACE-HD estimator
+    \item $\eta_j$: Weight for source site $s_j$
+    \item $\varphi_{ot,i}$: Population IF contribution for the target-only estimator (population analogue of $\widehat{\varphi}_{ot,i}$ in the main manuscript)
+\end{itemize}
+
+The FACE-HD aggregated estimator (\maincref{eq:final_opt} in main manuscript) is:
+\[
+\widehat{\mu}^1_{\text{agg}} = \left(1 - \sum_{j=1}^K \eta_j\right) \widehat{\mu}^1_{ot} + \sum_{j=1}^K \eta_j \widehat{\mu}^1_{t,s_j}
+\]
+which can be rewritten as:
+\[
+\widehat{\mu}^1_{\text{agg}} = \widehat{\mu}^1_{ot} + \sum_{j=1}^K \eta_j \left( \widehat{\mu}^1_{t,s_j} - \widehat{\mu}^1_{ot} \right)
+\]
+where $\widehat{\eta} = (\widehat{\eta}_1, \ldots, \widehat{\eta}_K)^T$ are adaptive weights minimizing the estimated asymptotic variance with a selection penalty.
+
+\begin{lemma}[Variance-Covariance Structure for Aggregation]\label{lem:agg_cov_structure}
+For each source site $s_j$, let $\varphi_{t,s_j,i}$ denote the population influence-function contribution of the source-assisted estimator $\widehat{\mu}^1_{t,s_j}$ under the common $\sqrt{N_{\mathrm{all}}}$ scaling, and let $\varphi_{ot,i}$ denote the corresponding target-only contribution. Write
+\[
+\varphi_{t,s_j,i} = \zeta_{j,i} + \xi_{j,i},
+\]
+where $\zeta_{j,i}$ is the target-sample outcome-regression component and $\xi_{j,i}$ is the source-sample weighted residual component. Then, for $j\neq k$,
+\[
+\Cov(\xi_j,\xi_k)=0,
+\qquad
+\Cov(\zeta_j,\xi_k)=0,
+\qquad
+\Cov(\varphi_{ot},\xi_k)=0,
+\]
+because these terms are based on disjoint source samples or on target-versus-source samples that are independent across sites. Consequently, all cross-site covariance terms arise only through the shared target component:
+\[
+\Cov(\varphi_{t,s_j},\varphi_{t,s_k}) = \Cov(\zeta_j,\zeta_k),
+\qquad
+\Cov(\varphi_{ot},\varphi_{t,s_j}) = \Cov(\varphi_{ot},\zeta_j).
+\]
+In particular, the population variance of the aggregated estimator can be written as a quadratic form
+\[
+L^*(\eta)=\eta^T H\eta + g^T\eta + c,
+\]
+where the off-diagonal entries of $H$ are induced entirely by the shared target sample.
+\end{lemma}
+\hj{Add a lemma on the structure of asymptotic variance covariance matrix. OR component, IPW residuals from target or source are all uncorrelated.}
+\begin{proof}
+The target sample $\mathcal{D}_t$ is independent of each source sample $\mathcal{D}_{s_j}$, and the source samples are mutually independent across $j$. By construction, $\zeta_{j,i}$ depends only on target observations, while $\xi_{j,i}$ depends only on observations from source site $s_j$.
+Therefore, whenever two terms are functions of independent site-level samples and each has mean zero, their covariance is zero. This yields $\Cov(\xi_j,\xi_k)=0$ for $j\neq k$, $\Cov(\zeta_j,\xi_k)=0$ for all $j,k$, and $\Cov(\varphi_{ot},\xi_k)=0$ because $\varphi_{ot}$ depends only on the target sample. The only remaining non-zero cross-site covariance terms are those involving two target-based components observed on the same target sample, namely $\Cov(\zeta_j,\zeta_k)$ and $\Cov(\varphi_{ot},\zeta_j)$. Expanding the variance of
+\[
+\varphi_{\mathrm{agg}}(\eta)=\varphi_{ot}+\sum_{j=1}^K \eta_j(\varphi_{t,s_j}-\varphi_{ot})
+\]
+then gives the stated quadratic representation, with off-diagonal terms coming solely from the shared target contribution.
+\end{proof}
+
+\begin{remark}[Relation to FACE as a special case]\label{rem:face_special_case}
+\cref{lem:agg_cov_structure} is compatible with the covariance decomposition underlying \citet{han2025federated}. In particular, if the source-assisted estimators are specialized to the FACE construction and the nuisance structure is simplified to the corresponding low-dimensional setting, then the same argument shows that cross-source covariance is induced only by the shared target sample. Thus the FACE variance formula can be viewed as a special case of the present decomposition, whereas the current statement is written to accommodate the more general high-dimensional calibrated nuisance estimators used in FACE-HD.
+\end{remark}
+
+\subsection{Penalized Variance Estimation}\label{app:penalized_variance}
+
+Define the empirical loss function as the estimated asymptotic variance of the aggregated estimator:
+\[
+\widehat{L}(\eta) = N_{\mathrm{all}} \cdot \widehat{\Var}\left( \widehat{\mu}^1_{\text{agg}}(\eta) \right)
+\]
+which is a quadratic function of $\eta$ (equivalently, $N_{\mathrm{all}}$ times the variance expression in \maincref{eq:final_opt} in the main manuscript):
+\[
+\widehat{L}(\eta) = \eta^T \widehat{H} \eta + \widehat{g}^T \eta + \widehat{c}
+\]
+where $\widehat{H}$, $\widehat{g}$, and $\widehat{c}$ are the estimated Hessian, gradient, and constant terms derived from the variance components in Section 4.2 of the main manuscript.
+
+\begin{lemma}[Consistency of Variance/Covariance Components]\label{lem:var_components_agg}
+Assume \cref{asmp:data} and \cref{asmp:overlap}, and that $K$ is fixed. Let $H,g,c$ denote the population analogues of $\widehat{H},\widehat{g},\widehat{c}$ defined by replacing empirical averages with expectations and using the population influence functions (with the same cross-site covariance terms induced by the shared target sample). Then:
+\[
+\|\widehat{H}-H\|_{\mathrm{op}} = O_p(N_{\mathrm{all}}^{-1/2}),\qquad
+\|\widehat{g}-g\|_2 = O_p(N_{\mathrm{all}}^{-1/2}),\qquad
+|\widehat{c}-c| = O_p(N_{\mathrm{all}}^{-1/2}),
+\]
+and consequently, for any fixed compact set $\mathcal{B}\subset\R^K$,
+\[
+\sup_{\eta\in\mathcal{B}}|\widehat{L}(\eta)-L^*(\eta)| = O_p(N_{\mathrm{all}}^{-1/2}).
+\]
+\end{lemma}
+\begin{proof}
+We prove entrywise $\sqrt{N_{\mathrm{all}}}$-consistency and then convert to the stated matrix/vector norms using that $K$ is fixed.
+
+\textbf{Step 1 (Generic moment form).}
+Each element of $\widehat{H}$, $\widehat{g}$ and $\widehat{c}$ is a (finite) linear combination of empirical averages of the form
+\[
+\widehat{M}_{r} \;=\; \frac{1}{N_r}\sum_{i\in\mathcal{D}_r} f(D_i;\widehat{\vartheta}^{(-\mathrm{fold}(i))}),
+\qquad r\in\{t,s_1,\ldots,s_K\},
+\]
+where $f$ is a product of two empirical influence-function components (including the cross-site covariance terms computed on the \emph{same} target sample), and $\widehat{\vartheta}^{(-\mathrm{fold}(i))}$ denotes the cross-fitted nuisance estimate used to evaluate the fold containing $i$.
+Let $M_r$ be the population analogue obtained by replacing the sample average with $\E_r[\cdot]$ and $\widehat{\vartheta}^{(-\mathrm{fold}(i))}$ with the population target $\vartheta^*$.
+
+\textbf{Step 2 (Conditional LLN and plug-in stability).}
+By cross-fitting, conditional on the nuisance-training samples, the summands $\{f(D_i;\widehat{\vartheta}^{(-\mathrm{fold}(i))}):i\in\mathcal{D}_r\}$ are independent within each site $r$, with conditional mean $\E_r[f(D;\widehat{\vartheta}^{(-\mathrm{fold}(D))})\mid \{\mathcal{D}^{(-k)}\}]$.
+\cref{asmp:overlap}(b) gives a finite $(1+\delta)$ moment for $f(D;\vartheta)$ uniformly in a neighborhood of $\vartheta^*$ (since it is a product of two $(2+\delta)$-moment IF components), hence the conditional variance is finite and a conditional LLN/CLT implies
+\[
+\widehat{M}_r - \E_r\!\left[f(D;\widehat{\vartheta}^{(-\mathrm{fold}(D))})\,\middle|\, \{\mathcal{D}^{(-k)}\}\right]
+= O_p(N_r^{-1/2}).
+\]
+Next, by \cref{lem:nuisance_rates}, $\widehat{\vartheta}^{(-k)}\to_p \vartheta^*$, and by \cref{lem:bias_bound} (Part 2) the mapping $\vartheta\mapsto f(D;\vartheta)$ is locally $L_2$-Lipschitz. Therefore,
+\[
+\E_r\!\left[f(D;\widehat{\vartheta}^{(-\mathrm{fold}(D))})\right]
+=
+\E_r[f(D;\vartheta^*)] + o(1),
+\]
+and combining the two displays yields $\widehat{M}_r-M_r=O_p(N_r^{-1/2})$.
+Under the site-ratio condition $N_r/N_{\mathrm{all}}\to\rho_r>0$, this is $O_p(N_{\mathrm{all}}^{-1/2})$.
+
+\textbf{Step 3 (From entrywise to matrix/vector norms).}
+Since $\widehat{H}$ has fixed dimension $K\times K$ and $\widehat{g}$ has fixed dimension $K$, the preceding bound applies to each entry, hence
+\[
+\|\widehat{H}-H\|_{\mathrm{op}}
+\le
+C_K\max_{j,k}|\widehat{H}_{jk}-H_{jk}|
+=
+O_p(N_{\mathrm{all}}^{-1/2}),
+\qquad
+\|\widehat{g}-g\|_2
+\le
+\sqrt{K}\max_j|\widehat{g}_j-g_j|
+=
+O_p(N_{\mathrm{all}}^{-1/2}),
+\]
+Finally, $\widehat{c}$ is a finite linear combination of the same sample averages $\{\widehat{M}_r\}$ (coming from the constant terms in the variance expansion), so the same entrywise $O_p(N_{\mathrm{all}}^{-1/2})$ bound implies $|\widehat{c}-c|=O_p(N_{\mathrm{all}}^{-1/2})$.
+
+\textbf{Step 4 (Uniform convergence of the quadratic form).}
+For $\eta$ in a fixed compact set $\mathcal{B}\subset\R^K$,
+\[
+|\widehat{L}(\eta)-L^*(\eta)|
+\le
+\|\widehat{H}-H\|_{\mathrm{op}}\|\eta\|_2^2 + \|\widehat{g}-g\|_2\|\eta\|_2 + |\widehat{c}-c|,
+\]
+and the right-hand side is $O_p(N_{\mathrm{all}}^{-1/2})$ uniformly over $\eta\in\mathcal{B}$ because $\sup_{\eta\in\mathcal{B}}\|\eta\|_2<\infty$.
+\end{proof}
+
+The penalized objective from \maincref{eq:final_opt} is:
+\begin{equation}\label{eq:penalized_obj}
+\widehat{\eta} = \arg\min_\eta \left\{ \widehat{L}(\eta) + \lambda \sum_{j=1}^K |\eta_j| \left( \widehat{\mu}^1_{ot} - \widehat{\mu}^1_{t,s_j} \right)^2 \right\}
+\end{equation}
+where $\lambda > 0$ is a tuning parameter that depends on $N_{\mathrm{all}}$.
+
+The penalty term $(\widehat{\mu}^1_{ot} - \widehat{\mu}^1_{t,s_j})^2$ measures the discrepancy between the target-only and source-assisted estimators. Large discrepancies indicate potential covariate shift or model misspecification, and the penalty drives the corresponding $\eta_j$ toward zero.
+
+\begin{remark}[FACE-style validation for $\lambda$]\label{rem:lambda_validation}
+The main manuscript selects the aggregation tuning parameter by the FACE sample-splitting validation rule: for each outer evaluation fold, candidate weights are learned on inner-training summaries by solving the penalized aggregation problem, and these fixed weights are then evaluated on held-out inner-validation summaries through the validation penalized criterion. This validation step is a finite-sample rule for choosing a stable point along the penalized aggregation path; it is not the same object as the nuisance-model cross-validation used for $\boldsymbol{\alpha}$ and $\boldsymbol{\gamma}$.
+For the asymptotic arguments below, $\lambda$ may be deterministic or data-adaptive, provided it is measurable with respect to the outer training data and satisfies \cref{asmp:aggregation}(b)--(c) with probability tending to one. The inner validation construction preserves the cross-fitting independence needed for the influence-function expansion because the training summaries used to compute $\widehat{\eta}^{(-k,-m)}(\lambda)$, the validation summaries used to choose $\widehat{\lambda}^{(-k)}$, and the final outer evaluation fold $\mathcal{D}_k$ are separated. Consequently neither $\widehat{\lambda}^{(-k)}$ nor $\widehat{\eta}^{(-k)}$ uses the outer evaluation fold $\mathcal{D}_k$.
+\end{remark}
+
+\begin{remark}[Soft-thresholding interpretation]\label{rem:soft_threshold}
+The penalty in \cref{eq:penalized_obj} is an adaptive $\ell_1$ penalty, so its selection mechanism is the same as soft-thresholding in penalized quadratic optimization. To see this, consider the special case in which $\widehat{H}$ is diagonal, say $\widehat{H}=\mathrm{diag}(\widehat{h}_1,\ldots,\widehat{h}_K)$ with $\widehat{h}_j>0$. Then the objective separates coordinatewise, and each $\widehat{\eta}_j$ minimizes
+\[
+\widehat{h}_j \eta_j^2 + \widehat{g}_j \eta_j + \lambda \widehat{d}_j |\eta_j|,
+\qquad
+\widehat{d}_j \coloneqq (\widehat{\mu}^1_{ot} - \widehat{\mu}^1_{t,s_j})^2.
+\]
+Completing the square yields the explicit solution
+\[
+\widehat{\eta}_j
+=
+-\frac{1}{2\widehat{h}_j}\,
+\mathrm{sign}(\widehat{g}_j)\,
+\Bigl(|\widehat{g}_j|-\lambda \widehat{d}_j\Bigr)_+,
+\]
+which is the usual soft-thresholding rule: if $|\widehat{g}_j|\le \lambda \widehat{d}_j$, then $\widehat{\eta}_j=0$; otherwise the unconstrained quadratic solution is shrunk toward zero by the amount $\lambda \widehat{d}_j/(2\widehat{h}_j)$. In the general non-diagonal case, the coordinates are coupled through $\widehat{H}$, so one no longer has a closed-form coordinatewise solution, but the same $\ell_1$-induced shrinkage-and-selection interpretation remains valid.
+\end{remark}
+
+\subsection{Informative Source Sites}\label{app:informative_sources}
+
+Let $\mu^1 = \E_t[Y(1)]$ be the true target-site potential outcome mean.
+
+Define the set of \textit{informative} source sites as:
+\[
+\mathcal{S}^* = \left\{ j \in \{1, \ldots, K\} : \text{plim}\ \widehat{\mu}^1_{t,s_j} = \mu^1 \right\}
+\]
+i.e., sites where the source-assisted estimator is consistent for the target parameter $\mu^1$.
+
+Define the oracle-restricted space:
+\[
+\mathbb{R}_{\mathcal{S}^*} := \left\{ \eta \in \mathbb{R}^K : \eta_j = 0 \text{ for all } j \notin \mathcal{S}^* \right\}.
+\]
+Let $\eta^*$ be the oracle optimal weights that minimize the population asymptotic variance over $\mathbb{R}_{\mathcal{S}^*}$:
+\[
+\eta^* = \arg\min_{\eta \in \mathbb{R}_{\mathcal{S}^*}} L^*(\eta), \quad
+L^*(\eta) := \Var\left( \sqrt{N_{\mathrm{all}}}(\widehat{\mu}^1_{\text{agg}}(\eta) - \mu^1) \right).
+\]
+
+\begin{assumption}[Aggregation Regularity]\label{asmp:aggregation}
+(a) (Sufficient Informative Sources + Local Strong Convexity) The set $\mathcal{S}^*$ is non-empty, i.e., there exists at least one informative source site. Moreover, the population aggregation objective is locally strictly convex on the oracle subspace: the Hessian of $L^*(\eta)$ restricted to $\mathbb{R}_{\mathcal{S}^*}$, denoted $H_{\mathcal{S}^*}$, is positive definite (equivalently, $\eta^*$ is locally unique).
+(b) (Separation / ``$\beta$-min'' for biased sites) Define
+\[
+b_{0,N} \coloneqq \min_{j\notin\mathcal{S}^*}\left|\text{plim}(\widehat{\mu}^1_{t,s_j}) - \mu^1\right|.
+\]
+Assume $\lambda\,b_{0,N}^2\to\infty$. A special case is \emph{fixed separation}: $b_{0,N}\ge b_0>0$.
+(c) (Penalty Growth) The penalty parameter satisfies $\lambda \to \infty$ and $\lambda / \sqrt{N_{\mathrm{all}}} \to 0$.
+(d) (Fixed $K$) The number of source sites $K$ is fixed.
+\end{assumption}
+
+When $\lambda$ is selected by the validation rule in the main manuscript, \cref{asmp:aggregation}(b)--(c) should be read as high-probability conditions on the selected sequence $\widehat{\lambda}$. Equivalently, the theorem below is conditional on the event that the validation-selected penalty lies in the oracle-selection window. This separates the finite-sample tuning rule from the asymptotic support-recovery requirement.
+
+\begin{remark}[When separation fails / local alternatives]\label{rem:weak_bias}
+\cref{asmp:aggregation}(b) is used only for \emph{support recovery} (forcing $\widehat{\eta}_j=0$ for biased sites). If some biased sites are only \emph{weakly} biased in the sense that $b_{0,N}\to 0$, then selection consistency may fail. In that regime, the aggregated estimator remains asymptotically linear for any deterministic $\eta$ (\cref{lem:if_agg}), and the additional first-order bias is controlled by
+\[
+\left|\sum_{j\notin\mathcal{S}^*}\eta_j\{\text{plim}(\widehat{\mu}^1_{t,s_j})-\mu^1\}\right|,
+\]
+so if any included weakly biased sites satisfy $b_{j,N}=o(N_{\mathrm{all}}^{-1/2})$, their contribution is still negligible at $\sqrt{N_{\mathrm{all}}}$ scale.
+\end{remark}
+
+\subsection{Main Results for Aggregation}\label{app:agg_main_results}
+
+For later use in the aggregation proofs, we restate the pairwise input result that is repeatedly invoked below.
+
+\begin{theoremRep}{thm:main}
+Suppose \cref{asmp:data}, \cref{asmp:overlap}, and \cref{asmp:rsc}(a)--\cref{asmp:rsc}(c) hold. (\cref{asmp:rsc}(d) is an optional strengthening used only to invoke the \textbf{Special} rate in \cref{lem:nuisance_rates}; the theorem also holds under the \textbf{General} rate condition there.) Assume $\vartheta^*$ is the unique population target pair induced by the calibrated losses under the alignment condition in \cref{asmp:rsc}(c), implying \cref{lem:ortho_foc} holds. If further, at least one nuisance model (outcome or weighting) is correctly specified in the sense of \cref{lem:ident_dr_mu} (so $\mu^1(\vartheta^*)=\mu^1$), the calibrated nuisance sparsities satisfy
+\[
+\frac{(s_\alpha+s_\gamma)^2 \log^2(p)}{N} \longrightarrow 0,
+\]
+and $V^*_{t,s}>0$, then the cross-fitted estimator is asymptotically normal. Here $s_\alpha$ and $s_\gamma$ denote the calibrated sparsities from \cref{def:sparsity}:
+\[
+\sqrt{N}\,\big(\widehat{\mu}^{1,\mathrm{CF}}_{t,s} - \mu^1\big)
+\;\xrightarrow{d}\; \mathcal{N}\!\big(0,\,V^*_{t,s}\big).
+\]
+If the initial nuisance estimators enter the two-level algorithm separately from the calibrated update, their stochastic error is required only through \cref{asmp:rsc}(c), which aligns their population limits with $(\boldsymbol{\alpha}^{1,*},\boldsymbol{\gamma}_1^*)$.
+Moreover, the finite-sample KKT perturbation from the $\ell_1$ penalties is absorbed in the remainder term (via \cref{lem:nuisance_rates}) and is $o_p(N^{-1/2})$ under the stated sparsity/rate condition.
+\end{theoremRep}
+
+\begin{theorem}[Asymptotic Normality of FACE-HD]\label{thm:face_hd}
+Suppose \crefrange{asmp:data}{asmp:rsc} and \cref{asmp:aggregation} hold. For each informative source $s_j \in \mathcal{S}^*$, let $N_{t,s_j}=N_t+N_{s_j}$ and $s_{\mathrm{tot},j}=s_{\alpha,j}+s_{\gamma,j}$ denote the pairwise total sparsity. If
+\[
+\max_{j\in\mathcal{S}^*}\frac{s_{\mathrm{tot},j}^2\log^2(p)}{N_{t,s_j}} \to 0,
+\]
+(equivalently under fixed site ratios, the same condition with $N_{\mathrm{all}}$), and $L^*(\eta^*)>0$, then:
+\[
+\sqrt{N_{\mathrm{all}}}\left( \widehat{\mu}^1_{\text{agg}} - \mu^1 \right) \xrightarrow{d} \mathcal{N}(0, L^*(\eta^*))
+\]
+where $L^*(\eta^*)$ is the minimum asymptotic variance achieved by the oracle aggregation.
+
+Moreover, the variance estimator is consistent:
+\[
+\widehat{V} = \widehat{L}(\widehat{\eta}) \xrightarrow{p} L^*(\eta^*)
+\]
+and the standardized statistic is asymptotically standard normal:
+\[
+\sqrt{N_{\mathrm{all}} / \widehat{V}} \left( \widehat{\mu}^1_{\text{agg}} - \mu^1 \right) \xrightarrow{d} \mathcal{N}(0, 1).
+\]
+\end{theorem}
+
+\begin{corollary}[Asymptotic Normality of the Aggregated TATE]\label{cor:ate_agg}
+Define the aggregated TATE estimator as
+\[
+\widehat{\tau}_{\text{agg}}
+\;\coloneqq\;
+\widehat{\mu}^1_{\text{agg}}-\widehat{\mu}^0_{\text{agg}},
+\]
+where $\widehat{\mu}^0_{\text{agg}}$ is constructed by applying the same aggregation procedure to the control-arm estimators $\{\widehat{\mu}^0_{t,s_j}\}_{j=1}^K$ (with the corresponding nuisance estimates and variance/covariance components).
+Assume the analogues of \crefrange{asmp:data}{asmp:aggregation} hold for both arms, so that both $\widehat{\mu}^1_{\text{agg}}$ and $\widehat{\mu}^0_{\text{agg}}$ admit asymptotic linear representations under $\sqrt{N_{\mathrm{all}}}$ scaling.
+Then
+\[
+\sqrt{N_{\mathrm{all}}}\big(\widehat{\tau}_{\text{agg}}-\tau\big)
+\;\xrightarrow{d}\;
+\mathcal{N}\!\big(0,V_\tau^*\big),
+\qquad
+V_\tau^* \coloneqq
+\Var\!\Big(\varphi_{\mathrm{agg}}^{1}(D)-\varphi_{\mathrm{agg}}^{0}(D)\Big),
+\]
+where $\varphi_{\mathrm{agg}}^{1}$ and $\varphi_{\mathrm{agg}}^{0}$ denote the aggregated influence functions (oracle-level) for the treated and control aggregated estimators, respectively.
+\end{corollary}
+
+\begin{proposition}[Efficiency Gain]\label{prop:efficiency}
+Under \crefrange{asmp:data}{asmp:rsc} and \cref{asmp:aggregation}, the FACE-HD estimator is asymptotically at least as efficient as the target-only estimator:
+\[
+L^*(\eta^*) \le L^*(0)
+\]
+with strict inequality whenever there exists $j\in\mathcal{S}^*$ such that
+\[
+\Var(\varphi_{t,s_j} - \varphi_{ot}) > 0
+\quad\text{and}\quad
+\Cov(\varphi_{ot}, \varphi_{t,s_j} - \varphi_{ot}) \ne 0.
+\]
+\end{proposition}
+
+\subsection{Supporting Lemmas for Aggregation}\label{app:agg_supporting_lemmas}
+
+\begin{lemma}[Influence Function Representation]\label{lem:if_agg}
+Under \crefrange{asmp:data}{asmp:rsc} and \cref{asmp:aggregation}(a), the aggregated estimator admits the asymptotic linear representation:
+\[
+\sqrt{N_{\mathrm{all}}}\left( \widehat{\mu}^1_{\text{agg}}(\eta^*) - \mu^1 \right) = \frac{1}{\sqrt{N_{\mathrm{all}}}} \sum_{i=1}^{N_{\mathrm{all}}} \varphi_{\mathrm{agg},i}(\eta^*) + o_p(1)
+\]
+where $\varphi_{\mathrm{agg},i}(\eta^*)$ is the aggregated influence function:
+\[
+\varphi_{\mathrm{agg},i}(\eta^*) = \left(1-\sum_{j\in\mathcal{S}^*}\eta_j^*\right)\varphi_{ot,i} + \sum_{j\in\mathcal{S}^*}\eta_j^* \varphi_{t,s_j,i},
+\]
+with $\varphi_{t,s_j,i}$ denoting the (rescaled) IF contribution of source-assisted estimator $j$ under $\sqrt{N_{\mathrm{all}}}$ scaling.
+\textbf{Convention:} Each $\varphi_{ot,i}$ (resp.\ $\varphi_{t,s_j,i}$) is understood as zero for observations not in the target data $\mathcal{D}_t$ (resp.\ not in $\mathcal{D}_t\cup\mathcal{D}_{s_j}$), and includes the constant rescaling needed to convert its natural $\sqrt{N_t}$ (resp.\ $\sqrt{N_{t,s_j}}$) linear representation into the common $\sqrt{N_{\mathrm{all}}}$ scaling.
+\end{lemma}
+
+\begin{proof}
+By \cref{thm:main}, for each fixed $j\in\mathcal{S}^*$, there is an asymptotic linear representation under pairwise scaling $N_{t,s_j}:=N_t+N_{s_j}$:
+\[
+\sqrt{N_{t,s_j}}(\widehat{\mu}^1_{t,s_j} - \text{plim}(\widehat{\mu}^1_{t,s_j})) = \frac{1}{\sqrt{N_{t,s_j}}} \sum_{i=1}^{N_{\mathrm{all}}} \bar{\varphi}_{t,s_j,i} + o_p(1),
+\]
+where $\bar{\varphi}_{t,s_j,i}$ is understood as zero for observations not in $\mathcal{D}_t\cup\mathcal{D}_{s_j}$. Since $N_{t,s_j}/N_{\mathrm{all}}\to c_j\in(0,1)$, the above is equivalent to
+\[
+\sqrt{N_{\mathrm{all}}}(\widehat{\mu}^1_{t,s_j} - \text{plim}(\widehat{\mu}^1_{t,s_j})) = \frac{1}{\sqrt{N_{\mathrm{all}}}} \sum_{i=1}^{N_{\mathrm{all}}} \varphi_{t,s_j,i} + o_p(1)
+\]
+for a rescaled IF $\varphi_{t,s_j,i}$. The target-only estimator has the analogous form:
+\[
+\sqrt{N_{\mathrm{all}}}(\widehat{\mu}^1_{ot} - \mu^1) = \frac{1}{\sqrt{N_{\mathrm{all}}}} \sum_{i=1}^{N_{\mathrm{all}}} \varphi_{ot,i} + o_p(1).
+\]
+For $j \in \mathcal{S}^*$, $\text{plim}(\widehat{\mu}^1_{t,s_j})=\mu^1$ by definition.
+
+By linearity, the aggregated estimator with fixed $\eta = \eta^*$ satisfies:
+\[
+\sqrt{N_{\mathrm{all}}}(\widehat{\mu}^1_{\text{agg}}(\eta^*) - \mu^1) = \frac{1}{\sqrt{N_{\mathrm{all}}}} \sum_{i=1}^{N_{\mathrm{all}}} \varphi_{\mathrm{agg},i}(\eta^*) + o_p(1).
+\]
+The remainder remains $o_p(1)$ because $K$ is fixed.
+\end{proof}
+
+\begin{lemma}[Selection Consistency]\label{lem:selection}
+Under \crefrange{asmp:data}{asmp:rsc} and \cref{asmp:aggregation}, the penalized estimator $\widehat{\eta}$ from \cref{eq:penalized_obj} satisfies:
+\begin{enumerate}
+    \item \textbf{(Rate)} $\|\widehat{\eta} - \eta^*\|_2 = O_p(N_{\mathrm{all}}^{-1/2})$
+    \item \textbf{(Selection)} $\widehat{\eta}_j = 0$ for all $j \notin \mathcal{S}^*$ with probability approaching 1.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+We give a self-contained argument; it parallels the FACE proof in \citet{han2025federated} (Lemma S5) but the objective here is an explicit quadratic form.
+Recall $\widehat{L}(\eta)=\eta^T\widehat{H}\eta+\widehat{g}^T\eta+\widehat{c}$ and its population analogue $L^*(\eta)=\eta^TH\eta+g^T\eta+c$.
+
+\textbf{Part 1 (Rate on the oracle subspace).}
+Define the oracle-restricted estimator
+\[
+\widetilde{\eta} \;=\; \arg\min_{\eta\in\mathbb{R}_{\mathcal{S}^*}}
+\left\{ \widehat{L}(\eta) + \lambda \sum_{j=1}^K |\eta_j| (\widehat{\mu}^1_{ot} - \widehat{\mu}^1_{t,s_j})^2 \right\}.
+\]
+On $\mathbb{R}_{\mathcal{S}^*}$, only coordinates $j\in\mathcal{S}^*$ can be nonzero, so the penalty term reduces to $\sum_{j\in\mathcal{S}^*}|\eta_j|(\widehat{\mu}^1_{ot}-\widehat{\mu}^1_{t,s_j})^2$.
+By \cref{thm:main} and the site-ratio regularity, for each fixed $j\in\mathcal{S}^*$,
+$
+\widehat{\mu}^1_{ot}-\widehat{\mu}^1_{t,s_j}=O_p(N_{\mathrm{all}}^{-1/2}),
+$
+hence $(\widehat{\mu}^1_{ot}-\widehat{\mu}^1_{t,s_j})^2=O_p(N_{\mathrm{all}}^{-1})$ and therefore the penalty contribution on $\mathbb{R}_{\mathcal{S}^*}$ is
+$O_p(\lambda/N_{\mathrm{all}})=o_p(N_{\mathrm{all}}^{-1/2})$ under \cref{asmp:aggregation}(c).
+
+Next, by \cref{lem:var_components_agg}, the quadratic coefficients satisfy $\|\widehat{H}-H\|_{\mathrm{op}}=O_p(N_{\mathrm{all}}^{-1/2})$ and $\|\widehat{g}-g\|_2=O_p(N_{\mathrm{all}}^{-1/2})$.
+Let $H_{\mathcal{S}^*}$ and $\widehat{H}_{\mathcal{S}^*}$ denote the principal submatrices corresponding to $\mathcal{S}^*$, and similarly for $g$.
+Because $K$ is fixed, $H_{\mathcal{S}^*}$ is a fixed-dimensional positive definite matrix (local strong convexity of $L^*$ around $\eta^*$), hence $\|H_{\mathcal{S}^*}^{-1}\|_{\mathrm{op}}<\infty$ and $\|\widehat{H}_{\mathcal{S}^*}^{-1}\|_{\mathrm{op}}=O_p(1)$.
+More explicitly, by Weyl's inequality and \cref{lem:var_components_agg}, $\lambda_{\min}(\widehat{H}_{\mathcal{S}^*})\ge \lambda_{\min}(H_{\mathcal{S}^*}) - \|\widehat{H}_{\mathcal{S}^*}-H_{\mathcal{S}^*}\|_{\mathrm{op}}$, which is bounded away from 0 w.p.a.1, so $\widehat{H}_{\mathcal{S}^*}$ is invertible and $\|\widehat{H}_{\mathcal{S}^*}^{-1}\|_{\mathrm{op}}=O_p(1)$.
+Ignoring the $o_p(N_{\mathrm{all}}^{-1/2})$ penalty perturbation, the minimizers of $\widehat{L}$ and $L^*$ on $\mathbb{R}_{\mathcal{S}^*}$ satisfy the first-order conditions
+$2\widehat{H}_{\mathcal{S}^*}\eta + \widehat{g}_{\mathcal{S}^*}=0$ and $2H_{\mathcal{S}^*}\eta + g_{\mathcal{S}^*}=0$,
+so
+\[
+\eta^*_{\mathcal{S}^*} = -\tfrac{1}{2}H_{\mathcal{S}^*}^{-1}g_{\mathcal{S}^*},
+\qquad
+\widetilde{\eta}_{\mathcal{S}^*} = -\tfrac{1}{2}\widehat{H}_{\mathcal{S}^*}^{-1}\widehat{g}_{\mathcal{S}^*} + o_p(N_{\mathrm{all}}^{-1/2}).
+\]
+To make the perturbation step explicit, write
+\[
+\widetilde{\eta}_{\mathcal{S}^*}-\eta^*_{\mathcal{S}^*}
+=
+-\tfrac{1}{2}\left(\widehat{H}_{\mathcal{S}^*}^{-1}\widehat{g}_{\mathcal{S}^*}-H_{\mathcal{S}^*}^{-1}g_{\mathcal{S}^*}\right)
++o_p(N_{\mathrm{all}}^{-1/2}).
+\]
+Then
+\[
+\widehat{H}_{\mathcal{S}^*}^{-1}\widehat{g}_{\mathcal{S}^*}-H_{\mathcal{S}^*}^{-1}g_{\mathcal{S}^*}
+=
+\widehat{H}_{\mathcal{S}^*}^{-1}(\widehat{g}_{\mathcal{S}^*}-g_{\mathcal{S}^*})
++(\widehat{H}_{\mathcal{S}^*}^{-1}-H_{\mathcal{S}^*}^{-1})g_{\mathcal{S}^*}.
+\]
+The first term is $O_p(N_{\mathrm{all}}^{-1/2})$ since $\|\widehat{H}_{\mathcal{S}^*}^{-1}\|_{\mathrm{op}}=O_p(1)$ and $\|\widehat{g}-g\|_2=O_p(N_{\mathrm{all}}^{-1/2})$.
+For the second term, use $\widehat{H}_{\mathcal{S}^*}^{-1}-H_{\mathcal{S}^*}^{-1}=\widehat{H}_{\mathcal{S}^*}^{-1}(H_{\mathcal{S}^*}-\widehat{H}_{\mathcal{S}^*})H_{\mathcal{S}^*}^{-1}$, so
+\[
+\|\widehat{H}_{\mathcal{S}^*}^{-1}-H_{\mathcal{S}^*}^{-1}\|_{\mathrm{op}}
+\le
+\|\widehat{H}_{\mathcal{S}^*}^{-1}\|_{\mathrm{op}}\|\widehat{H}-H\|_{\mathrm{op}}\|H_{\mathcal{S}^*}^{-1}\|_{\mathrm{op}}
+=
+O_p(N_{\mathrm{all}}^{-1/2}),
+\]
+and hence the second term is also $O_p(N_{\mathrm{all}}^{-1/2})$. Therefore $\|\widetilde{\eta}-\eta^*\|_2 = O_p(N_{\mathrm{all}}^{-1/2})$.
+Finally, since $\widehat{\eta}$ agrees with $\widetilde{\eta}$ w.p.a.1 by Part 2 below, the same rate holds for $\widehat{\eta}$.
+
+\textbf{Part 2 (Selection of biased sites).}
+By Part 1, $\widetilde{\eta}=\eta^*+O_p(N_{\mathrm{all}}^{-1/2})$, so there exists a fixed-radius neighborhood
+$\mathcal{B}\coloneqq\{\eta:\|\eta-\eta^*\|_2\le r\}$ such that $P(\widetilde{\eta}\in\mathcal{B})\to 1$.
+For the full penalized minimizer, the same neighborhood restriction applies w.p.a.1 once we show (below) that all biased coordinates are set to zero, i.e., $\widehat{\eta}=\widetilde{\eta}$ w.p.a.1. Thus, in the KKT bound we may work on $\mathcal{B}$.
+
+For biased sites $j \notin \mathcal{S}^*$, let $b_{j,N}\coloneqq |\text{plim}(\widehat{\mu}^1_{t,s_j}) - \mu^1|$, so $b_{j,N}\ge b_{0,N}$.
+Because $\widehat{\mu}^1_{t,s_j}\xrightarrow{p}\text{plim}(\widehat{\mu}^1_{t,s_j})$ and $\widehat{\mu}^1_{ot}\xrightarrow{p}\mu^1$,
+\[
+(\widehat{\mu}^1_{ot} - \widehat{\mu}^1_{t,s_j})^2 \xrightarrow{p} b_{j,N}^2 \ge b_{0,N}^2,
+\]
+and thus $\lambda(\widehat{\mu}^1_{ot} - \widehat{\mu}^1_{t,s_j})^2\to\infty$ under \cref{asmp:aggregation}(b).
+
+The KKT condition for the penalized objective at coordinate $j$ implies that if $\widehat{\eta}_j=0$ then
+\[
+\left| \frac{\partial \widehat{L}}{\partial \eta_j}(\widehat{\eta}) \right|
+\le \lambda (\widehat{\mu}^1_{ot} - \widehat{\mu}^1_{t,s_j})^2.
+\]
+Since $\widehat{L}(\eta)=\eta^T\widehat{H}\eta+\widehat{g}^T\eta+\widehat{c}$ is quadratic,
+\[
+\frac{\partial \widehat{L}}{\partial \eta_j}(\eta)
+=
+2(\widehat{H}\eta)_j+\widehat{g}_j,
+\]
+so for any compact $\mathcal{B}\subset\mathbb{R}^K$,
+\[
+\sup_{\eta\in\mathcal{B}}\left|\frac{\partial \widehat{L}}{\partial \eta_j}(\eta)\right|
+\le
+2\sup_{\eta\in\mathcal{B}}\|\widehat{H}\eta\|_\infty+\|\widehat{g}\|_\infty
+\le
+2\|\widehat{H}\|_{\mathrm{op}}\sup_{\eta\in\mathcal{B}}\|\eta\|_2+\|\widehat{g}\|_2.
+\]
+By \cref{lem:var_components_agg}, $\|\widehat{H}\|_{\mathrm{op}}=O_p(1)$ and $\|\widehat{g}\|_2=O_p(1)$, hence $\sup_{\eta\in\mathcal{B}}|\partial \widehat{L}/\partial \eta_j(\eta)|=O_p(1)$.
+Because the right-hand side diverges, the KKT inequality is satisfied for $\eta_j=0$ w.p.a.1 and any minimizer must set $\widehat{\eta}_j=0$ for all $j\notin\mathcal{S}^*$.
+Therefore $\widehat{\eta}\in\mathbb{R}_{\mathcal{S}^*}$ w.p.a.1, hence $\widehat{\eta}=\widetilde{\eta}$ w.p.a.1.
+\end{proof}
+
+\begin{lemma}[Asymptotic Equivalence]\label{lem:asymp_equiv}
+Under \crefrange{asmp:data}{asmp:rsc} and \cref{asmp:aggregation}:
+\[
+\sqrt{N_{\mathrm{all}}}\left( \widehat{\mu}^1_{\text{agg}}(\widehat{\eta}) - \widehat{\mu}^1_{\text{agg}}(\eta^*) \right) = o_p(1)
+\]
+\end{lemma}
+
+\begin{proof}
+The difference is:
+\[
+\sqrt{N_{\mathrm{all}}}\left( \widehat{\mu}^1_{\text{agg}}(\widehat{\eta}) - \widehat{\mu}^1_{\text{agg}}(\eta^*) \right) = \sum_{j=1}^K (\widehat{\eta}_j - \eta^*_j) \cdot \sqrt{N_{\mathrm{all}}}(\widehat{\mu}^1_{t,s_j} - \widehat{\mu}^1_{ot})
+\]
+
+For $j \in \mathcal{S}^*$: By \cref{lem:selection}(1), $|\widehat{\eta}_j - \eta^*_j| = O_p(N_{\mathrm{all}}^{-1/2})$. By \cref{thm:main} with the same rescaling argument as in \cref{lem:if_agg}, $\sqrt{N_{\mathrm{all}}}(\widehat{\mu}^1_{t,s_j} - \widehat{\mu}^1_{ot}) = O_p(1)$. Thus each term is $o_p(1)$.
+
+For $j \notin \mathcal{S}^*$: By \cref{lem:selection}(2), $\widehat{\eta}_j = 0$ w.h.p., and $\eta^*_j = 0$ by definition (oracle excludes biased sites). Thus the difference is zero w.h.p.
+Because $K$ is fixed, summing over $j$ yields $o_p(1)$.
+\end{proof}
+
+\begin{remark}[Growing number of sources $K$]\label{rem:growing_k}
+The arguments above use \cref{asmp:aggregation}(d) (fixed $K$) in two places: (i) to ensure the plug-in term $\sum_{j=1}^K(\widehat{\eta}_j-\eta_j^*)\sqrt{N_{\mathrm{all}}}(\widehat{\mu}^1_{t,s_j}-\widehat{\mu}^1_{ot})$ is $o_p(1)$, and (ii) to treat the variance/covariance estimation problem as finite-dimensional. If $K=K_N\to\infty$, then additional high-dimensional control is needed, e.g., a sufficient condition for \cref{lem:asymp_equiv} is
+\[
+\|\widehat{\eta}-\eta^*\|_1 \cdot \max_{1\le j\le K}\left|\sqrt{N_{\mathrm{all}}}\,(\widehat{\mu}^1_{t,s_j}-\widehat{\mu}^1_{ot})\right| = o_p(1),
+\]
+which typically requires both a sparsity assumption on $\eta^*$ and concentration bounds scaling with $\log K$.
+\end{remark}
+
+\subsection{Proofs of Main Results for Aggregation}\label{app:agg_main_proofs}
+
+\begin{proof}[Proof of \cref{thm:face_hd}]
+Combining \cref{lem:if_agg}, \cref{lem:selection}, and \cref{lem:asymp_equiv}:
+\[
+\sqrt{N_{\mathrm{all}}}(\widehat{\mu}^1_{\text{agg}} - \mu^1) = \sqrt{N_{\mathrm{all}}}(\widehat{\mu}^1_{\text{agg}}(\eta^*) - \mu^1) + o_p(1) = \frac{1}{\sqrt{N_{\mathrm{all}}}} \sum_{i=1}^{N_{\mathrm{all}}} \varphi_{\mathrm{agg},i}(\eta^*) + o_p(1).
+\]
+
+As in \cref{lem:clt}, the observations are independent with a multi-site structure and site proportions converging to constants. The aggregated influence function contributions $\{\varphi_{\mathrm{agg},i}(\eta^*)\}_{i=1}^{N_{\mathrm{all}}}$ are therefore independent with mean zero and finite variance $L^*(\eta^*)$. Under \cref{asmp:overlap}(b), these contributions have a uniform $(2+\delta)$ moment, so the same Lyapunov argument as in \cref{lem:clt} applies and yields:
+\[
+\frac{1}{\sqrt{N_{\mathrm{all}}}} \sum_{i=1}^{N_{\mathrm{all}}} \varphi_{\mathrm{agg},i}(\eta^*) \xrightarrow{d} \mathcal{N}(0, L^*(\eta^*)).
+\]
+
+For variance estimation consistency: By \cref{lem:selection}(1), $\|\widehat{\eta} - \eta^*\|_2 = O_p(N_{\mathrm{all}}^{-1/2})$. By the uniform convergence of $\widehat{L}$ to $L^*$ and local Lipschitz continuity of the quadratic map $L^*(\eta)=\eta^T H\eta+g^T\eta+c$ in a neighborhood of $\eta^*$ (e.g., on $\{\eta:\|\eta-\eta^*\|_2\le R\}$,
+$|L^*(\eta_1)-L^*(\eta_2)|\le (2\|H\|_{\mathrm{op}}R+\|g\|_2)\|\eta_1-\eta_2\|_2$):
+\[
+|\widehat{L}(\widehat{\eta}) - L^*(\eta^*)| \le |\widehat{L}(\widehat{\eta}) - L^*(\widehat{\eta})| + |L^*(\widehat{\eta}) - L^*(\eta^*)| = O_p(N_{\mathrm{all}}^{-1/2}) + O_p(N_{\mathrm{all}}^{-1/2}) = o_p(1).
+\]
+
+Finally, write
+\[
+\sqrt{\frac{N_{\mathrm{all}}}{\widehat{V}}}\left(\widehat{\mu}^1_{\text{agg}}-\mu^1\right)
+=
+\left(\sqrt{\frac{L^*(\eta^*)}{\widehat{V}}}\right)\cdot
+\left(\frac{1}{\sqrt{L^*(\eta^*)}}\sqrt{N_{\mathrm{all}}}\left(\widehat{\mu}^1_{\text{agg}}-\mu^1\right)\right).
+\]
+We already proved $\sqrt{N_{\mathrm{all}}}(\widehat{\mu}^1_{\text{agg}}-\mu^1)\xrightarrow{d}\mathcal{N}(0,L^*(\eta^*))$, hence the second factor converges in distribution to $\mathcal{N}(0,1)$.
+By variance consistency, $\widehat{V}\xrightarrow{p}L^*(\eta^*)$, so the prefactor $\sqrt{L^*(\eta^*)/\widehat{V}}\xrightarrow{p}1$.
+Therefore the product converges in distribution to $\mathcal{N}(0,1)$ by Slutsky's theorem.
+\end{proof}
+
+\begin{proof}[Proof of \cref{prop:efficiency}]
+Since $\eta^*$ minimizes $L^*(\eta)$ and $\eta = 0$ is feasible, we have $L^*(\eta^*) \le L^*(0)$.
+
+For strict improvement, consider one informative source $j \in \mathcal{S}^*$. The optimal projection is:
+\[
+\eta^*_j = -\frac{\text{Cov}(\varphi_{ot}, \varphi_{t,s_j} - \varphi_{ot})}{\Var(\varphi_{t,s_j} - \varphi_{ot})}.
+\]
+If the covariance is non-zero and the denominator is positive, the minimizing weight is non-zero and strictly decreases variance relative to $\eta=0$, so $L^*(\eta^*) < L^*(0)$.
+\end{proof}
+
+\ifFACEHDSTANDALONE
+\bibliographystyle{plainnat}
+\bibliography{ref}
+\fi
+
+\FACEHDEndDocument

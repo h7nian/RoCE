@@ -8,33 +8,30 @@
 # =============================================================================
 #
 # Contents:
-#   1. safe_solve, calculate_aipw_pseudo_outcome, fit_logit_mle
+#   1. solve_with_ridge, calculate_aipw_pseudo_outcome, fit_logit_mle
 #   2. calculate_aipw_influence
 #   3. fit_site_aipw (nuisance model fitting helper)
 #   4. calculate_dl_heterogeneity (DerSimonian-Laird)
 #   5. calculate_dr_weights, calculate_weighted_site_aipw
 
-#' Safe matrix inversion with ridge stabilization
+#' Matrix inversion with ridge stabilization
 #'
-#' Inverts `mat + ridge * I` via `solve()`. If `solve()` errors (typically
-#' because the ridge-regularized matrix is still numerically singular), emits
-#' a warning carrying the original error message and falls back to
-#' `qr.solve()`. The fallback is logged so callers can detect and audit
-#' degraded inversions instead of silently absorbing them.
+#' Inverts `mat + ridge * I` via `solve()`. If `solve()` errors, fail with
+#' context instead of substituting a different linear solver, since a singular
+#' adjustment matrix changes the variance/influence calculation.
 #'
 #' @param mat square numeric matrix
 #' @param ridge non-negative ridge term to stabilize inversion
-#' @return inverse of `mat + ridge * I` (full or qr-based)
-safe_solve <- function(mat, ridge = RIDGE_DEFAULT) {
+#' @return inverse of `mat + ridge * I`
+solve_with_ridge <- function(mat, ridge = RIDGE_DEFAULT) {
   mat_reg <- mat + diag(ridge, nrow(mat))
   tryCatch({
     solve(mat_reg)
   }, error = function(e) {
-    warning(sprintf(
-      "safe_solve: solve() failed on %dx%d ridge-regularized matrix (ridge=%g); falling back to qr.solve(). Original error: %s",
+    stop(sprintf(
+      "solve_with_ridge: solve() failed on %dx%d ridge-regularized matrix (ridge=%g); refusing to switch to another solver. Increase ridge or inspect the adjustment design for collinearity. Original error: %s",
       nrow(mat_reg), ncol(mat_reg), ridge, conditionMessage(e)
     ), call. = FALSE)
-    qr.solve(mat_reg)
   })
 }
 
@@ -140,7 +137,7 @@ calculate_aipw_influence <- function(y, a, x, m_hat, pi_hat, w = NULL, A_val = 1
   s_beta <- X_int * (indicator * (y - m_hat))
   A_beta <- colMeans(w * (1 - indicator / p_a) * m_prime * X_int) / d
   M_beta <- t(X_int) %*% (X_int * (indicator * m_prime)) / n
-  adj_beta <- safe_solve(M_beta) %*% A_beta
+  adj_beta <- solve_with_ridge(M_beta) %*% A_beta
   infl_beta <- as.numeric(s_beta %*% adj_beta)
 
   # Propensity model adjustment
@@ -161,7 +158,7 @@ calculate_aipw_influence <- function(y, a, x, m_hat, pi_hat, w = NULL, A_val = 1
   }
   A_gamma_ps <- colMeans(w * dphi_term * X_int) / d
   M_gamma_ps <- t(X_int) %*% (X_int * (pi_hat * (1 - pi_hat))) / n
-  adj_gamma_ps <- safe_solve(M_gamma_ps) %*% A_gamma_ps
+  adj_gamma_ps <- solve_with_ridge(M_gamma_ps) %*% A_gamma_ps
   infl_gamma_ps <- as.numeric(s_gamma_ps %*% adj_gamma_ps)
 
   influence <- w * (phi - mu_hat) / d - infl_beta - infl_gamma_ps
@@ -209,7 +206,7 @@ calculate_aipw_influence <- function(y, a, x, m_hat, pi_hat, w = NULL, A_val = 1
 fit_glmnet_cv <- function(x_train, y_train, x_predict,
                           family = "binomial",
                           clip_fn = NULL,
-                          nlambda = LAMBDA_GRID_SIZE_FAST,
+                          nlambda = LAMBDA_GRID_SIZE_STANDARD,
                           min_per_fold = 10L,
                           caller_name = "", model_name = "",
                           fold_id = NULL) {
@@ -254,7 +251,7 @@ fit_glmnet_cv <- function(x_train, y_train, x_predict,
 #'   2. Fit outcome regression model E[Y|A=1,X]
 #'   3. Compute doubly robust AIPW pseudo-outcomes and estimate
 #'
-#' @param site_data List with components Y, A, W_outcome, n
+#' @param site_data List with components Y, A, W_outcome, optional Z_site, n
 #' @param family GLM family ("binomial", "gaussian", etc.). Default "binomial".
 #' @param use_rcal Whether to use RCAL (default FALSE, uses glmnet)
 #' @param use_crossfit Whether to use cross-fitting (default TRUE)
@@ -267,7 +264,12 @@ fit_site_aipw <- function(site_data, family = "binomial", use_rcal = FALSE,
   glm_spec <- resolve_glm_family(family)
   y <- site_data$Y
   tr <- site_data$A
-  x <- as.matrix(site_data$W_outcome)
+  x_or <- as.matrix(site_data$W_outcome)
+  x_ps <- if (!is.null(site_data$Z_site)) {
+    as.matrix(site_data$Z_site)
+  } else {
+    x_or
+  }
   n <- site_data$n
   
   treated_idx <- which(tr == A_val)
@@ -301,14 +303,17 @@ fit_site_aipw <- function(site_data, family = "binomial", use_rcal = FALSE,
   }
   
   # Non-cross-fitted estimation, used only when explicitly requested.
-    X_matrix <- as.matrix(x)
-    if (any(is.na(X_matrix)) || any(is.na(tr)) || any(is.na(y))) {
-      stop(sprintf("fit_site_aipw: Missing values detected — X has %d NA(s), A has %d NA(s), Y has %d NA(s). Remove or impute before calling.",
-                   sum(is.na(X_matrix)), sum(is.na(tr)), sum(is.na(y))))
+    X_or_matrix <- as.matrix(x_or)
+    X_ps_matrix <- as.matrix(x_ps)
+    if (any(is.na(X_or_matrix)) || any(is.na(X_ps_matrix)) ||
+        any(is.na(tr)) || any(is.na(y))) {
+      stop(sprintf("fit_site_aipw: Missing values detected — W_outcome has %d NA(s), Z_site has %d NA(s), A has %d NA(s), Y has %d NA(s). Remove or impute before calling.",
+                   sum(is.na(X_or_matrix)), sum(is.na(X_ps_matrix)),
+                   sum(is.na(tr)), sum(is.na(y))))
     }
     n_cv_folds <- get_cv_fold_count(n)
     
-    # Step 1: Fit propensity score model P(A=1|X)
+    # Step 1: Fit propensity score model P(A=1|Z)
     prop_scores <- NULL
     if (use_rcal) {
       if (!requireNamespace("RCAL", quietly = TRUE)) {
@@ -317,8 +322,8 @@ fit_site_aipw <- function(site_data, family = "binomial", use_rcal = FALSE,
       }
       prop_scores <- tryCatch({
         ps_result <- RCAL::glm.regu.cv(
-          fold = n_cv_folds, y = as.numeric(tr), x = X_matrix,
-          loss = "cal", nrho = LAMBDA_GRID_SIZE_FAST
+          fold = n_cv_folds, y = as.numeric(tr), x = X_ps_matrix,
+          loss = "cal", nrho = LAMBDA_GRID_SIZE_STANDARD
         )
         if (!is.null(ps_result$sel.fit) && !any(is.na(ps_result$sel.fit[, 1]))) {
           ps_result$sel.fit[, 1]
@@ -332,16 +337,16 @@ fit_site_aipw <- function(site_data, family = "binomial", use_rcal = FALSE,
     }
     if (is.null(prop_scores)) {
       cv_fit <- glmnet::cv.glmnet(
-        x = X_matrix, y = as.numeric(tr), family = "binomial",
-        alpha = 1, nfolds = n_cv_folds, nlambda = LAMBDA_GRID_SIZE_FAST
+        x = X_ps_matrix, y = as.numeric(tr), family = "binomial",
+        alpha = 1, nfolds = n_cv_folds, nlambda = LAMBDA_GRID_SIZE_STANDARD
       )
-      prop_scores <- as.numeric(predict(cv_fit, newx = X_matrix,
+      prop_scores <- as.numeric(predict(cv_fit, newx = X_ps_matrix,
                                         s = "lambda.min", type = "response"))
     }
     prop_scores <- clip_propensity(prop_scores)
     
-    # Step 2: Fit outcome regression model E[Y|A=a, X]
-    X_treated <- X_matrix[treated_idx, , drop = FALSE]
+    # Step 2: Fit outcome regression model E[Y|A=a, W]
+    X_treated <- X_or_matrix[treated_idx, , drop = FALSE]
     y_treated <- as.numeric(y[treated_idx])
     n_cv_folds <- get_cv_fold_count(length(y_treated))
     
@@ -359,7 +364,7 @@ fit_site_aipw <- function(site_data, family = "binomial", use_rcal = FALSE,
         )
         RCAL::glm.regu.cv(
           fold = n_cv_folds, y = y_treated, x = X_treated,
-          loss = loss_type, nrho = LAMBDA_GRID_SIZE_FAST
+          loss = loss_type, nrho = LAMBDA_GRID_SIZE_STANDARD
         )
       }, error = function(e) {
         stop(sprintf("fit_site_aipw: RCAL outcome regression failed: %s",
@@ -367,7 +372,7 @@ fit_site_aipw <- function(site_data, family = "binomial", use_rcal = FALSE,
       })
       if (!is.null(or_result) && !is.null(or_result$sel.bet)) {
         beta_coef <- or_result$sel.bet[, 1]
-        X_design <- cbind(1, X_matrix)
+        X_design <- cbind(1, X_or_matrix)
         if (ncol(X_design) == length(beta_coef)) {
           m1_pred <- as.numeric(X_design %*% beta_coef)
         } else {
@@ -383,10 +388,10 @@ fit_site_aipw <- function(site_data, family = "binomial", use_rcal = FALSE,
       family_type <- glm_spec$glmnet_family
       cv_fit_or <- glmnet::cv.glmnet(
         x = X_treated, y = y_treated, family = family_type,
-        alpha = 1, nfolds = n_cv_folds, nlambda = LAMBDA_GRID_SIZE_FAST
+        alpha = 1, nfolds = n_cv_folds, nlambda = LAMBDA_GRID_SIZE_STANDARD
       )
       beta_coef <- as.vector(coef(cv_fit_or, s = "lambda.min"))
-      X_design <- cbind(1, X_matrix)
+      X_design <- cbind(1, X_or_matrix)
       m1_pred <- as.numeric(X_design %*% beta_coef)
     }
     # Apply response function: linear predictor → response scale
@@ -474,6 +479,119 @@ calculate_dl_heterogeneity <- function(site_estimates, site_variances) {
 
 
 # =============================================================================
+# 5. BOOTSTRAP VARIANCE HELPER (comparison-method standard errors)
+# =============================================================================
+
+#' Multiplier (wild) bootstrap standard error for a weighted sum of influence blocks
+#'
+#' Each comparison estimator can be written as \eqn{\sum_b w_b \, \tildeE_b[\varphi_b]},
+#' a weighted sum of block means of (mean-zero) per-observation influence functions
+#' \eqn{\varphi_b}, where blocks are mutually independent samples (e.g. one block per
+#' site, or a shared-target block plus per-source blocks). This computes the standard
+#' error by a wild bootstrap: for each replicate it draws Rademacher multipliers
+#' \eqn{\omega_i \in \{-1,+1\}} per observation and forms
+#' \eqn{\sum_b w_b \, \overline{\omega \, \varphi_b}}; the SE is the standard deviation
+#' across replicates. In expectation this equals the fixed-effects influence-function
+#' variance \eqn{\sum_b w_b^2 \, \overline{\varphi_b^2} / n_b}, i.e. an honest sampling
+#' variance that, unlike a random-effects (\eqn{\tau^2}) correction, does NOT inflate
+#' for systematic between-block (covariate-shift) differences.
+#'
+#' The global RNG state is saved and restored so the bootstrap draws do not perturb
+#' any downstream random number generation.
+#'
+#' @param blocks List of blocks; each block is a list with `influence` (numeric vector,
+#'   centered internally) and `weight` (scalar combination weight). Empty-influence
+#'   blocks are dropped.
+#' @param n_bootstrap Number of bootstrap replicates.
+#' @return Bootstrap standard error (numeric scalar), or \code{NA_real_} if no block has
+#'   any observation.
+#' @keywords internal
+.multiplier_bootstrap_se <- function(blocks, n_bootstrap = BOOTSTRAP_REPLICATES_DEFAULT) {
+  blocks <- Filter(function(b) length(b$influence) > 0L, blocks)
+  if (length(blocks) == 0L) {
+    return(NA_real_)
+  }
+
+  centered_influence <- lapply(blocks, function(b) {
+    infl <- as.numeric(b$influence)
+    infl - mean(infl)
+  })
+  weights <- vapply(blocks, function(b) as.numeric(b$weight), numeric(1L))
+
+  # Keep the bootstrap draws from perturbing the global RNG stream, whether or not
+  # the RNG had already been initialized before this call.
+  if (exists(".Random.seed", envir = globalenv(), inherits = FALSE)) {
+    saved_seed <- get(".Random.seed", envir = globalenv(), inherits = FALSE)
+    on.exit(assign(".Random.seed", saved_seed, envir = globalenv()), add = TRUE)
+  } else {
+    on.exit(
+      if (exists(".Random.seed", envir = globalenv(), inherits = FALSE)) {
+        rm(".Random.seed", envir = globalenv())
+      },
+      add = TRUE
+    )
+  }
+
+  replicates <- vapply(seq_len(n_bootstrap), function(.rep) {
+    total <- 0
+    for (j in seq_along(centered_influence)) {
+      infl <- centered_influence[[j]]
+      multipliers <- sample(c(-1, 1), length(infl), replace = TRUE)
+      total <- total + weights[[j]] * mean(multipliers * infl)
+    }
+    total
+  }, numeric(1L))
+
+  stats::sd(replicates)
+}
+
+#' Resolve the reported variance of a comparison estimator (bootstrap or analytic)
+#'
+#' Centralises the bootstrap-versus-analytic choice so every comparison method reports
+#' variance consistently. When \code{variance_method = "bootstrap"} (the default), the
+#' reported variance is the wild-bootstrap SE squared (see \code{\link{.multiplier_bootstrap_se}});
+#' the analytic variance is always retained alongside for reference. Falls back to the
+#' analytic variance if the bootstrap cannot be computed (no usable blocks).
+#'
+#' @param analytic_variance Method-specific analytic variance estimate.
+#' @param blocks Influence-function blocks for the bootstrap (see
+#'   \code{\link{.multiplier_bootstrap_se}}).
+#' @param variance_method Either \code{"bootstrap"} (default) or \code{"analytic"}.
+#' @param n_bootstrap Number of bootstrap replicates.
+#' @return List with `variance`, `se`, `variance_method` (the method actually used),
+#'   `variance_analytic`, `se_analytic`, and `se_bootstrap`.
+#' @keywords internal
+.resolve_comparison_variance <- function(analytic_variance, blocks,
+                                         variance_method = c("bootstrap", "analytic"),
+                                         n_bootstrap = BOOTSTRAP_REPLICATES_DEFAULT) {
+  variance_method <- match.arg(variance_method)
+  analytic_variance <- max(as.numeric(analytic_variance), VARIANCE_MIN)
+
+  se_bootstrap <- if (identical(variance_method, "bootstrap")) {
+    .multiplier_bootstrap_se(blocks, n_bootstrap = n_bootstrap)
+  } else {
+    NA_real_
+  }
+
+  # A non-finite or non-positive bootstrap SE (e.g. degenerate all-constant influence)
+  # is treated as undefined: fall back to the analytic variance rather than silently
+  # collapsing to VARIANCE_MIN while still claiming method = "bootstrap".
+  use_bootstrap <- identical(variance_method, "bootstrap") &&
+    is.finite(se_bootstrap) && se_bootstrap > 0
+  variance <- if (use_bootstrap) max(se_bootstrap^2, VARIANCE_MIN) else analytic_variance
+
+  list(
+    variance = variance,
+    se = sqrt(variance),
+    variance_method = if (use_bootstrap) "bootstrap" else "analytic",
+    variance_analytic = analytic_variance,
+    se_analytic = sqrt(analytic_variance),
+    se_bootstrap = se_bootstrap
+  )
+}
+
+
+# =============================================================================
 # THEORETICALLY CORRECT BASELINE METHODS
 # =============================================================================
 # The methods below use density ratio weighting to ensure ALL methods
@@ -490,14 +608,32 @@ calculate_dl_heterogeneity <- function(site_estimates, site_variances) {
 #' @param Z_source Site assignment covariates for source site (n_source x p)
 #' @param Z_target Site assignment covariates for target site (n_target x p)
 #' @param lambda_grid Numeric vector of candidate lambda values.
-#'   Default: geometric grid from 1e-4 to 1, length 20.
-#' @param n_cv_folds Number of CV folds (default 5)
+#'   Default: glmnet-style geometric path from lambda_max down to
+#'   1e-4 * lambda_max.
+#' @param n_cv_folds Number of CV folds. If \code{NULL}, an adaptive fold count
+#'   is chosen from the source sample size.
+#' @param lambda_rule CV selection rule: \code{"min"} uses \code{lambda.min};
+#'   \code{"1se"} uses \code{lambda.1se}.
 #' @return Scalar: selected lambda value
 select_dr_lambda_cv <- function(Z_source, Z_target,
                                 lambda_grid = NULL,
-                                n_cv_folds = N_CV_FOLDS_LAMBDA) {
+                                n_cv_folds = NULL,
+                                lambda_rule = c("min", "1se")) {
+  lambda_rule <- .match_nuisance_lambda_rule(lambda_rule, "select_dr_lambda_cv")
   Z_source <- as.matrix(Z_source)
   Z_target <- as.matrix(Z_target)
+  if (nrow(Z_source) < 2L) {
+    stop(sprintf("select_dr_lambda_cv: at least two source observations are required for CV; found %d.",
+                 nrow(Z_source)), call. = FALSE)
+  }
+  if (is.null(n_cv_folds)) {
+    n_cv_folds <- get_cv_fold_count(nrow(Z_source))
+  } else if (length(n_cv_folds) != 1L || is.na(n_cv_folds) || n_cv_folds < 2L) {
+    stop("select_dr_lambda_cv: n_cv_folds must be NULL or an integer >= 2.",
+         call. = FALSE)
+  } else {
+    n_cv_folds <- as.integer(min(n_cv_folds, nrow(Z_source)))
+  }
 
   mean_phi_target <- c(1, colMeans(Z_target))
   A_dummy <- rep(1, nrow(Z_source))
@@ -517,20 +653,26 @@ select_dr_lambda_cv <- function(Z_source, Z_target,
       MAX_ITER_DEFAULT, TOL_DEFAULT, 1L
     )
   }, error = function(e) {
-    stop(sprintf("select_dr_lambda: DR lambda CV failed: %s",
+    stop(sprintf("select_dr_lambda_cv: DR lambda CV failed: %s",
                  conditionMessage(e)), call. = FALSE)
   })
 
-  return(cv_result$best_lambda)
+  .select_nuisance_cv_lambda(cv_result, lambda_rule, "select_dr_lambda_cv")
 }
 
 #' Compute density ratio weights for source site relative to target
 #' Uses exponential tilting: w(X) = exp(-Z'α)
 #' @param Z_source Site assignment covariates for source site
 #' @param Z_target Site assignment covariates for target site
-#' @param lambda Regularization parameter
+#' @param lambda Regularization parameter. \code{NULL} (default) selects
+#'   \code{lambda.min} by CV; numeric values use a fixed lambda.
+#' @param lambda_rule CV selection rule when \code{lambda = NULL}:
+#'   \code{"min"} selects \code{lambda.min}; \code{"1se"} selects
+#'   \code{lambda.1se}.
 #' @return Vector of normalized density ratio weights
-calculate_dr_weights <- function(Z_source, Z_target, lambda = COMPARISON_DR_LAMBDA_DEFAULT) {
+calculate_dr_weights <- function(Z_source, Z_target, lambda = NULL,
+                                 lambda_rule = c("min", "1se")) {
+  lambda_rule <- .match_nuisance_lambda_rule(lambda_rule, "calculate_dr_weights")
   Z_source <- as.matrix(Z_source)
   Z_target <- as.matrix(Z_target)
 
@@ -540,12 +682,22 @@ calculate_dr_weights <- function(Z_source, Z_target, lambda = COMPARISON_DR_LAMB
   }
 
   n_source <- nrow(Z_source)
+  if (n_source < 2L) {
+    stop(sprintf("calculate_dr_weights: at least two source observations are required; found %d.",
+                 n_source), call. = FALSE)
+  }
+  if (nrow(Z_target) == 0L) {
+    stop("calculate_dr_weights: target site has 0 observations.", call. = FALSE)
+  }
   
   mean_phi_target <- c(1, colMeans(Z_target))
   A_dummy <- rep(1, n_source)
   
   alpha <- tryCatch({
-    fit_initial_density_ratio(Z_source, A_dummy, mean_phi_target, lambda = lambda)
+    fit_initial_density_ratio(
+      Z_source, A_dummy, mean_phi_target,
+      lambda = lambda, lambda_rule = lambda_rule
+    )
   }, error = function(e) {
     stop(sprintf("calculate_dr_weights: density ratio fitting failed: %s",
                  conditionMessage(e)), call. = FALSE)
@@ -565,6 +717,8 @@ calculate_dr_weights <- function(Z_source, Z_target, lambda = COMPARISON_DR_LAMB
       n_below, n_above
     ), call. = FALSE)
   }
+  attr(w, "lambda_used") <- attr(alpha, "lambda_used") %||% as.numeric(lambda)
+  attr(w, "lambda_rule") <- attr(alpha, "lambda_rule") %||% "fixed"
 
   return(w)
 }

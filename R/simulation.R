@@ -1,4 +1,4 @@
-# simulation.R - Simulation experiment functions for FACE-C
+# simulation.R - Simulation experiment functions for FACE-HD
 #
 # This file contains reusable simulation functions extracted from main.R.
 # The orchestration script (main.R) calls these functions with experiment-
@@ -87,11 +87,16 @@
 #'        - "mild": ~40%% change in 2 non-zero coefficients
 #'        - "strong": ~80%% change in 2 non-zero coefficients
 #'        - "partial": only first half of source sites have mild heterogeneity
-#' @param shift_strength Numeric multiplier for covariate shift intensity (default 1.0)
+#' @param shift_strength Numeric multiplier for covariate shift intensity.
 #' @param n_folds Integer. Number of cross-fitting folds (>= 3, default 10)
 #' @param use_lambda_cache Logical. If TRUE, enable lambda caching
 #'   within cross-fitting nuisance-model loops.
 #' @param estimate_ate Logical. If TRUE, also estimate target-only ATE
+#' @param n_target Optional integer target-site sample size for explicit
+#'   per-site allocation (FACE DGP only; paired with \code{n_source_sizes}).
+#' @param n_source_sizes Optional integer vector of per-site source sample
+#'   sizes (FACE DGP only); when supplied, \code{K} and the total are derived
+#'   from it and \code{n_total} is ignored.
 #' @return data frame with results
 #' @export
 run_single_simulation <- function(sim_id, n_total = 1000, K = 3, p = 4,
@@ -107,14 +112,25 @@ run_single_simulation <- function(sim_id, n_total = 1000, K = 3, p = 4,
                                  transform_type = "mild",
                                  outcome_type = "binary",
                                  heterogeneity_type = "none",
-                                 shift_strength = 1.0,
+                                 shift_strength = FACEHD_SHIFT_STRENGTH_DEFAULT,
                                  n_folds = N_FOLDS_DEFAULT,
                                  use_lambda_cache = TRUE,
                                  estimate_ate = FALSE,
                                  # FACE paper DGP parameters
-                                 dgp_type = "facec",
+                                 dgp_type = "face",
                                  ate_deviation    = 0.0,
-                                 n_deviated_sites = 0L) {
+                                 n_deviated_sites = 0L,
+                                 # Explicit per-site sample sizes (FACE DGP only)
+                                 n_target         = NULL,
+                                 n_source_sizes   = NULL) {
+
+  # Resolve explicit per-site sample sizes up front so logging and result
+  # bookkeeping use a concrete (n_total, K) consistent with the allocation.
+  if (dgp_type == "face" && (!is.null(n_source_sizes) || !is.null(n_target))) {
+    site_sizes <- resolve_face_site_sizes(n_total, n_target, n_source_sizes, K)
+    n_total    <- site_sizes$n_total
+    K          <- site_sizes$K
+  }
 
   # Track timing for each stage
   sim_start_time <- Sys.time()
@@ -136,6 +152,8 @@ run_single_simulation <- function(sim_id, n_total = 1000, K = 3, p = 4,
                                    dgp_type         = dgp_type,
                                    ate_deviation    = ate_deviation,
                                    n_deviated_sites = as.integer(n_deviated_sites),
+                                   n_target         = n_target,
+                                   n_source_sizes   = n_source_sizes,
                                    warn_ignored     = FALSE)
   data_split <- split_data_by_site(data)
   stage_times$data_gen <- as.numeric(difftime(Sys.time(), data_gen_start, units = "secs"))
@@ -637,9 +655,15 @@ summarize_results <- function(results) {
 #'   \code{"outer_priority"} (default), \code{"balanced"}, or
 #'   \code{"outer_only"}.
 #' @param estimate_ate Logical. Also estimate ATE via A_val=0?
-#' @param dgp_type "facec" or "face".
+#' @param dgp_type "facehd" or "face".
 #' @param ate_deviation Numeric ATE deviation (FACE DGP only).
 #' @param n_deviated_sites Integer deviated sites (FACE DGP only).
+#' @param n_target Optional integer target-site sample size for explicit
+#'   per-site allocation (FACE DGP only; paired with \code{n_source_sizes}).
+#'   When supplied, the \code{n_total} and \code{K} grid axes collapse to this
+#'   single allocation while \code{p} and \code{config} are still swept.
+#' @param n_source_sizes Optional integer vector of per-site source sample
+#'   sizes (FACE DGP only).
 #' @return Data frame of simulation results.
 #' @export
 run_simulation_study <- function(n_sims = 500,
@@ -656,17 +680,37 @@ run_simulation_study <- function(n_sims = 500,
                                 transform_type = "mild",
                                 outcome_type = "binary",
                                 heterogeneity_type = "none",
-                                shift_strength = 1.0,
+                                shift_strength = FACEHD_SHIFT_STRENGTH_DEFAULT,
                                 n_folds = N_FOLDS_DEFAULT,
                                 use_lambda_cache = TRUE,
                                 verbose_every = 10L,
                                 parallel_strategy = c("outer_priority", "balanced", "outer_only"),
                                 estimate_ate = FALSE,
-                                dgp_type = "facec",
+                                dgp_type = "face",
                                 ate_deviation    = 0.0,
-                                n_deviated_sites = 0L) {
+                                n_deviated_sites = 0L,
+                                # Explicit per-site sample sizes (FACE DGP only)
+                                n_target         = NULL,
+                                n_source_sizes   = NULL) {
 
   parallel_strategy <- match.arg(parallel_strategy)
+
+  # Explicit per-site sample sizes (FACE DGP only): collapse the n_total and K
+  # grid axes to the single allocation they imply, so the study still sweeps p
+  # and config while every cell uses the requested per-site sizes.
+  if (!is.null(n_source_sizes) || !is.null(n_target)) {
+    if (dgp_type != "face") {
+      stop("n_target / n_source_sizes are supported only for dgp_type = 'face'.",
+           call. = FALSE)
+    }
+    site_sizes  <- resolve_face_site_sizes(NULL, n_target, n_source_sizes, K = NULL)
+    n_total_vec <- site_sizes$n_total
+    K_vec       <- site_sizes$K
+    cat(sprintf(
+      "  [per-site sizes] n_total -> %d, K -> %d (sources %s, target %d)\n",
+      site_sizes$n_total, site_sizes$K,
+      paste(site_sizes$n_source_sizes, collapse = ","), site_sizes$n_target))
+  }
 
   validate_simulation_params(
     estimand_type      = estimand_type,
@@ -705,7 +749,7 @@ run_simulation_study <- function(n_sims = 500,
   )
   total_settings <- nrow(param_grid)
 
-  cat(sprintf("\n[FACE-C] Simulation study: %d settings, %d sims each, %d cores\n",
+  cat(sprintf("\n[FACE-HD] Simulation study: %d settings, %d sims each, %d cores\n",
               total_settings, n_sims, n_cores))
   cat(sprintf("  n_total: %s | K: %s | p: %s | configs: %s\n",
               paste(n_total_vec, collapse = ","),
@@ -798,12 +842,12 @@ run_simulation_study <- function(n_sims = 500,
     doParallel::registerDoParallel(cl)
 
     parallel::clusterEvalQ(cl, {
-      if (requireNamespace("FACEC", quietly = TRUE)) {
-        library(FACEC)
+      if (requireNamespace("FACEHD", quietly = TRUE)) {
+        library(FACEHD)
       } else if (requireNamespace("devtools", quietly = TRUE)) {
         devtools::load_all(".")
       } else {
-        stop("Workers require either installed FACEC package or devtools.")
+        stop("Workers require either installed FACEHD package or devtools.")
       }
     })
 
@@ -914,7 +958,9 @@ run_simulation_study <- function(n_sims = 500,
               estimate_ate = estimate_ate,
               dgp_type = dgp_type,
               ate_deviation = ate_deviation,
-              n_deviated_sites = n_deviated_sites)
+              n_deviated_sites = n_deviated_sites,
+              n_target = n_target,
+              n_source_sizes = n_source_sizes)
           })
 
           batch_elapsed <- as.numeric(
@@ -985,7 +1031,9 @@ run_simulation_study <- function(n_sims = 500,
             estimate_ate = estimate_ate,
             dgp_type = dgp_type,
             ate_deviation = ate_deviation,
-            n_deviated_sites = n_deviated_sites
+            n_deviated_sites = n_deviated_sites,
+            n_target = n_target,
+            n_source_sizes = n_source_sizes
           )
 
           sim_elapsed <- as.numeric(difftime(Sys.time(), sim_start, units = "secs"))

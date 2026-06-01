@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 > **Naming convention**: The paper refers to the method as **FACE-HD**. The R package
-> is named `FACEC` (R packages cannot contain hyphens).
+> is named `FACEHD` (R packages cannot contain hyphens).
 
 ## Overview
 
@@ -55,8 +55,8 @@ install.packages("testthat")
 ### From Source
 
 ```bash
-git clone https://github.com/sinianzhang/FACE-C.git
-cd FACE-C
+git clone https://github.com/sinianzhang/FACE-HD.git
+cd FACE-HD
 ```
 
 In R:
@@ -109,7 +109,7 @@ cat("True μ¹:", data$mu1_true, "\n")
 ## Project Structure
 
 ```
-FACE-C/
+FACE-HD/
 ├── R/                              # Core R functions
 │   ├── constants.R                 # Centralized numerical constants
 │   ├── model_fitting.R             # Unified model fitting (R + C++ accelerated)
@@ -173,10 +173,12 @@ Both algorithms use nested sample splitting (K_f folds) to achieve:
 
 ## Simulation Configurations
 
-The package supports four configurations for testing:
+The FACE-HD DGP uses $X^\dagger$ for the true site/treatment and outcome
+mechanisms. Configurations change only the fitted working bases exposed to the
+estimators:
 
-| Config | Site Assignment | Outcome Model | Description |
-|--------|----------------|---------------|-------------|
+| Config | Fitted Site Basis | Fitted Outcome Basis | Description |
+|--------|-------------------|----------------------|-------------|
 | C1 | $X^\dagger$ | $X^\dagger$ | Both correctly specified |
 | C2 | $X^\dagger$ | $X$ | Outcome model misspecified |
 | C3 | $X$ | $X^\dagger$ | Propensity score misspecified |
@@ -206,11 +208,11 @@ testthat::test_file("tests/testthat/test-utils.R")
 If you use this package in your research, please cite:
 
 ```bibtex
-@software{facec2025,
+@software{facehd2025,
   author = {Zhang, Sinian},
-  title = {FACE-C: Federated Adaptive Causal Estimation in High Dimensions},
+  title = {FACE-HD: Federated Adaptive Causal Estimation in High Dimensions},
   year = {2025},
-  url = {https://github.com/sinianzhang/FACE-C}
+  url = {https://github.com/sinianzhang/FACE-HD}
 }
 ```
 
@@ -232,4 +234,3 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 - **Author**: Sinian Zhang
 - **Email**: zhan9381@umn.edu
-

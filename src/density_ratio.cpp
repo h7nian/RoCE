@@ -366,7 +366,8 @@ List select_lambda_cv_density_ratio_cpp(const MatrixXd& Z_site, const VectorXd& 
                                              lambda, cv_tol, cv_max_iter);
 
             fold_scores(lambda_idx, fold) = CVUtils::density_ratio_val_loss(
-                gamma, mean_grad_psi, X_val_folds[fold], pp_val[fold]);
+                gamma, mean_grad_psi, X_val_folds[fold], pp_val[fold],
+                static_cast<double>(n_treated) / n);
         }
     }
 
@@ -392,9 +393,13 @@ List select_lambda_cv_initial_density_ratio_cpp(const MatrixXd& Z_site, const Ve
 
     auto lambda_order = CVUtils::sort_lambda_descending(lambda_grid);
     auto treated_idx = CVUtils::filter_treated(A_source, A_val);
-    if (treated_idx.empty()) return CVUtils::make_early_return(lambda_grid, n_lambda, true);
+    if (treated_idx.empty()) {
+        throw std::runtime_error("select_lambda_cv_initial_density_ratio_cpp: no observations with A_val.");
+    }
     int n_treated = treated_idx.size();
-    if (n_treated < n_folds) return CVUtils::make_early_return(lambda_grid, n_lambda, false);
+    if (n_treated < n_folds) {
+        throw std::runtime_error("select_lambda_cv_initial_density_ratio_cpp: not enough A_val observations for requested CV folds.");
+    }
 
     // Pre-compute treated data with intercept
     MatrixXd X_treated_int = prepend_intercept(subset_rows(Z_site, treated_idx));
@@ -435,7 +440,8 @@ List select_lambda_cv_initial_density_ratio_cpp(const MatrixXd& Z_site, const Ve
                                              lambda, cv_tol, cv_max_iter);
 
             fold_scores(lambda_idx, fold) = CVUtils::density_ratio_val_loss(
-                gamma, mean_phi, X_val_folds[fold], pp_val[fold]);
+                gamma, mean_phi, X_val_folds[fold], pp_val[fold],
+                static_cast<double>(n_treated) / n);
         }
     }
 
@@ -465,9 +471,13 @@ List select_lambda_cv_calibrated_density_ratio_cpp(const MatrixXd& Z_site, const
 
     auto lambda_order = CVUtils::sort_lambda_descending(lambda_grid);
     auto treated_idx = CVUtils::filter_treated(A_source, A_val);
-    if (treated_idx.empty()) return CVUtils::make_early_return(lambda_grid, n_lambda, true);
+    if (treated_idx.empty()) {
+        throw std::runtime_error("select_lambda_cv_calibrated_density_ratio_cpp: no observations with A_val.");
+    }
     int n_treated = treated_idx.size();
-    if (n_treated < n_folds) return CVUtils::make_early_return(lambda_grid, n_lambda, false);
+    if (n_treated < n_folds) {
+        throw std::runtime_error("select_lambda_cv_calibrated_density_ratio_cpp: not enough A_val observations for requested CV folds.");
+    }
 
     // Prepare site features with intercept
     MatrixXd Z_site_int = prepend_intercept(subset_rows(Z_site, treated_idx));
@@ -515,7 +525,8 @@ List select_lambda_cv_calibrated_density_ratio_cpp(const MatrixXd& Z_site, const
                                              lambda, cv_tol, cv_max_iter);
 
             fold_scores(lambda_idx, fold) = CVUtils::density_ratio_val_loss(
-                gamma, mean_grad_psi, X_val_folds[fold], pp_val[fold]);
+                gamma, mean_grad_psi, X_val_folds[fold], pp_val[fold],
+                static_cast<double>(n_treated) / n);
         }
     }
 

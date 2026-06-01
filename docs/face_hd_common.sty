@@ -1,5 +1,5 @@
 \NeedsTeXFormat{LaTeX2e}
-\ProvidesPackage{face-macros}[2026/04/16 FACE-HD shared macros for main.tex and proof.tex]
+\ProvidesPackage{face_hd_common}[2026/04/16 FACE-HD shared macros for main.tex and supplemental.tex]
 
 % Expectation / variance / covariance operators
 \DeclareMathOperator{\E}{\mathbb{E}}
@@ -22,5 +22,28 @@
 \providecommand{\bgamma}{\boldsymbol{\gamma}}
 \providecommand{\bbeta}{\boldsymbol{\beta}}
 \providecommand{\bhat}[1]{\widehat{\boldsymbol{#1}}}
+
+% Shared theorem-like environments (used by both main.tex and supplemental.tex).
+% Centralised here so the two documents stay consistent; amsthm is required
+% rather than re-loaded so standalone supplemental compilation is unaffected.
+\RequirePackage{amsthm}
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}{Lemma}
+\newtheorem{corollary}{Corollary}
+\newtheorem{proposition}{Proposition}
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}
+\newtheorem{assumption}{Assumption}
+\theoremstyle{remark}
+\newtheorem{remark}{Remark}
+
+% Compatibility shim for the proof-at-the-end package's restated-theorem
+% environment (\begin{theoremRep}{<label-of-original>}). That package is not a
+% dependency here; the single use restates an already-stated theorem, so render
+% it as an unnumbered "(restated)" block and consume the mandatory label arg.
+\theoremstyle{plain}
+\newtheorem*{theoremRepInner}{Theorem (restated)}
+\newenvironment{theoremRep}[1]{\begin{theoremRepInner}}{\end{theoremRepInner}}
 
 \endinput

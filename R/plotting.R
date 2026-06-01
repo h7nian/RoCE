@@ -96,7 +96,7 @@ save_plot <- function(plot, path, width = 7, height = 4.5, dpi = 300) {
 #' Horizontal point-and-interval plot comparing the target-effect estimate of
 #' several methods (target-only, SS, IVW, Tilted-AIPW, FACE-HD, ...). Suitable
 #' for the real-data application section. Accepts either a long data frame
-#' with the standard FACEC comparison-method columns, or the list returned by
+#' with the standard FACEHD comparison-method columns, or the list returned by
 #' \code{run_rhc_experiment()}.
 #'
 #' @param methods_df Data frame with required columns \code{method},

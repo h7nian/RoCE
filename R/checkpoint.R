@@ -66,12 +66,25 @@ save_checkpoint <- function(state, checkpoint_file, sim_level = FALSE) {
 load_checkpoint <- function(checkpoint_file) {
   if (!file.exists(checkpoint_file)) return(NULL)
 
-  load(checkpoint_file)  # restores 'state'
-  if (!exists("state", inherits = FALSE) || !is.list(state)) {
+  checkpoint_env <- new.env(parent = emptyenv())
+  tryCatch(
+    load(checkpoint_file, envir = checkpoint_env),  # restores 'state'
+    warning = function(w) {
+      stop(sprintf("load_checkpoint: failed to load checkpoint '%s': %s",
+                   checkpoint_file, conditionMessage(w)), call. = FALSE)
+    },
+    error = function(e) {
+      stop(sprintf("load_checkpoint: failed to load checkpoint '%s': %s",
+                   checkpoint_file, conditionMessage(e)), call. = FALSE)
+    }
+  )
+  if (!exists("state", envir = checkpoint_env, inherits = FALSE) ||
+      !is.list(checkpoint_env$state)) {
     stop(sprintf("load_checkpoint: '%s' did not contain a valid checkpoint state.",
                  checkpoint_file), call. = FALSE)
   }
 
+  state <- checkpoint_env$state
   if (!is.null(state$sim_results) && !is.null(state$current_sim_idx)) {
     cat(sprintf("Checkpoint loaded: %s\n", checkpoint_file))
     cat(sprintf("   Resuming setting %d/%d from simulation %d/%d\n",

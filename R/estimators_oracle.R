@@ -32,13 +32,13 @@
 #'   oracle DR uses this vector (converted to P(A=A_val|X)); otherwise it falls
 #'   back to the estimated target-site propensity model.
 #' @param lambda_selection Lambda choice for aggregation weights:
-#'   - "cv" (default): data-adaptive selection via \code{select_lambda_cv_crossfit}
+#'   - "cv" (default): data-adaptive selection via \code{select_aggregation_lambda}
 #'   - numeric: fixed lambda value
 #' @param lambda_grid Optional lambda grid passed to
-#'   \code{select_lambda_cv_crossfit} when \code{lambda_selection = "cv"}.
+#'   \code{select_aggregation_lambda} when \code{lambda_selection = "cv"}.
 #' @param lambda_rule Rule used when \code{lambda_selection = "cv"}:
-#'   \code{"min"} selects the variance minimizer and \code{"1se"} selects the
-#'   largest lambda within 5\% of the minimum.
+#'   only \code{"min"} is supported because the oracle benchmark uses a
+#'   single variance curve rather than fold-level validation scores.
 #' @return List with estimate, variance, se, method
 #' @export
 estimate_oracle_dr <- function(data_split, alpha1_true, gamma_params,
@@ -60,14 +60,14 @@ estimate_oracle_dr <- function(data_split, alpha1_true, gamma_params,
   }
 
   # ---------- Target predictions: m(X_i; alpha_true) ----------
-  W_target <- as.matrix(target_data$W_outcome)
+  W_target <- as.matrix(target_data$W_outcome_true %||% target_data$W_outcome)
   W_target_design <- cbind(1, W_target)
   n_t <- target_data$n
 
   # Defensive: alpha dimension must match design matrix
   if (length(alpha_true) != ncol(W_target_design)) {
     stop(sprintf(
-      "estimate_oracle_dr: alpha_true has length %d but W_outcome has %d columns (need %d = p+1 with intercept).",
+      "estimate_oracle_dr: alpha_true has length %d but true outcome basis has %d columns (need %d = p+1 with intercept).",
       length(alpha_true), ncol(W_target), ncol(W_target_design)
     ))
   }
@@ -97,7 +97,7 @@ estimate_oracle_dr <- function(data_split, alpha1_true, gamma_params,
     if (A_val == 1L) pi1 else pmax(pmin(1 - pi1, POSITIVITY_UPPER), POSITIVITY_LOWER)
   } else {
     tryCatch({
-      Z_target <- as.matrix(target_data$Z_site)
+      Z_target <- as.matrix(target_data$Z_site_true %||% target_data$Z_site)
       ps_fit <- stats::glm(ind_a ~ Z_target, family = stats::binomial())
       pmax(pmin(ps_fit$fitted.values, POSITIVITY_UPPER), POSITIVITY_LOWER)
     }, error = function(e) {
@@ -127,8 +127,8 @@ estimate_oracle_dr <- function(data_split, alpha1_true, gamma_params,
 
   for (site in source_sites) {
     source_data <- data_split[[site]]
-    Z_source <- as.matrix(source_data$Z_site)
-    W_source <- as.matrix(source_data$W_outcome)
+    Z_source <- as.matrix(source_data$Z_site_true %||% source_data$Z_site)
+    W_source <- as.matrix(source_data$W_outcome_true %||% source_data$W_outcome)
     W_source_design <- cbind(1, W_source)
     Z_source_int <- cbind(1, Z_source)
 
@@ -218,7 +218,7 @@ estimate_oracle_dr <- function(data_split, alpha1_true, gamma_params,
     if (!identical(lambda_selection, "cv")) {
       stop("estimate_oracle_dr: lambda_selection must be 'cv' or numeric.")
     }
-    select_lambda_cv_crossfit(
+    select_aggregation_lambda(
       n_folds = 1,
       fold_target_estimate = M_t,
       fold_source_estimates = mu_ts,
@@ -231,10 +231,13 @@ estimate_oracle_dr <- function(data_split, alpha1_true, gamma_params,
       lambda_grid = lambda_grid,
       lambda_rule = lambda_rule
     )
-  } else if (is.numeric(lambda_selection) && length(lambda_selection) == 1L && is.finite(lambda_selection)) {
-    lambda_selection
+  } else if (is.numeric(lambda_selection) && length(lambda_selection) == 1L &&
+             is.finite(lambda_selection) &&
+             lambda_selection >= LAMBDA_MIN && lambda_selection <= LAMBDA_MAX) {
+    as.numeric(lambda_selection)
   } else {
-    stop("estimate_oracle_dr: lambda_selection must be 'cv' or a finite numeric scalar.")
+    stop(sprintf("estimate_oracle_dr: lambda_selection must be 'cv' or a finite numeric scalar in [%g, %g].",
+                 LAMBDA_MIN, LAMBDA_MAX))
   }
 
   # ---------- Optimal weights and aggregated variance ----------

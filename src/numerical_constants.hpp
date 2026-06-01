@@ -4,7 +4,7 @@
 // =============================================================================
 // NUMERICAL STABILITY CONSTANTS (C++ side)
 // =============================================================================
-// Centralized numerical constants for FACE-C algorithms.
+// Centralized numerical constants for FACE-HD algorithms.
 // These constants define bounds for numerical stability across the C++ codebase.
 //
 // IMPORTANT: Keep in sync with R/constants.R which defines the R-side constants.

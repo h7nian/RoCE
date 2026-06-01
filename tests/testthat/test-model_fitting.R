@@ -5,7 +5,7 @@
 
 library(testthat)
 
-# Package loaded by helper-load.R (all functions available via FACEC namespace)
+# Package loaded by helper-load.R (all functions available via FACEHD namespace)
 
 # ============================================================================
 # Helper: generate small synthetic site data
@@ -52,6 +52,33 @@ test_that("fit_initial_outcome works when requested treatment arm is sparse but 
   expect_true(all(is.finite(alpha)))
 })
 
+test_that("fit_initial_outcome exposes glmnet-style lambda rules", {
+  d <- make_site_data(120, 4, treated_frac = 0.5, seed = 11)
+
+  alpha <- fit_initial_outcome(
+    d$X, d$Y, d$A, A_val = 1, nlambda = 5L,
+    lambda_rule = "1se"
+  )
+
+  expect_equal(attr(alpha, "lambda_rule"), "1se")
+  expect_true(is.finite(attr(alpha, "lambda_min")))
+  expect_true(is.finite(attr(alpha, "lambda_1se")))
+  expect_equal(attr(alpha, "lambda_used"), attr(alpha, "lambda_1se"))
+})
+
+test_that("nuisance CV lambda selection requires standard metadata", {
+  skip_if_not(exists(".select_nuisance_cv_lambda"), message = "internal helper not loaded")
+
+  expect_error(
+    .select_nuisance_cv_lambda(
+      list(best_lambda = 0.1, lambda_min = 0.1),
+      lambda_rule = "1se",
+      caller = "unit_test"
+    ),
+    "missing finite glmnet-style field"
+  )
+})
+
 # ============================================================================
 # Tests for fit_initial_density_ratio
 # ============================================================================
@@ -70,6 +97,21 @@ test_that("fit_initial_density_ratio returns valid gamma", {
   
   expect_equal(length(gamma), p + 1)
   expect_true(all(is.finite(gamma)))
+})
+
+test_that("optimize_weights rejects lambda values it would otherwise clip", {
+  estimates <- c(0.50, 0.62)
+  variances <- list(V_ot = 1.0, V_t = c(0.8, 0.9), V_s = c(0.7, 0.6))
+  C_ot <- c(0.05, 0.04)
+  n_samples <- list(n_t = 40, n_s = c(45, 50))
+
+  expect_error(
+    optimize_weights(
+      estimates, variances, C_ot, n_samples,
+      lambda = LAMBDA_MAX * 2, mu_ot = 0.50
+    ),
+    "lambda must be <="
+  )
 })
 
 # ============================================================================

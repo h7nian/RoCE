@@ -6,7 +6,7 @@
 
 library(testthat)
 
-# Package loaded by helper-load.R (all functions available via FACEC namespace)
+# Package loaded by helper-load.R (all functions available via FACEHD namespace)
 
 # ============================================================================
 # Test GLM fitting (fit_general_glm_cpp)
@@ -133,7 +133,7 @@ test_that("select_lambda_cv_density_ratio_cpp returns valid result", {
   A <- rbinom(n, 1, 0.5)
   mean_grad_psi <- rnorm(p + 1)
   alpha_init <- rnorm(p + 1)
-  lambda_grid <- exp(seq(log(0.001), log(1), length.out = 10))
+  lambda_grid <- exp(seq(log(1), log(0.001), length.out = 10))
   
   result <- select_lambda_cv_density_ratio_cpp(X, A, mean_grad_psi, alpha_init,
                                                 lambda_grid, 3, 100, 1e-4,
@@ -142,8 +142,14 @@ test_that("select_lambda_cv_density_ratio_cpp returns valid result", {
   expect_true("best_lambda" %in% names(result))
   expect_true("best_idx" %in% names(result))
   expect_true("cv_scores" %in% names(result))
+  expect_true("lambda_min" %in% names(result))
+  expect_true("lambda_1se" %in% names(result))
+  expect_true("cv_se" %in% names(result))
   expect_true(result$best_lambda > 0)
+  expect_true(result$lambda_min > 0)
+  expect_true(result$lambda_1se > 0)
   expect_equal(length(result$cv_scores), length(lambda_grid))
+  expect_equal(length(result$cv_se), length(lambda_grid))
 })
 
 test_that("select_lambda_cv_general_refined_outcome_cpp returns valid result", {
@@ -156,13 +162,16 @@ test_that("select_lambda_cv_general_refined_outcome_cpp returns valid result", {
   Y <- rbinom(n, 1, 0.5)
   A <- rbinom(n, 1, 0.5)
   gamma_s <- rnorm(p + 1)
-  lambda_grid <- exp(seq(log(0.001), log(1), length.out = 10))
+  lambda_grid <- exp(seq(log(1), log(0.001), length.out = 10))
   
   result <- select_lambda_cv_general_refined_outcome_cpp(X, Y, A, gamma_s, 1L, 1L,
                                                           lambda_grid, 3, 100, 1e-4, 1L, X)
   
   expect_true(result$best_lambda > 0)
+  expect_true(result$lambda_min > 0)
+  expect_true(result$lambda_1se > 0)
   expect_equal(length(result$cv_scores), 10)
+  expect_equal(length(result$cv_se), 10)
 })
 
 test_that("CV functions fail fast on all-control data (empty treated set)", {
@@ -178,12 +187,23 @@ test_that("CV functions fail fast on all-control data (empty treated set)", {
   A <- rep(0, n)  # No treated units
   mean_grad_psi <- rnorm(p + 1)
   alpha_init <- rnorm(p + 1)
-  lambda_grid <- exp(seq(log(0.01), log(1), length.out = 5))
+  lambda_grid <- exp(seq(log(1), log(0.01), length.out = 5))
 
   expect_error(
     select_lambda_cv_density_ratio_cpp(X, A, mean_grad_psi, alpha_init,
                                        lambda_grid, 3, 100, 1e-4,
                                        A_val = 1L, family_int = 1L, link_int = 1L),
+    "no observations with A_val"
+  )
+  expect_error(
+    select_lambda_cv_initial_density_ratio_cpp(X, A, mean_grad_psi,
+                                               lambda_grid, 3, 100, 1e-4, 1L),
+    "no observations with A_val"
+  )
+  expect_error(
+    select_lambda_cv_calibrated_density_ratio_cpp(X, A, mean_grad_psi, alpha_init,
+                                                  lambda_grid, 3, 100, 1e-4,
+                                                  Inf, X, 1L, 1L, 1L),
     "no observations with A_val"
   )
 })

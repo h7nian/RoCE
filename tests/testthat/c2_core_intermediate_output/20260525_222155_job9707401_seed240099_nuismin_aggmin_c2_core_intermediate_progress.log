@@ -1,0 +1,6 @@
+[2026-05-25 22:21:55] config seed=240099 n=500 K=2 p=5 C2 folds=5 nlambda_init=20 methods=target_only nuisance_rule=min agg_rule=min
+[2026-05-25 22:21:56] data truth=0.58110398 mu1_realized=0.57098323 n_t=186 n_sources=141,173
+[2026-05-25 22:21:56] method_start target_only
+[2026-05-25 22:21:56] method_done target_only estimate=0.57726793 bias=-0.00383605 se=0.05759161 elapsed_sec=0.4
+[2026-05-25 22:21:56] output runs=c2_core_intermediate_output/20260525_222155_job9707401_seed240099_nuismin_aggmin_method_runs.csv
+[2026-05-25 22:21:56] output contracts=c2_core_intermediate_output/20260525_222155_job9707401_seed240099_nuismin_aggmin_paper_contracts.csv

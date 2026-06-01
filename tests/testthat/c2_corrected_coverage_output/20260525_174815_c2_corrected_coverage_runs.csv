@@ -1,0 +1,2 @@
+"sim_id","method","estimate","se","bias","coverage","ci_width","n_total","K","p","config","heterogeneity_type","estimand_type","dgp_type"
+260001,"one_round_crossfit",0.598729212097459,0.0106773176395614,0.00958365561002805,TRUE,0.0418543160500691,5000,5,50,"C2","none","superpopulation","facec"

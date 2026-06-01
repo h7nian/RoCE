@@ -8,7 +8,7 @@ test_that("R and C++ numerical constants are in sync", {
   # Read and parse C++ constants from header file
   hpp_path <- file.path("..", "..", "src", "numerical_constants.hpp")
   if (!file.exists(hpp_path)) {
-    hpp_path <- file.path(system.file(package = "FACEC"), "..", "src", "numerical_constants.hpp")
+    hpp_path <- file.path(system.file(package = "FACEHD"), "..", "src", "numerical_constants.hpp")
   }
   # Also try the common testthat working directory
   if (!file.exists(hpp_path)) {

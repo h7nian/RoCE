@@ -1,4 +1,4 @@
-# realdata.R - FACE-C Real-Data Experiment (Right-Heart Catheterization)
+# realdata.R - FACE-HD Real-Data Experiment (Right-Heart Catheterization)
 #
 # =============================================================================
 # TARGET ESTIMAND
@@ -9,7 +9,7 @@
 #
 # Pipeline (parallel in spirit to main.R):
 #   1. Parse args.
-#   2. Load installed FACEC package (devtools::load_all fallback for dev).
+#   2. Load installed FACEHD package (devtools::load_all fallback for dev).
 #   3. Run the end-to-end RHC experiment via run_rhc_experiment().
 #   4. Persist artefacts under results/real_data/:
 #        - <setting>.rds              full result list
@@ -92,30 +92,30 @@ site_recode_arg <- if (!nzchar(site_preset_arg)) {
 # Hardcoded presets (rather than user-supplied code) keep the command-line
 # surface declarative and reviewable.
 #
-# FACEC is loaded below (via library(FACEC)), so we cannot yet reference
+# FACEHD is loaded below (via library(FACEHD)), so we cannot yet reference
 # phi_rhc_bspline by its bare name. Use the fully-qualified namespace
-# accessor instead; this also makes the dependency on FACEC explicit.
+# accessor instead; this also makes the dependency on FACEHD explicit.
 phi_preset_arg <- Sys.getenv("PHI", "identity")
 phi_fun <- switch(
   phi_preset_arg,
   "identity" = base::identity,
-  "bspline"  = FACEC::phi_rhc_bspline,
+  "bspline"  = FACEHD::phi_rhc_bspline,
   stop(sprintf("Unknown PHI = '%s' (known: identity, bspline)", phi_preset_arg))
 )
 
 # ============================================================================
-# Load FACEC Package (mirrors main.R)
+# Load FACEHD Package (mirrors main.R)
 # ============================================================================
 # quietly = FALSE so the actual loadNamespace error (e.g. ABI mismatch from a
 # wrong R module version) surfaces in the log instead of silently falling to
 # the misleading "neither found" branch.
-if (requireNamespace("FACEC", quietly = FALSE)) {
-  library(FACEC)
+if (requireNamespace("FACEHD", quietly = FALSE)) {
+  library(FACEHD)
 } else if (requireNamespace("devtools", quietly = FALSE)) {
-  cat("FACEC not installed; loading via devtools::load_all()...\n")
+  cat("FACEHD not installed; loading via devtools::load_all()...\n")
   devtools::load_all(".")
 } else {
-  stop("Neither installed FACEC package nor devtools found. ",
+  stop("Neither installed FACEHD package nor devtools found. ",
        "Install the package with: R CMD INSTALL .")
 }
 
@@ -151,7 +151,7 @@ weights_pdf   <- file.path(results_dir, paste0(setting_id, "_weights.pdf"))
 pairwise_pdf  <- file.path(results_dir, paste0(setting_id, "_pairwise.pdf"))
 
 cat(sprintf("==============================================\n"))
-cat(sprintf("FACE-C Real-Data Experiment: RHC\n"))
+cat(sprintf("FACE-HD Real-Data Experiment: RHC\n"))
 cat(sprintf("==============================================\n"))
 cat(sprintf("Job ID:        %s\n", job_id))
 cat(sprintf("Setting ID:    %s\n", setting_id))

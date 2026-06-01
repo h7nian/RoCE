@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================================
-# FACE-C Real-Data (RHC) Job Submission Script
+# FACE-HD Real-Data (RHC) Job Submission Script
 # ============================================================================
 #
 # Submits a single SLURM job that runs the Right-Heart Catheterization (RHC)
@@ -128,7 +128,7 @@ if [[ "$PHI" != "identity" ]]; then
 fi
 
 echo "======================================================"
-echo " FACE-C Real-Data (RHC) Job Submission"
+echo " FACE-HD Real-Data (RHC) Job Submission"
 echo "======================================================"
 echo " Setting ID:    ${SETTING_ID}"
 echo " K:             ${K}"

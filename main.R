@@ -1,4 +1,4 @@
-# main.R - FACE-C Monte Carlo Simulation Study
+# main.R - FACE-HD Monte Carlo Simulation Study
 #
 # =============================================================================
 # TARGET ESTIMAND
@@ -28,10 +28,17 @@ print(args)
 # arg8: transform_type ("strong", "mild", "none", default "mild")
 # arg9: outcome_type ("binary", "continuous", default "binary")
 # arg10: heterogeneity_type ("none", "mild", "strong", "partial", default "none")
-# arg11: shift_strength (numeric, default 1.0)
+# arg11: shift_strength (numeric, default 0.5)
 # arg12: n_folds (integer, cross-fitting folds, default 10)
+#        NOTE: diagnosis/bias/ found that n_folds=10 leaves the calibration
+#        fold too small for the calibrated-DR step, producing fold-to-fold
+#        nuisance instability that under-covers one/two-round when
+#        p / (n_site_arm / K_f) > ~0.2.
+#        Verified at n=5000, K=3, p=10, C1: switching to n_folds=3 raised
+#        one_round / two_round coverage from 0.886 / 0.878 to 0.945 / 0.955.
+#        Prefer n_folds=3 (or 5) when (n_total / (K+1) / 2 / n_folds) / p < ~5.
 # arg13: n_sims (integer, number of Monte Carlo sims, default 500)
-# arg14: dgp_type ("facec" or "face", default "facec")
+# arg14: dgp_type ("facehd" or "face", default "face")
 # arg15: ate_deviation (numeric ATE deviation for FACE paper non-informative sites, default 0.0)
 # arg16: n_deviated_sites (integer, deviated source sites for FACE paper DGP, default 0)
 # arg17: use_lambda_cache (TRUE/FALSE, default TRUE)
@@ -133,14 +140,14 @@ site_allocation_arg <- if (length(args) >= 7) args[7] else "model"
 transform_type_arg <- if (length(args) >= 8) args[8] else "mild"
 outcome_type_arg <- if (length(args) >= 9) args[9] else "binary"
 heterogeneity_type_arg <- if (length(args) >= 10) args[10] else "none"
-shift_strength_arg <- .parse_numeric_arg(args, 11, "shift_strength", default = 1.0)
+shift_strength_arg <- .parse_numeric_arg(args, 11, "shift_strength", default = 0.5)
 n_folds_arg <- .parse_numeric_arg(args, 12, "n_folds", default = 10L,
                                   integer = TRUE, min_value = 1L)
 n_sims_arg <- .parse_numeric_arg(args, 13, "n_sims", default = 500L,
                                  integer = TRUE, min_value = 1L)
 dgp_type_arg <- .parse_choice_arg(args, 14, "dgp_type",
-                                  choices = c("facec", "face"),
-                                  default = "facec")
+                                  choices = c("facehd", "face"),
+                                  default = "face")
 ate_deviation_arg <- .parse_numeric_arg(args, 15, "ate_deviation", default = 0.0)
 n_deviated_sites_arg <- .parse_numeric_arg(args, 16, "n_deviated_sites",
                                            default = 0L, integer = TRUE)
@@ -177,23 +184,30 @@ if (NESTED_PARALLEL) {
   cat("[PERF] NESTED PARALLEL ENABLED: simulation + source-site parallelism\n")
 }
 
-# FACE-C implementation status:
+# FACE-HD implementation status:
 # - Canonical entry point: run_crossfit(..., communication_mode = "two_round"|"one_round")
 # - Legacy non-crossfitting algorithm labels (one_round, two_round) are not used
 #   in this script; cross-fitting variants are the supported workflow.
 
-# Load the FACEC package (all R/ code + compiled C++)
-# Prefer installed package; fall back to devtools::load_all for development
-# quietly = FALSE so the actual loadNamespace error (e.g. ABI mismatch from a
-# wrong R module version) surfaces in the log instead of silently falling to
-# the misleading "neither found" branch.
-if (requireNamespace("FACEC", quietly = FALSE)) {
-  library(FACEC)
+# Load the FACEHD package (all R/ code + compiled C++)
+# FACE core Slurm runs default to the source tree so diagnostics/fixes in this
+# checkout are used without requiring R CMD INSTALL or touching 00LOCK dirs.
+use_source_tree <- .parse_bool_value(Sys.getenv("FACEHD_MAIN_USE_SOURCE", "FALSE"),
+                                     "FACEHD_MAIN_USE_SOURCE")
+if (use_source_tree) {
+  if (!requireNamespace("devtools", quietly = FALSE)) {
+    stop("FACEHD_MAIN_USE_SOURCE=TRUE but devtools is not available.",
+         call. = FALSE)
+  }
+  cat("FACEHD_MAIN_USE_SOURCE=TRUE; loading source tree via devtools::load_all()...\n")
+  devtools::load_all(".")
+} else if (requireNamespace("FACEHD", quietly = FALSE)) {
+  library(FACEHD)
 } else if (requireNamespace("devtools", quietly = FALSE)) {
-  cat("FACEC not installed; loading via devtools::load_all()...\n")
+  cat("FACEHD not installed; loading via devtools::load_all()...\n")
   devtools::load_all(".")
 } else {
-  stop("Neither installed FACEC package nor devtools found. ",
+  stop("Neither installed FACEHD package nor devtools found. ",
        "Install the package with: R CMD INSTALL .")
 }
 
@@ -219,7 +233,7 @@ validate_simulation_params(
 
 # Build setting identifier from active DGP/output parameters.
 # For the FACE paper DGP, the identifier also includes ate_deviation/n_deviated_sites.
-# Format (facec): n<N>_K<K>_p<P>_<config>_<estimand>_<outcome>_<alloc>_tf<transform>_ht<het>_ss<shift>_kf<folds>_ate<flag>
+# Format (facehd): n<N>_K<K>_p<P>_<config>_<estimand>_<outcome>_<alloc>_tf<transform>_ht<het>_ss<shift>_kf<folds>_ate<flag>
 # Format (face):  n<N>_K<K>_p<P>_<config>_<estimand>_<outcome>_face_dev<dev>_nd<nd>_kf<folds>_ate<flag>
 # Must match main.sh::build_setting_id() and main.cmd
 estimate_ate_label <- if (estimate_ate_arg) "TRUE" else "FALSE"
@@ -241,7 +255,7 @@ if (dgp_type_arg == "face") {
 }
 
 cat(sprintf("\n============================================\n"))
-cat(sprintf("FACE-C Simulation: %s\n", setting_id))
+cat(sprintf("FACE-HD Simulation: %s\n", setting_id))
 cat(sprintf("  n_total: %d\n", n_total_vec))
 cat(sprintf("  K: %d\n", K_vec))
 cat(sprintf("  p: %d\n", p_vec))
@@ -273,11 +287,11 @@ cat(sprintf("============================================\n\n"))
 # ============================================================================
 # checkpoint functions (init_checkpoint_config, save_checkpoint, load_checkpoint,
 # check_preempt_signal, signal_checkpoint_saved, cleanup_checkpoint) are
-# provided by the FACEC package (R/checkpoint.R).
+# provided by the FACEHD package (R/checkpoint.R).
 CHECKPOINT_DIR <- Sys.getenv("CHECKPOINT_DIR", "checkpoints")
 ckpt_config <- init_checkpoint_config(CHECKPOINT_DIR, setting_id, job_id)
 
-# Set up parallel processing (already imported by FACEC, but needed for main.R scope)
+# Set up parallel processing (already imported by FACEHD, but needed for main.R scope)
 library(parallel)
 library(doParallel)
 
@@ -285,7 +299,7 @@ library(doParallel)
 # SIMULATION FUNCTIONS
 # ============================================================================
 # run_single_simulation(), summarize_results(), and run_simulation_study() are
-# defined in R/simulation.R and are part of the FACEC package.
+# defined in R/simulation.R and are part of the FACEHD package.
 # ============================================================================
 
 # ============================================================================
@@ -315,12 +329,12 @@ if (available_cores == 0) {
 }
 
 # Guard against oversubscription in non-SLURM environments.
-# By default, cap cores to 8 unless FACEC_MAX_CORES is explicitly set.
+# By default, cap cores to 8 unless FACEHD_MAX_CORES is explicitly set.
 # Also never use more cores than n_sims to avoid idle workers.
-facec_max_cores <- .parse_env_integer("FACEC_MAX_CORES", default = "8",
+facehd_max_cores <- .parse_env_integer("FACEHD_MAX_CORES", default = "8",
                                       min_value = 1L)
 
-available_cores <- min(available_cores, n_sims_arg, facec_max_cores)
+available_cores <- min(available_cores, n_sims_arg, facehd_max_cores)
 available_cores <- max(1, as.integer(available_cores))
 cat(sprintf("Available cores (after cap): %d\n", available_cores))
 

@@ -11,7 +11,7 @@
 #   https://hbiostat.org/data/repo/rhc.csv  (vendored as inst/extdata/rhc.csv).
 #
 # The dataset is fully public (no DUA / no credentialing); the CSV ships with
-# the FACEC package so downstream users do not need to download anything.
+# the FACEHD package so downstream users do not need to download anything.
 # ============================================================================
 
 # ----------------------------------------------------------------------------
@@ -59,7 +59,7 @@
 #'   file has not yet been downloaded via \code{data/download_rhc.sh}).
 #' @export
 rhc_csv_path <- function() {
-  system.file("extdata", "rhc.csv", package = "FACEC")
+  system.file("extdata", "rhc.csv", package = "FACEHD")
 }
 
 
@@ -90,7 +90,24 @@ load_rhc_raw <- function() {
 # to use as a fill, since silently returning all-NA / unchanged data would
 # defer the failure to a far less informative location downstream.
 .rhc_impute_continuous <- function(x, var_name = "<unknown>") {
-  if (!is.numeric(x)) x <- suppressWarnings(as.numeric(x))
+  if (!is.numeric(x)) {
+    x_chr <- trimws(as.character(x))
+    missing <- is.na(x) | x_chr == ""
+    numeric_token <- grepl(
+      "^[+-]?(?:[0-9]+\\.?[0-9]*|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?$",
+      x_chr
+    )
+    bad <- which(!missing & !numeric_token)
+    if (length(bad) > 0L) {
+      stop(sprintf(
+        ".rhc_impute_continuous: variable '%s' contains %d non-numeric non-missing value(s); first bad value is '%s'.",
+        var_name, length(bad), x_chr[bad[1L]]
+      ), call. = FALSE)
+    }
+    x_num <- rep(NA_real_, length(x_chr))
+    x_num[!missing] <- as.numeric(x_chr[!missing])
+    x <- x_num
+  }
   med <- stats::median(x, na.rm = TRUE)
   if (is.na(med)) {
     stop(sprintf(
@@ -353,7 +370,7 @@ build_rhc_cohort <- function(raw = NULL,
 #'   and \code{"s1"}, ..., \code{"s<K-1>"} (source sites). Each element is a
 #'   list with fields \code{n}, \code{X}, \code{X_dagger}, \code{A},
 #'   \code{Y}, \code{Z_site}, and \code{W_outcome}, matching the output of
-#'   \code{\link{split_data_by_site}} used elsewhere in FACEC.
+#'   \code{\link{split_data_by_site}} used elsewhere in FACEHD.
 #' @seealso \code{\link{run_crossfit}}, \code{\link{split_data_by_site}},
 #'   \code{\link{phi_rhc_bspline}}.
 #' @export
@@ -389,7 +406,7 @@ build_rhc_data_split <- function(cohort      = NULL,
   }
   storage.mode(X_phi) <- "double"
 
-  # Map target/source labels to the FACE-C convention ("t", "s1", ...).
+  # Map target/source labels to the FACE-HD convention ("t", "s1", ...).
   source_sites <- setdiff(retained, target_site)
   site_labels  <- character(length(site_factor))
   site_labels[site_factor == target_site] <- "t"

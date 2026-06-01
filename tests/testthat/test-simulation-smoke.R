@@ -40,7 +40,7 @@ test_that("run_single_simulation assembles rows for target_only + one_round + tw
     heterogeneity_type  = "none",
     n_folds             = 3L,
     estimate_ate        = FALSE,
-    dgp_type            = "facec"
+    dgp_type            = "facehd"
   )
 
   expect_s3_class(res, "data.frame")

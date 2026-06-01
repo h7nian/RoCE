@@ -76,6 +76,63 @@
   lambda
 }
 
+.match_nuisance_lambda_rule <- function(lambda_rule, caller, arg = "lambda_rule") {
+  if (missing(lambda_rule) || is.null(lambda_rule)) {
+    return("min")
+  }
+  tryCatch(
+    match.arg(lambda_rule, c("min", "1se")),
+    error = function(e) {
+      stop(sprintf("%s: %s must be either 'min' or '1se'.", caller, arg),
+           call. = FALSE)
+    }
+  )
+}
+
+.nuisance_cv_fold_count <- function(A, A_val, caller) {
+  A_val <- .validate_A_val(A_val, caller)
+  n_arm <- sum(A == A_val, na.rm = TRUE)
+  if (n_arm < 2L) {
+    stop(sprintf("%s: at least two observations with A_val=%d are required for CV lambda selection; found %d.",
+                 caller, A_val, n_arm), call. = FALSE)
+  }
+  get_cv_fold_count(n_arm)
+}
+
+.select_nuisance_cv_lambda <- function(cv_result, lambda_rule, caller) {
+  lambda_rule <- .match_nuisance_lambda_rule(lambda_rule, caller)
+  if (!is.list(cv_result)) {
+    stop(sprintf("%s: CV result must be a list with glmnet-style lambda metadata.",
+                 caller), call. = FALSE)
+  }
+  required <- c("lambda_min", "lambda_1se")
+  missing_required <- required[!vapply(required, function(field) {
+    !is.null(cv_result[[field]]) &&
+      length(cv_result[[field]]) == 1L &&
+      is.finite(cv_result[[field]])
+  }, logical(1L))]
+  if (length(missing_required) > 0L) {
+    stop(sprintf(
+      "%s: CV result is missing finite glmnet-style field(s): %s.",
+      caller, paste(missing_required, collapse = ", ")
+    ), call. = FALSE)
+  }
+  field <- if (identical(lambda_rule, "1se")) "lambda_1se" else "lambda_min"
+  lambda <- as.numeric(cv_result[[field]])
+  attr(lambda, "lambda_min") <- as.numeric(cv_result$lambda_min)
+  attr(lambda, "lambda_1se") <- as.numeric(cv_result$lambda_1se)
+  attr(lambda, "lambda_rule") <- lambda_rule
+  lambda
+}
+
+.attach_nuisance_lambda_attrs <- function(coefs, lambda) {
+  attr(coefs, "lambda_used") <- as.numeric(lambda)
+  attr(coefs, "lambda_min") <- if (!is.null(attr(lambda, "lambda_min"))) attr(lambda, "lambda_min") else as.numeric(lambda)
+  attr(coefs, "lambda_1se") <- if (!is.null(attr(lambda, "lambda_1se"))) attr(lambda, "lambda_1se") else as.numeric(lambda)
+  attr(coefs, "lambda_rule") <- if (!is.null(attr(lambda, "lambda_rule"))) attr(lambda, "lambda_rule") else "fixed"
+  coefs
+}
+
 # ============================================================================
 # R-BASED GLM FITTING (using glmnet)
 # ============================================================================
@@ -105,6 +162,8 @@
 #'        Lower values (e.g., 20) speed up CV with minimal precision loss.
 #' @param family GLM family: "gaussian" or "binomial".
 #'        Default "binomial".
+#' @param lambda_rule CV selection rule when \code{lambda = NULL}: \code{"min"}
+#'   selects \code{lambda.min}; \code{"1se"} selects \code{lambda.1se}.
 #'
 #' @return Vector of outcome model parameters alpha (including intercept as first element)
 #'
@@ -120,9 +179,11 @@
 #' @seealso \code{\link{fit_unified_outcome}} for C++ accelerated outcome fitting
 #' @export
 fit_initial_outcome <- function(W_outcome, Y, A, A_val = 1L, lambda = NULL, 
-                                nlambda = LAMBDA_GRID_SIZE_STANDARD, family = "binomial") {
+                                nlambda = LAMBDA_GRID_SIZE_STANDARD, family = "binomial",
+                                lambda_rule = c("min", "1se")) {
   
   A_val <- .validate_A_val(A_val, "fit_initial_outcome")
+  lambda_rule <- .match_nuisance_lambda_rule(lambda_rule, "fit_initial_outcome")
   if (!is.null(lambda)) {
     lambda <- .validate_lambda_scalar(lambda, "fit_initial_outcome")
   }
@@ -161,20 +222,28 @@ fit_initial_outcome <- function(W_outcome, Y, A, A_val = 1L, lambda = NULL,
         nfolds = n_cv_folds,
         nlambda = nlambda  # Control lambda path length
       )
-      # Use lambda.min (minimises CV error) instead of lambda.1se
-      # (1-SE rule).  For causal inference the priority is consistency
-      # (bias → 0) rather than prediction parsimony.  lambda.1se
-      # over-shrinks, especially on nonlinear X_dagger features,
-      # breaking the doubly-robust bias cancellation.
-      cv_fit$lambda.min
+      lambda_selected <- switch(lambda_rule,
+        min = cv_fit$lambda.min,
+        `1se` = cv_fit$lambda.1se
+      )
+      attr(lambda_selected, "lambda_min") <- cv_fit$lambda.min
+      attr(lambda_selected, "lambda_1se") <- cv_fit$lambda.1se
+      lambda_selected
     }, error = function(e) {
       stop(sprintf("fit_initial_outcome: cv.glmnet failed (family=%s, n_arm=%d, nlambda=%d): %s",
                    glmnet_family, n_arm, nlambda, conditionMessage(e)))
     })
-    lambda_use <- lambda_fit * arm_fraction
+    lambda_use <- as.numeric(lambda_fit) * arm_fraction
+    lambda_min <- as.numeric(attr(lambda_fit, "lambda_min")) * arm_fraction
+    lambda_1se <- as.numeric(attr(lambda_fit, "lambda_1se")) * arm_fraction
+    lambda_fit <- as.numeric(lambda_fit)
+    lambda_rule_used <- lambda_rule
   } else {
     lambda_use <- as.numeric(lambda)
-    lambda_fit <- lambda_use / arm_fraction
+    lambda_fit <- as.numeric(lambda_use / arm_fraction)
+    lambda_min <- lambda_use
+    lambda_1se <- lambda_use
+    lambda_rule_used <- "fixed"
   }
   
   # Fit final model with selected lambda
@@ -192,8 +261,11 @@ fit_initial_outcome <- function(W_outcome, Y, A, A_val = 1L, lambda = NULL,
   
   # Return the full-source-scale lambda for caching across folds whose arm
   # prevalence may differ. lambda_fit records the glmnet-scale value used here.
-  attr(alpha, "lambda_used") <- lambda_use
-  attr(alpha, "lambda_fit") <- lambda_fit
+  attr(alpha, "lambda_used") <- as.numeric(lambda_use)
+  attr(alpha, "lambda_fit") <- as.numeric(lambda_fit)
+  attr(alpha, "lambda_min") <- as.numeric(lambda_min)
+  attr(alpha, "lambda_1se") <- as.numeric(lambda_1se)
+  attr(alpha, "lambda_rule") <- lambda_rule_used
   
   return(alpha)
 }
@@ -268,7 +340,7 @@ fit_initial_outcome <- function(W_outcome, Y, A, A_val = 1L, lambda = NULL,
 # ============================================================================
 
 # C++ functions (fit_unified_density_ratio_cpp, etc.) are compiled and loaded
-# automatically by the package build system via useDynLib(FACEC) in NAMESPACE.
+# automatically by the package build system via useDynLib(FACEHD) in NAMESPACE.
 # The src/ C++ files are compiled during R CMD INSTALL or devtools::load_all().
 
 #' Fit INITIAL density ratio function (γ_init parameters)
@@ -286,31 +358,43 @@ fit_initial_outcome <- function(W_outcome, Y, A, A_val = 1L, lambda = NULL,
 #' @param Z_site Covariate matrix (n × p)
 #' @param A Treatment indicator vector (n × 1)
 #' @param mean_phi Mean of φ(X) from target site: Ẽ_t[φ(X)]
-#' @param lambda L1 regularization parameter
+#' @param lambda L1 regularization parameter. \code{NULL} (default) selects
+#'   \code{lambda.min} by CV; numeric values use a fixed lambda.
 #' @param max_iter Maximum iterations
 #' @param tol Convergence tolerance
+#' @param lambda_rule CV selection rule when \code{lambda = NULL}: \code{"min"}
+#'   selects \code{lambda.min}; \code{"1se"} selects \code{lambda.1se}.
 #' @return Vector of initial density ratio parameters
 #' @export
-fit_initial_density_ratio <- function(Z_site, A, mean_phi, lambda = LAMBDA_DEFAULT, 
+fit_initial_density_ratio <- function(Z_site, A, mean_phi, lambda = NULL,
                                        max_iter = MAX_ITER_DEFAULT, tol = TOL_DEFAULT,
-                                       A_val = 1L, warm_start = NULL) {
+                                       A_val = 1L, warm_start = NULL,
+                                       lambda_rule = c("min", "1se")) {
+  A_val <- .validate_A_val(A_val, "fit_initial_density_ratio")
+  lambda_rule <- .match_nuisance_lambda_rule(lambda_rule, "fit_initial_density_ratio")
+
   # Handle lambda = NULL case: use CV selection
   if (is.null(lambda)) {
+    n_cv_folds <- .nuisance_cv_fold_count(A, A_val, "fit_initial_density_ratio")
     lmax <- compute_lambda_max_initial_dr(Z_site, A, mean_phi, A_val)
     lambda_min_ratio <- if (nrow(Z_site) > ncol(Z_site)) LAMBDA_MIN_RATIO_LOW_DIM else LAMBDA_MIN_RATIO_HIGH_DIM
     lambda_grid <- build_lambda_grid(lambda_max = lmax,
                                      lambda_min_ratio = lambda_min_ratio)
     cv_result <- select_lambda_cv_initial_density_ratio_cpp(
-      Z_site, A, mean_phi, lambda_grid, N_CV_FOLDS_LAMBDA, max_iter, tol, A_val
+      Z_site, A, mean_phi, lambda_grid, n_cv_folds, max_iter, tol, A_val
     )
-    lambda <- cv_result$best_lambda
+    lambda <- .select_nuisance_cv_lambda(cv_result, lambda_rule, "fit_initial_density_ratio")
+  } else {
+    lambda <- .validate_lambda_scalar(lambda, "fit_initial_density_ratio")
+    attr(lambda, "lambda_min") <- lambda
+    attr(lambda, "lambda_1se") <- lambda
+    attr(lambda, "lambda_rule") <- "fixed"
   }
   
   ws <- if (!is.null(warm_start)) as.numeric(warm_start) else numeric(0)
   cpp_result <- fit_initial_density_ratio_cpp(Z_site, A, mean_phi, lambda, max_iter, tol, A_val, ws)
   result <- cpp_result$gamma
-  attr(result, "lambda_used") <- lambda
-  return(result)
+  .attach_nuisance_lambda_attrs(result, lambda)
 }
 
 #' Fit UNIFIED density ratio function (γ parameters)
@@ -335,7 +419,8 @@ fit_initial_density_ratio <- function(Z_site, A, mean_phi, lambda = LAMBDA_DEFAU
 #' @param A Treatment indicator vector (n x 1)
 #' @param mean_grad_psi Mean gradient of ψ from target site, i.e., Ẽ_t[∇_α ψ(ϕ(X); α̂_init)]
 #' @param alpha_init Initial outcome model parameters
-#' @param lambda L1 regularization parameter
+#' @param lambda L1 regularization parameter. \code{NULL} (default) selects
+#'   \code{lambda.min} by CV; numeric values use a fixed lambda.
 #' @param max_iter Maximum iterations
 #' @param tol Convergence tolerance
 #' @param calibrated Whether to use calibrated loss with truncation \mathcal{T}(·)
@@ -344,14 +429,20 @@ fit_initial_density_ratio <- function(Z_site, A, mean_phi, lambda = LAMBDA_DEFAU
 #' @param M_tau Truncation threshold (only used if calibrated = TRUE)
 #' @param W_outcome Outcome model features for psi' computation (n x p_outcome)
 #'        Must be provided explicitly and have the same number of rows as \code{Z_site}.
+#' @param lambda_rule CV selection rule when \code{lambda = NULL}: \code{"min"}
+#'   selects \code{lambda.min}; \code{"1se"} selects \code{lambda.1se}.
 #' @return Vector of density ratio parameters
 #' @export
 fit_unified_density_ratio <- function(Z_site, A, mean_grad_psi, alpha_init,
-                                      lambda = LAMBDA_DEFAULT, max_iter = MAX_ITER_DEFAULT, tol = TOL_DEFAULT,
+                                      lambda = NULL, max_iter = MAX_ITER_DEFAULT, tol = TOL_DEFAULT,
                                       calibrated = FALSE, M_tau = M_TAU_DEFAULT,
                                       W_outcome = NULL, A_val = 1L,
                                       family_int = 1L, link_int = 1L,
-                                      warm_start = NULL) {
+                                      warm_start = NULL,
+                                      lambda_rule = c("min", "1se")) {
+  A_val <- .validate_A_val(A_val, "fit_unified_density_ratio")
+  lambda_rule <- .match_nuisance_lambda_rule(lambda_rule, "fit_unified_density_ratio")
+
   if (is.null(W_outcome)) {
     stop("fit_unified_density_ratio: W_outcome must be provided explicitly.")
   }
@@ -363,6 +454,7 @@ fit_unified_density_ratio <- function(Z_site, A, mean_grad_psi, alpha_init,
   
   # Handle lambda = NULL case
   if (is.null(lambda)) {
+    n_cv_folds <- .nuisance_cv_fold_count(A, A_val, "fit_unified_density_ratio")
     lmax <- compute_lambda_max_refined_dr(Z_site, A, mean_grad_psi, alpha_init,
                                            A_val = A_val,
                                            family_int = family_int, link_int = link_int,
@@ -374,7 +466,7 @@ fit_unified_density_ratio <- function(Z_site, A, mean_grad_psi, alpha_init,
     if (calibrated) {
       # Forward W_outcome to CV so ψ' uses correct features
       cv_result <- select_lambda_cv_calibrated_density_ratio_cpp(
-        Z_site, A, mean_grad_psi, alpha_init, lambda_grid, N_CV_FOLDS_LAMBDA, max_iter, tol, M_tau,
+        Z_site, A, mean_grad_psi, alpha_init, lambda_grid, n_cv_folds, max_iter, tol, M_tau,
         W_outcome_use, A_val, family_int, link_int
       )
     } else {
@@ -382,11 +474,16 @@ fit_unified_density_ratio <- function(Z_site, A, mean_grad_psi, alpha_init,
       # Reuse the calibrated CV kernel with M_tau = Inf to keep feature usage
       # (Z_site for gamma, W_outcome for ψ') consistent with final fitting.
       cv_result <- select_lambda_cv_calibrated_density_ratio_cpp(
-        Z_site, A, mean_grad_psi, alpha_init, lambda_grid, N_CV_FOLDS_LAMBDA, max_iter, tol, Inf,
+        Z_site, A, mean_grad_psi, alpha_init, lambda_grid, n_cv_folds, max_iter, tol, Inf,
         W_outcome_use, A_val, family_int, link_int
       )
     }
-    lambda <- cv_result$best_lambda
+    lambda <- .select_nuisance_cv_lambda(cv_result, lambda_rule, "fit_unified_density_ratio")
+  } else {
+    lambda <- .validate_lambda_scalar(lambda, "fit_unified_density_ratio")
+    attr(lambda, "lambda_min") <- lambda
+    attr(lambda, "lambda_1se") <- lambda
+    attr(lambda, "lambda_rule") <- "fixed"
   }
   
   ws <- if (!is.null(warm_start)) as.numeric(warm_start) else numeric(0)
@@ -396,8 +493,7 @@ fit_unified_density_ratio <- function(Z_site, A, mean_grad_psi, alpha_init,
     calibrated, M_tau, W_outcome_use, A_val, family_int, link_int, ws
   )
   result <- cpp_result$gamma
-  attr(result, "lambda_used") <- lambda
-  return(result)
+  .attach_nuisance_lambda_attrs(result, lambda)
 }
 
 #' Fit UNIFIED outcome model function (α parameters)
@@ -437,6 +533,8 @@ fit_unified_density_ratio <- function(Z_site, A, mean_grad_psi, alpha_init,
 #'   (TRUE for calibrated loss eq:alpha_calibrated_loss; FALSE for its untruncated refined counterpart).
 #' @param M_tau Truncation threshold (only used if calibrated = TRUE)
 #' @param Z_site Feature matrix for density ratio (Z_site). Must be provided explicitly.
+#' @param lambda_rule CV selection rule when \code{lambda = NULL}: \code{"min"}
+#'   selects \code{lambda.min}; \code{"1se"} selects \code{lambda.1se}.
 #' @return Vector of outcome model parameters
 #' @export
 fit_unified_outcome <- function(W_outcome, Y, A, A_val = 1, gamma_s, lambda = NULL,
@@ -444,7 +542,10 @@ fit_unified_outcome <- function(W_outcome, Y, A, A_val = 1, gamma_s, lambda = NU
                                 family = "binomial", link = NULL,
                                 family_int = NULL, link_int = NULL,
                                 calibrated = FALSE, M_tau = M_TAU_DEFAULT, Z_site = NULL,
-                                warm_start = NULL) {
+                                warm_start = NULL,
+                                lambda_rule = c("min", "1se")) {
+  A_val <- .validate_A_val(A_val, "fit_unified_outcome")
+  lambda_rule <- .match_nuisance_lambda_rule(lambda_rule, "fit_unified_outcome")
   
   # Resolve GLM family/link: use integer codes directly if provided, else map from strings
   if (!is.null(family_int) && !is.null(link_int)) {
@@ -472,6 +573,7 @@ fit_unified_outcome <- function(W_outcome, Y, A, A_val = 1, gamma_s, lambda = NU
   
   # Handle lambda = NULL case with cross-validation
   if (is.null(lambda)) {
+    n_cv_folds <- .nuisance_cv_fold_count(A, A_val, "fit_unified_outcome")
     lmax <- compute_lambda_max_outcome(W_outcome, Y, A, gamma_s,
                                         A_val = A_val,
                                         family_int = family_int, link_int = link_int,
@@ -487,16 +589,21 @@ fit_unified_outcome <- function(W_outcome, Y, A, A_val = 1, gamma_s, lambda = NU
     if (calibrated) {
       # Calibrated outcome CV - uses truncation in loss function
       cv_result <- select_lambda_cv_calibrated_outcome_cpp(
-        W_outcome, Y, A, gamma_s, lambda_grid, N_CV_FOLDS_LAMBDA, max_iter, tol, A_val, M_tau, Z_site_mat,
+        W_outcome, Y, A, gamma_s, lambda_grid, n_cv_folds, max_iter, tol, A_val, M_tau, Z_site_mat,
         family_int, link_int
       )
     } else {
       # Refined outcome CV - standard weighted loss without truncation
-    cv_result <- select_lambda_cv_general_refined_outcome_cpp(
-      W_outcome, Y, A, gamma_s, family_int, link_int, lambda_grid, N_CV_FOLDS_LAMBDA, max_iter, tol, A_val, Z_site_mat
-    )
+      cv_result <- select_lambda_cv_general_refined_outcome_cpp(
+        W_outcome, Y, A, gamma_s, family_int, link_int, lambda_grid, n_cv_folds, max_iter, tol, A_val, Z_site_mat
+      )
     }
-    lambda <- cv_result$best_lambda
+    lambda <- .select_nuisance_cv_lambda(cv_result, lambda_rule, "fit_unified_outcome")
+  } else {
+    lambda <- .validate_lambda_scalar(lambda, "fit_unified_outcome")
+    attr(lambda, "lambda_min") <- lambda
+    attr(lambda, "lambda_1se") <- lambda
+    attr(lambda, "lambda_rule") <- "fixed"
   }
   
   # Use unified C++ function with all parameters
@@ -507,8 +614,7 @@ fit_unified_outcome <- function(W_outcome, Y, A, A_val = 1, gamma_s, lambda = NU
                                         calibrated, M_tau, Z_site_mat, ws)
   # C++ returns 'alpha' matching paper notation (main.tex convention)
   result <- cpp_result$alpha
-  attr(result, "lambda_used") <- lambda
-  return(result)
+  .attach_nuisance_lambda_attrs(result, lambda)
 }
 
 # ============================================================================
@@ -600,7 +706,11 @@ optimize_weights <- function(estimates, variances, C_ot, n_samples,
   variances$V_s <- pmax(variances$V_s, VARIANCE_MIN)
   variances$V_ot <- max(variances$V_ot, VARIANCE_MIN)
   C_ot <- pmax(pmin(C_ot, ESTIMATE_MAX), -ESTIMATE_MAX)
-  lambda <- max(min(lambda, LAMBDA_MAX), LAMBDA_MIN)
+  lambda <- .validate_lambda_scalar(lambda, "optimize_weights", allow_zero = TRUE)
+  if (lambda > LAMBDA_MAX) {
+    stop(sprintf("optimize_weights: lambda must be <= %g.", LAMBDA_MAX),
+         call. = FALSE)
+  }
   mu_ot <- max(min(mu_ot, ESTIMATE_MAX), -ESTIMATE_MAX)
   
   # Prepare cross-site covariance matrix

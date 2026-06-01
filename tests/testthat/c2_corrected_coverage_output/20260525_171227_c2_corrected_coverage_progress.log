@@ -1,0 +1,8 @@
+[2026-05-25 17:12:27] start job=1/2 rep=1 seed=220001 n=5000 K=5 p=50
+[2026-05-25 17:12:27] start job=2/2 rep=2 seed=220002 n=5000 K=5 p=50
+[2026-05-25 17:12:29] method_start job=1/2 rep=1 seed=220001 n=5000 K=5 p=50 method=one_round_crossfit
+[2026-05-25 17:12:29] method_start job=2/2 rep=2 seed=220002 n=5000 K=5 p=50 method=one_round_crossfit
+[2026-05-25 18:25:02] method_done job=1/2 rep=1 seed=220001 n=5000 K=5 p=50 method=one_round_crossfit estimate=0.606233 se=0.010075 elapsed_sec=4352.9
+[2026-05-25 18:25:02] method_start job=1/2 rep=1 seed=220001 n=5000 K=5 p=50 method=two_round_crossfit
+[2026-05-25 18:37:24] method_done job=2/2 rep=2 seed=220002 n=5000 K=5 p=50 method=one_round_crossfit estimate=0.574902 se=0.010312 elapsed_sec=5094.7
+[2026-05-25 18:37:24] method_start job=2/2 rep=2 seed=220002 n=5000 K=5 p=50 method=two_round_crossfit
