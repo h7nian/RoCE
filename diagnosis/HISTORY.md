@@ -204,15 +204,21 @@ calibrated fit, truncated vs untruncated score under candidate and baseline
 libraries; (B) C1 seed-20001 refit versus the #0002 stored fit.
 
 ### 4. Acceptance criteria
-- [ ] (a) candidate: max |truncated score| ≤ 1e-6 with truncation fraction > 0.05 → ___ [PENDING]
-- [ ] (b) baseline: max |untruncated score| ≤ 1e-6 and max |truncated score| > 1e-3 (documents the defect) → ___ [PENDING]
-- [ ] (c) candidate: max |untruncated score| > 1e-3 (the fit really changed) → ___ [PENDING]
-- [ ] (d) C1 identity: estimate, se, fold weights, target-only, source estimates differ ≤ 1e-10 from the #0002 C1 cell → ___ [PENDING]
+- [x] (a) candidate: max |truncated score| ≤ 1e-6 with truncation fraction > 0.05 → 2.25e-9 at truncation fraction 0.876 (radius 2, 1259 iterations, converged) [PASS]
+- [x] (b) baseline: max |untruncated score| ≤ 1e-6 and max |truncated score| > 1e-3 (documents the defect) → 1.27e-9 and 0.0736 (truncation fraction 0.132) [PASS]
+- [x] (c) candidate: max |untruncated score| > 1e-3 (the fit really changed) → 3.37e8 (the truncated solution's untruncated score explodes; radius-2 saturation as noted in §2) [PASS]
+- [x] (d) C1 identity: estimate, se, fold weights, target-only, source estimates differ ≤ 1e-10 from the #0002 C1 cell → all differences exactly 0; production radius inactive (truncation fraction 0) [PASS]
 - [ ] (e) full installed testthat: 0 failures, 0 errors → ___ [PENDING]
 - [ ] (f) R CMD check `Status: OK` → ___ [PENDING]
 
 ### 5. Validation results (filled after running)
-PENDING — Slurm job 18550692 (resubmitted after an internal-function call fix and the #0005 unit-mass fix; the C1 identity refit now uses the #0006 in-package DGP; `diagnosis/truncation_alignment/run_truncation_alignment.sh`), submitted 2026-09-07.
+Job 18550692 (2026-09-08, 2 h 59 min): steps 1–3 completed with (a)–(d) as recorded in §4
+(`diagnosis/out/truncation_alignment/{baseline,candidate}/`). Step 4 (full installed test suite
+on the candidate) hit the 3 h limit inside `test-comparison-bootstrap-variance.R`, and the
+candidate source had been copied before the test-fixture fixes of #0005 §5 landed. Resubmitted
+as phase `tests` of the same script (rebuilds the candidate from the current tree + patch, runs
+only step 4 and R CMD check) with a 10 h limit: job recorded below.
+(e), (f): PENDING.
 
 ### 6. Decision + rationale
 PENDING

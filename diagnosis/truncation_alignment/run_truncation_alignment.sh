@@ -4,7 +4,11 @@
 #          truncation_alignment.patch, run the score check against candidate and
 #          baseline libraries, the C1 identity refit (needs the #0002 C1 cell), the
 #          full testthat suite and R CMD check on the candidate. Writes
-#          diagnosis/out/truncation_alignment/. About 1 h on 10 cores.
+#          diagnosis/out/truncation_alignment/. Checks about 2 h, tests and
+#          R CMD check about 4 h on 10 cores (submit with --time=10:00:00).
+#          Usage: run_truncation_alignment.sh [all|tests]; "tests" rebuilds the
+#          candidate library from the current tree and runs only step 4 (the
+#          check outputs of an earlier "all" run are kept).
 
 #SBATCH --job-name=truncation_alignment
 #SBATCH --time=03:00:00
@@ -29,12 +33,18 @@ export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 export ROCE_NUISANCE_CV_THREADS=5
 export _R_CHECK_FORCE_SUGGESTS_=false
 
+PHASE="${1:-all}"
+case "${PHASE}" in all|tests) ;; *) echo "usage: $0 [all|tests]" >&2; exit 1 ;; esac
 TASK="truncation_alignment"
 OUT="diagnosis/out/${TASK}"
 BASELINE_LIB="${PROJECT_ROOT}/results/direct_tate_mc500_b5000/outcome_cv_scale_candidate_v1/lib"
 CANDIDATE_SRC="${OUT}/RoCE"
 CANDIDATE_LIB="${OUT}/lib"
 mkdir -p "diagnosis/logs" "${OUT}"
+if [[ "${PHASE}" == "tests" ]]; then
+  # Build artifacts only; the check outputs (baseline/, candidate/) are kept.
+  rm -rf "${CANDIDATE_SRC}" "${CANDIDATE_LIB}" "${OUT}/package_check"
+fi
 test ! -e "${CANDIDATE_SRC}" || { echo "candidate source already exists: ${CANDIDATE_SRC}" >&2; exit 1; }
 
 # 1. Isolated copy of the package source with the patch applied.
@@ -50,13 +60,16 @@ mkdir -p "${CANDIDATE_LIB}"
 R CMD INSTALL --preclean --library="${CANDIDATE_LIB}" "${CANDIDATE_SRC}"
 
 # 3. Score check with both libraries, C1 identity refit with the candidate.
-R_LIBS="${BASELINE_LIB}" Rscript "diagnosis/${TASK}/${TASK}.R" "${OUT}" baseline
-R_LIBS="${CANDIDATE_LIB}" Rscript "diagnosis/${TASK}/${TASK}.R" "${OUT}" candidate
+if [[ "${PHASE}" == "all" ]]; then
+  R_LIBS="${BASELINE_LIB}" Rscript "diagnosis/${TASK}/${TASK}.R" "${OUT}" baseline
+  R_LIBS="${CANDIDATE_LIB}" Rscript "diagnosis/${TASK}/${TASK}.R" "${OUT}" candidate
+fi
 
 # 4. Full installed test suite and R CMD check on the candidate.
 (
   cd "${CANDIDATE_SRC}"
   R_LIBS="${CANDIDATE_LIB}" ROCE_TEST_INSTALLED=1 Rscript -e '
+    options(testthat.summary.max_reports = 1000L)
     results <- testthat::test_dir("tests/testthat", reporter = "summary", stop_on_failure = FALSE)
     d <- as.data.frame(results)
     cat(sprintf("testthat: passed=%d failed=%d errors=%d skipped=%d\n",
