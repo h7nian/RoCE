@@ -32,7 +32,9 @@ done
 
 legacy_pattern='FACE''HD|FACE''-HD|face''hd|face''_hd'
 # grep, not rg: batch jobs have no ripgrep on PATH, and the previous `|| true`
-# turned the whole scan into a silent no-op there.  --exclude-dir prunes the
+# turned the whole scan into a silent no-op there.  -I skips binary files
+# (ripgrep's default): a build leaves src/*.o and src/RoCE.so carrying the
+# compiled-in source path, which is not a source identifier.  --exclude-dir prunes the
 # archived diagnostic trees (retired candidate libraries and their job logs)
 # and the vendored JASA template; the active sources are scanned in full.
 # References to the repository directory or its GitHub slug are filtered out
@@ -40,7 +42,7 @@ legacy_pattern='FACE''HD|FACE''-HD|face''hd|face''_hd'
 # a legacy package identifier.  This script is excluded because it necessarily
 # contains the pattern text.
 legacy_hits="$({
-  grep -rnE "${legacy_pattern}" \
+  grep -rnIE "${legacy_pattern}" \
     DESCRIPTION NAMESPACE README.md R src inst tests scripts docs diagnosis man \
     main.R main.sh main.cmd test.sh test.cmd realdata.R realdata.sh realdata.cmd \
     data/download_rhc.sh data/download_rhc.cmd \
