@@ -450,7 +450,7 @@ if (file.exists(sensitivity_path)) {
     "rho", "cutoff", "aggregation_lambda", "aggregation_cutoff",
     "primary_cutoff",
     "M_tau", "M_tau_inference", "sensitivity_kind", "experiment",
-    "primary_experiment", "dgp_type", "outcome_family",
+    "primary_experiment", "dgp_type", "outcome_family", "deviation_mechanism",
     "heterogeneity_type", "estimand_type",
     "nuisance_lambda_rule", "min_site_arm_outcome_cell_n",
     "min_target_arm_outcome_cell_n", "n_site_arm_outcome_cells_below_8",

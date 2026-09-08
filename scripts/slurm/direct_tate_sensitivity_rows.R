@@ -41,6 +41,9 @@ roce_make_tate_result_row <- function(
   result$experiment <- "c3_reused_sensitivity"
   result$primary_experiment <- as.character(task$experiment)
   result$rho <- as.numeric(task$rho)
+  # The sidecar reuses the primary task's data, so it shares its deviation
+  # mechanism; roce_annotate_direct_tate_rows() asserts the two agree.
+  result$deviation_mechanism <- as.character(task$deviation_mechanism)
   result$cutoff <- cutoff
   result$n_site <- as.integer(task$n_site)
   result$n_folds <- as.integer(task$n_folds)

@@ -294,7 +294,8 @@ test_that("reused sensitivity rows preserve their scientific setting", {
     p = 100L,
     config = "C1",
     n_site = 1000L,
-    n_folds = 5L
+    n_folds = 5L,
+    deviation_mechanism = "treated_arm"
   )
   row <- sensitivity_environment$roce_make_tate_result_row(
     task = task,
@@ -316,6 +317,12 @@ test_that("reused sensitivity rows preserve their scientific setting", {
   expect_identical(row$outcome_family, "binomial")
   expect_identical(row$experiment, "c3_reused_sensitivity")
   expect_identical(row$primary_experiment, "negative_transfer")
+  # Every column roce_annotate_direct_tate_rows() asserts against the task must
+  # be present, or the sidecar fails only after the fit has already run.
+  expect_identical(row$deviation_mechanism, "treated_arm")
+  for (field in c("sim_id", "p", "K", "config", "deviation_mechanism")) {
+    expect_true(field %in% names(row))
+  }
   expect_equal(row$cutoff, 1.5)
   expect_equal(row$aggregation_cutoff, 1.5)
   expect_equal(row$primary_cutoff, 1)
