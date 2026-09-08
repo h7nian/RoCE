@@ -89,12 +89,11 @@ the current TATE estimator yet (production #0010).
    `include_quadratic_bias_rule = TRUE`, quadratic weight layer) — CLOSED
    (DECIDED-PASS 2026-09-08; replay 18573011 exact).
 8. #0008 [MIGRATION] truncation-aligned tilting loss into `src/` (after #0003).
-9. **#0009 [MIGRATION] schema freeze + shared-shift scenario** — IN-FLIGHT on
-   branch `entry-0009` (worktree /scratch.global/zhan9381/FACE-HD-0009):
-   `.tate_production_method_rows()`, `deviation_mechanism = "both_arms"`
-   (both-arm reuse refit), manifests with a `deviation_mechanism` column and a
-   `shared_shift` family (C1, K = 2/4/8), staged gates pre-registered in
-   HISTORY #0009 §4. Tests pending.
+9. #0009 [MIGRATION] schema freeze + shared-shift scenario — CLOSED
+   (DECIDED-PASS 2026-09-08, merged into main): `.tate_production_method_rows()`,
+   `deviation_mechanism = "both_arms"` (both-arm reuse refit), manifests with a
+   `deviation_mechanism` column and a `shared_shift` family (C1, K = 2/4/8),
+   staged gates pre-registered in HISTORY #0009 §4.
 10. #0010 Production runs, aggregation, figures/tables, paper updates
     (substitute Rule 7c review before numbers leave).
 11. #0011 RHC with the frozen package; #0012 cleanup (rename `screening_rule`

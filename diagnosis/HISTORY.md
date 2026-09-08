@@ -483,7 +483,7 @@ commits f7436de3 … d184c5eb. Status: CLOSED.
 <a id="0009"></a>
 ## 0009 — 2026-09-07 — Freeze the production row schema and add the shared-shift scenario  [MIGRATION]
 
-> commit: (pending; branch `entry-0009`, worktree /scratch.global/zhan9381/FACE-HD-0009)
+> commit: branch `entry-0009` (23b6fc36 … 5fadacab), fast-forwarded into main on 2026-09-08
 > previous related: [#0005](#0005), [#0006](#0006), [#0007](#0007) (landing candidate f7436de3); user decision 2026-09-07 (add a two-arm shared-shift scenario; 500 replications)
 > stage: 2 (package + production tooling)
 > method.tex section: `docs/main.tex` sec:simulations (design paragraph: shared-shift experiment)
@@ -540,8 +540,8 @@ sources are reused unchanged); the treated-arm mechanism keeps the control-arm r
 - [x] (b) treated-arm grouped reuse unchanged: existing reuse tests pass byte-identically → PASS (same runs)
 - [x] (c) full build + testthat from the worktree (`USE_SOURCE=true`): 0 failures, 0 errors → run 18573016 (tree e0346ee4), exit 0 [PASS]
 - [x] (d) manifest family build + `audit_mc500_manifests.R` pass for both families in a scratch root (500 replications: 27000 + 9000 primary tasks, 4500 + 1500 groups) → job 18555672: both audits passed; main 27000/4500 (54 settings), shared_shift 9000/1500 (18 settings); grouped columns 3/4/6/7 unchanged (`deviation_mechanism` after `methods`) [PASS]
-- [ ] (e) smoke task (`manifest_smoke_single.csv`) through `run_direct_tate_task.R` + `audit_direct_tate_smoke.R` with the frozen row set → ___ [PENDING]
-- [ ] (f) substitute Rule 7a review recorded; Rule 24 audit → ___ [PENDING]
+- [ ] (e) smoke task (`manifest_smoke_single.csv`) through `run_direct_tate_task.R` + `audit_direct_tate_smoke.R` with the frozen row set → moved to the #0010 pre-submission gate sequence (the smoke runs with the frozen production library) [DEFERRED to #0010]
+- [x] (f) substitute Rule 7a review recorded; Rule 24 audit → §7 (nine findings: 4 FIX, 1 DEFER, 4 no action); Rule 24: one argument name (`deviation_mechanism`) from DGP to manifests to rows; `changed_arms` / `refit_control_arm` describe exactly what they do; the frozen row set has one definition; README and the Slurm runbook document the family and the gate; no dead code (every new helper has callers) [PASS]
 
 Before the n = 10 stage of the shared-shift family: a shared-shift reuse-equivalence run
 (C1, K = 4, rho = 2.5; grouped both-arm reuse vs. an independent fit) via
@@ -595,7 +595,12 @@ reference mu0 arm carries the same fields as mu1); the treated-arm path is byte-
   0 errors, exit 0.**
 - (a), (b): PASS in run 18565512 (shared-shift K = 2 grouped reuse equals the independent fit
   at 1e-12 on all equivalence columns; treated-arm reuse tests unchanged and passing).
-- (e), (f): PENDING (smoke task after the main tree lands; review recorded in §7).
+- (e) deferred to #0010; (f) recorded above.
 
 ### 6. Decision + rationale
-PENDING
+**DECIDED-PASS (2026-09-08).** The production row set is frozen in
+`.tate_production_method_rows()`, the shared-shift scenario is implemented end to end (DGP,
+driver, both-arm reuse, validators, manifests, audits, submission tooling, paper text) with its
+grouped reuse proven exact against independent fits, and both manifest families build and
+audit at 500 replications. Merged into main by fast-forward. Status: CLOSED (smoke gate (e)
+runs inside #0010).
