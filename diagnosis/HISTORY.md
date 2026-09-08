@@ -343,11 +343,11 @@ true mechanism through eta_mix = (1 − omega) eta(X) + omega eta(X†) with ome
 - Documentation: manuscript configuration paragraph, README table, roxygen.
 
 ### 4. Acceptance criteria
-- [ ] (a) package DGP reproduces the #0002 prototype for seed 20001: standardization constants and binary calibration equal to 1e-12; truth equal to 1e-12 for C1, C2/C3/C4 at omega 0.75 → ___ [PENDING]
-- [ ] (b) package refit of C2 and C3 (omega 0.75, seed 20001) reproduces the prototype fits' estimate, fixed-weight SE and fold weights to 1e-10 → ___ [PENDING]
-- [ ] (c) full build + testthat: 0 failures, 0 errors → ___ [PENDING]
-- [ ] (d) rho-reuse invariance tests pass under the new C3 (treatment mechanism misspecified) → ___ [PENDING]
-- [ ] (e) substitute Rule 7a review recorded; Rule 24 audit → ___ [PENDING]
+- [x] (a) package DGP reproduces the #0002 prototype for seed 20001: standardization constants and binary calibration equal to 1e-12; truth equal to 1e-12 for C1, C2/C3/C4 at omega 0.75 → job 18573010 (`diagnosis/out/dgp_common_basis/package_C*/dgp_checks.csv`): standardization and calibration differences exactly 0 in all four configurations; truth differences 4.4e-16 (C1, C3) and 2.8e-16 (C2, C4) [PASS]
+- [x] (b) package refit of C2 and C3 (omega 0.75, seed 20001) reproduces the prototype fits' estimate, fixed-weight SE and fold weights to 1e-10 → all four configurations refitted: estimate, fixed-weight SE, fold-weight and target-only differences exactly 0 (`fit_checks.csv`); weight-layer SE 0.0220 / 0.0223 / 0.0219 / 0.0214 vs fixed 0.0216 / 0.0218 / 0.0216 / 0.0214 for C1–C4 [PASS]
+- [x] (c) full build + testthat: 0 failures, 0 errors → run 18573008 (tree d184c5eb), exit 0 [PASS]
+- [x] (d) rho-reuse invariance tests pass under the new C3 (treatment mechanism misspecified) → `test-rho-reuse.R` (C3, p = 3) passes in run 18573008 [PASS]
+- [x] (e) substitute Rule 7a review recorded; Rule 24 audit → §7 (nine findings: 5 FIX, 2 DEFER, 2 no action); Rule 24: `config` is an explicit argument of the calibration/truth helpers, `misspecification_strength` is recorded on every result row, no unused variables remain (`X_centered` scoped), README configuration table and main.tex configuration paragraph match the code [PASS]
 
 ### 7. Review note
 Reviewer verdict: faithful port of the prototype, follows from §2, no blocking defects;
@@ -380,10 +380,15 @@ independently. Findings and handling:
 ### 5. Validation results (filled after running)
 Full test suite: run 18573008 (tree d184c5eb) passed with 0 failures, 0 errors (see #0005 §5 for
 the fixture fixes on the way there; none touched the DGP). Four-configuration package
-reproduction: job 18573010 (array 1–4, dependent on 18573008) — PENDING. — test job 18550689 (`./test.sh`), package reproduction array 18550691 (`diagnosis/dgp_common_basis/run_dgp_common_basis.sh`, 4 configurations, depends on the test job), submitted 2026-09-07.
+reproduction: job 18573010 (array 1–4, dependent on 18573008), all cells exact as recorded in
+§4 (a)–(b). The omega-selection rerun with the re-based gates (job 18549812) reproduced
+omega* = 0.75 (#0002 §5). — test job 18550689 (`./test.sh`), package reproduction array 18550691 (`diagnosis/dgp_common_basis/run_dgp_common_basis.sh`, 4 configurations, depends on the test job), submitted 2026-09-07.
 
 ### 6. Decision + rationale
-PENDING
+**DECIDED-PASS (2026-09-08).** The package DGP is the pre-registered common-basis design with
+X-dagger misspecification at omega = 0.75; it reproduces the Stage-1 pilot exactly in every
+configuration, the truth comes from one reference population, and every result row carries
+the strength applied. Landed in commits f7436de3 … d184c5eb. Status: CLOSED.
 
 <a id="0007"></a>
 ## 0007 — 2026-09-07 — Land the smooth quadratic-bias weight rule as the sensitivity estimator  [MIGRATION]

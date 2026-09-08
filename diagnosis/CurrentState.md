@@ -61,7 +61,10 @@ seeds** — bias −0.011 / +0.006 / +0.007 / +0.004 / +0.002 / +0.001, coverage
 0.93 / 0.92 / 0.93 / 0.94 / 0.94 / 0.93; reported alongside rule A as
 `<method>_ate_quadratic_bias`.
 
-No C2/C3, K=4/8, or RHC results exist for the current TATE estimator.
+Common-basis DGP (#0006) single-seed C1–C4 refits (seed 20001, K = 2):
+weight-layer SE 0.0220 / 0.0223 / 0.0219 / 0.0214 vs fixed-weight SE 0.0216 /
+0.0218 / 0.0216 / 0.0214. No multi-seed C2/C3, K=4/8, or RHC results exist for
+the current TATE estimator yet (production #0010).
 
 ## 3. Active issues (open iterations)
 
@@ -78,9 +81,9 @@ No C2/C3, K=4/8, or RHC results exist for the current TATE estimator.
    of a x4 nuisance cost in production — awaiting the user's answer.
 5. #0005 [MIGRATION] weight-layer variance into `R/` — CLOSED (DECIDED-PASS
    2026-09-08; full suite clean in run 18573008, replay 18573009 exact).
-6. **#0006 [MIGRATION] common-basis DGP** with `misspecification_strength = 0.75`
-   — IN-FLIGHT (substitute review recorded and its fixes applied; full tests +
-   4-config reproduction pending).
+6. #0006 [MIGRATION] common-basis DGP with `misspecification_strength = 0.75`
+   — CLOSED (DECIDED-PASS 2026-09-08; four-configuration reproduction
+   18573010 exact).
 7. #0007 [MIGRATION] smooth quadratic-bias weight rule (`screening_rule =
    "quadratic_bias"`, simulation row `<method>_ate_quadratic_bias` gated by
    `include_quadratic_bias_rule = TRUE`, quadratic weight layer) — CLOSED
