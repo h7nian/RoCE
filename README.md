@@ -212,15 +212,30 @@ $\omega=$ `FACE_MISSPECIFICATION_STRENGTH` $=0.75$ (pre-registered, see
 | C3 | $\eta(X)$ | $\eta_\omega(X)$ | Site/treatment model misspecified |
 | C4 | $\eta_\omega(X)$ | $\eta_\omega(X)$ | Both misspecified |
 
+Two deviation mechanisms make source $s_1$ non-transportable by $\rho$ on
+the log-odds scale (`deviation_mechanism` in `generate_face_data()` and
+`run_single_simulation()`, `HISTORY.md` #0009):
+
+| Mechanism | What moves at $s_1$ | Experiment | Positive-$\rho$ reuse |
+|-----------|---------------------|------------|------------------------|
+| `treated_arm` (default) | treatment log-odds shift $\Delta_{s_1}=1+\rho$ | `negative_transfer` (C1--C3) | treated arm of $s_1$ refitted |
+| `both_arms` | both potential-outcome arms shifted by $\rho$ | `shared_shift` (C1) | both arms of $s_1$ refitted |
+
+Every replicate reports the frozen production row set
+`RoCE:::.tate_production_method_rows()`; the quadratic-bias sensitivity row is
+gated by `include_quadratic_bias_rule = TRUE`.
+
 ## Running Simulations on HPC (SLURM)
 
 The manuscript rerun is restricted to `p=100`. See
 [`scripts/slurm/README.md`](scripts/slurm/README.md) for the isolated package
 gates, exact same-seed rho-reuse audit, bounded grouped submissions,
 aggregation, and per-setting coverage/RMSE diagnostics. The 27,000 canonical
-result rows are represented by 4,500 seed/configuration/K jobs, each covering
-the six rho values. Production defaults to one job at a time and never submits
-the full grouped manifest in one call. Every setting uses 500 Monte Carlo
+result rows of the negative-transfer family are represented by 4,500
+seed/configuration/K jobs, each covering the six rho values; the shared-shift
+family adds 9,000 rows in 1,500 jobs under
+`results/direct_tate_mc500_b5000/shared_shift/`. Production defaults to one
+job at a time and never submits the full grouped manifest in one call. Every setting uses 500 Monte Carlo
 replicates; comparison-method intervals use 5,000 paired multiplier-bootstrap
 draws. Checkpoints diagnose coverage, RMSE, bias, empirical-versus-reported
 standard errors, sparse treatment/outcome cells, density-ratio clipping, and
