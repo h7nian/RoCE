@@ -4,7 +4,13 @@
 \alias{calculate_face_propensity}
 \title{Compute treatment propensity scores for the FACE paper DGP}
 \usage{
-calculate_face_propensity(X, alpha1, alpha2)
+calculate_face_propensity(
+  X,
+  alpha1,
+  alpha2,
+  X_dagger = NULL,
+  misspecification_strength = 0
+)
 }
 \arguments{
 \item{X}{Covariate matrix (\eqn{n \times p}).}

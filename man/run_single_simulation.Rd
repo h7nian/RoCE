@@ -34,11 +34,13 @@ run_single_simulation(
   dgp_type = "face",
   ate_deviation = 0,
   n_deviated_sites = 0L,
+  deviation_mechanism = c("treated_arm", "both_arms"),
   effect_mod_strength = 0,
   n_target = NULL,
   n_source_sizes = NULL,
   nuisance_lambda_rule = c("min", "1se"),
   include_hard_threshold_diagnostic = FALSE,
+  include_quadratic_bias_rule = TRUE,
   n_weight_bootstrap = 0L
 )
 }
@@ -52,13 +54,14 @@ run_single_simulation(
 \item{p}{Integer number of covariates}
 
 \item{config}{configuration ("C1", "C2", "C3", or "C4"). For the
-FACE negative-transfer DGP, C1 uses rich quadratic calibration and the
-correct quadratic outcome basis; the skew-normal source-to-target density
-ratio is not exactly log-quadratic, so C1 is a rich working-model setting
-rather than literal joint parametric correctness. C2 drops the quadratic
-outcome terms, C3 drops the quadratic calibration terms, and C4 drops
-both. For the separate RoCE DGP, the analogous C1--C4 bases are exact
-or misspecified as documented by \code{generate_simulation_data()}.}
+FACE negative-transfer DGP, both nuisance models always use the quadratic
+working basis; C2 misspecifies the true outcome mechanism, C3 the true
+treatment mechanism, and C4 both, through the transformed covariates of
+\code{generate_face_data()}. The skew-normal source-to-target density
+ratio is not exactly log-quadratic, so even C1 is a rich working-model
+setting rather than literal joint parametric correctness. For the
+separate RoCE DGP, the analogous C1--C4 bases are exact or misspecified as
+documented by \code{generate_simulation_data()}.}
 
 \item{methods}{vector of methods to run}
 
@@ -148,6 +151,11 @@ difference for binary outcomes.}
 
 \item{n_deviated_sites}{Number of leading deviated sources under the FACE DGP.}
 
+\item{deviation_mechanism}{\code{"treated_arm"} (default) or
+\code{"both_arms"}: how the deviated sources deviate under the FACE DGP
+(see \code{\link{generate_face_data}}). Under \code{"both_arms"} the
+positive-rho reuse refits both arms of the changed sources.}
+
 \item{effect_mod_strength}{Source-only treatment-effect-modification strength
 under the FACE DGP; zero recovers the standard DGP.}
 
@@ -167,6 +175,12 @@ TATE aggregation that sets sources above the foldwise Wald cutoff to zero
 before variance minimization. Defaults to \code{FALSE}; this diagnostic
 reuses the fitted nuisances and does not replace the primary soft-penalty
 estimator.}
+
+\item{include_quadratic_bias_rule}{Logical. Also evaluate the pre-specified
+smooth quadratic-bias sensitivity rule (\code{screening_rule =
+"quadratic_bias"}) as the \code{<method>_ate_quadratic_bias} row. Defaults
+to \code{TRUE}; it reuses the fitted nuisances and does not replace the
+primary soft-penalty estimator.}
 
 \item{n_weight_bootstrap}{Number of multiplier-bootstrap draws that relearn
 the common source weights for the primary soft-penalty direct-TATE row.

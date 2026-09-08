@@ -12,6 +12,7 @@ fit_initial_density_ratio(
   max_iter = MAX_ITER_DEFAULT,
   tol = TOL_DEFAULT,
   A_val = 1L,
+  M_tau = M_TAU_DEFAULT,
   warm_start = NULL,
   nlambda = LAMBDA_GRID_SIZE_STANDARD,
   lambda_rule = c("min", "1se"),

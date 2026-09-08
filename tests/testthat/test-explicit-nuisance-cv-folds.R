@@ -18,7 +18,7 @@ cv_fold_test_calls <- function() {
       1L, 1L, 1L, cv_fold_id = id
     ),
     initial_density = function(id) select_lambda_cv_initial_density_ratio_cpp(
-      x, a, c(0.5, rep(0, p)), lambda, 3L, 500L, 1e-4, 1L,
+      x, a, c(0.5, rep(0, p)), lambda, 3L, 500L, 1e-4, 1L, 5,
       cv_fold_id = id
     ),
     calibrated_density = function(id) select_lambda_cv_calibrated_density_ratio_cpp(
@@ -40,7 +40,7 @@ cv_fold_test_calls <- function() {
       1L, 1L, 1L
     ),
     initial_density = function() select_lambda_cv_initial_density_ratio_cpp(
-      x, a, c(0.5, rep(0, p)), lambda, 3L, 500L, 1e-4, 1L
+      x, a, c(0.5, rep(0, p)), lambda, 3L, 500L, 1e-4, 1L, 5
     ),
     calibrated_density = function() select_lambda_cv_calibrated_density_ratio_cpp(
       x, a, c(0.5, rep(0, p)), zero, lambda, 3L, 500L, 1e-4,

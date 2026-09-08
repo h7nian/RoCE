@@ -29,6 +29,7 @@ run_simulation_study(
   dgp_type = "face",
   ate_deviation = 0,
   n_deviated_sites = 0L,
+  deviation_mechanism = c("treated_arm", "both_arms"),
   n_target = NULL,
   n_source_sizes = NULL,
   nuisance_lambda_rule = c("min", "1se"),

@@ -13,9 +13,11 @@ generate_face_data(
   outcome_type = "continuous",
   ate_deviation = 0,
   n_deviated_sites = 0L,
+  deviation_mechanism = c("treated_arm", "both_arms"),
   effect_mod_strength = 0,
   n_target = NULL,
-  n_source_sizes = NULL
+  n_source_sizes = NULL,
+  misspecification_strength = FACE_MISSPECIFICATION_STRENGTH
 )
 }
 \arguments{
@@ -33,9 +35,19 @@ supplied; may be left \code{NULL} in that case.}
 
 \item{outcome_type}{"continuous" (default) or "binary".}
 
-\item{ate_deviation}{ATE deviation for non-informative source sites (default 0).}
+\item{ate_deviation}{Deviation magnitude of the non-informative source
+sites (default 0): a treatment log-odds shift under
+\code{deviation_mechanism = "treated_arm"}, a shift
+of both potential-outcome arms under
+\code{"both_arms"}.}
 
-\item{n_deviated_sites}{Number of leading source sites with deviated ATE (default 0L).}
+\item{n_deviated_sites}{Number of leading source sites that deviate (default 0L).}
+
+\item{deviation_mechanism}{\code{"treated_arm"} (default; the deviated
+sources use treatment shift \code{base + ate_deviation}) or
+\code{"both_arms"} (the deviated sources keep the treatment shift and move
+both arms by \code{ate_deviation}; main.tex sec:simulations, shared-shift
+experiment).}
 
 \item{effect_mod_strength}{Source-only effect-modification strength; zero
 recovers the standard FACE DGP.}
@@ -46,9 +58,19 @@ allocation (paired with \code{n_source_sizes}).}
 \item{n_source_sizes}{Optional integer vector of per-site source sample
 sizes; when supplied, \code{K} and the total are taken
 from it and \code{n_total} is ignored.}
+
+\item{misspecification_strength}{Mixing weight \eqn{\omega} of the
+transformed coordinates in the misspecified mechanisms of C2--C4
+(default \code{FACE_MISSPECIFICATION_STRENGTH}); ignored by C1. The
+misspecified configurations are validated for binary outcomes only
+(HISTORY #0002/#0006); the continuous outcome under C2/C4 inherits the
+heavy-tailed transformed predictor without calibration.}
 }
 \value{
-Named list with the same fields as the RoCE DGP output.
+Named list with the same fields as the RoCE DGP output;
+  \code{X_dagger} holds the transformed covariates and
+  \code{misspecification_strength} the strength actually applied (0 under
+  C1).
 }
 \description{
 Creates a dataset whose structure (field names and types) is identical to that
@@ -57,21 +79,24 @@ downstream code (\code{split_data_by_site()}, estimation algorithms, etc.)
 requires no modification.
 }
 \details{
-\strong{Config semantics for the FACE paper DGP:}
+\strong{Config semantics for the FACE paper DGP:} both nuisance models
+always use the working basis \eqn{\phi(X) = [X - \kappa, X^2]}
+(\code{Z_site} and \code{W_outcome} are identical). Misspecification lives
+in the true mechanism: the leading signal coordinates are replaced by
+standardized Kang--Schafer-style transforms \eqn{X^\dagger}
+(\code{.face_x_dagger()}) and the true predictor becomes
+\eqn{(1 - \omega)\eta(X) + \omega\eta(X^\dagger)} with
+\eqn{\omega = } \code{misspecification_strength}.
 \itemize{
-  \item C1 (rich calibration, correct OR): calibration uses
-        \eqn{[X, X^2]}; OR uses \eqn{[X - \kappa, X^2]}.
-  \item C2 (rich calibration, misspecified OR): calibration uses
-        \eqn{[X, X^2]};
-        OR uses only \eqn{X} (drops quadratic block).
-  \item C3 (misspecified calibration, correct OR): calibration uses only
-        \eqn{X};
-        OR uses \eqn{[X - \kappa, X^2]}.
-  \item C4 (both working bases reduced): calibration uses only \eqn{X};
-        OR uses only \eqn{X}.
+  \item C1: outcome and treatment mechanisms use \eqn{\eta(X)} (both
+        working models correctly specified).
+  \item C2: outcome mechanism misspecified (\eqn{\eta_\omega}), treatment
+        mechanism correct.
+  \item C3: treatment mechanism misspecified, outcome mechanism correct.
+  \item C4: both mechanisms misspecified.
 }
 The treatment propensity is quadratic before the DGP's finite-sample
 clipping, but the skew-normal source-to-target density ratio is not exactly
-log-quadratic. Thus C1--C2 provide a rich calibration basis rather than an
+log-quadratic, so even C1 is a rich working-model setting rather than an
 exactly specified merged site/treatment model.
 }

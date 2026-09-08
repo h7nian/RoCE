@@ -2,47 +2,36 @@
 % Please edit documentation in R/data_generation_face.R
 \name{get_face_binary_calibration}
 \alias{get_face_binary_calibration}
-\title{Logit-scale calibration for the binary FACE paper DGP}
+\title{Binary-outcome calibration of the FACE paper DGP}
 \usage{
 get_face_binary_calibration(
   p,
+  config,
   kappa = FACE_KAPPA,
   signal_sd = FACE_BINARY_SIGNAL_SD,
   n_ref = 100000L,
-  ref_seed = 99999L
+  ref_seed = 99999L,
+  misspecification_strength = FACE_MISSPECIFICATION_STRENGTH
 )
 }
 \arguments{
 \item{p}{Number of covariates.}
 
-\item{kappa}{Location parameter (default \code{FACE_KAPPA}).}
+\item{config}{Configuration string (see \code{generate_face_data()}).}
 
-\item{signal_sd}{Target logit-scale sd of the covariate signal
-(default \code{FACE_BINARY_SIGNAL_SD}).}
+\item{kappa}{Location parameter of the covariate law.}
 
-\item{n_ref}{Reference population size (default 100000).}
+\item{signal_sd}{Target logit-scale standard deviation of the signal.}
 
-\item{ref_seed}{Fixed RNG seed for reproducibility (default 99999).}
-}
-\value{
-Named list containing the calibration moments and the corresponding
-  target-population binary potential-outcome means. The latter are reused by
-  \code{calculate_face_truth()} so a simulation task does not regenerate the
-  same deterministic reference population.
+\item{n_ref, ref_seed}{Size and seed of the reference draw.}
+
+\item{misspecification_strength}{Mixing weight omega of the transformed
+coordinates in the misspecified mechanisms.}
 }
 \description{
-The raw linear predictor \eqn{\eta = (X-\kappa)^\top\beta_{\text{lin}} +
-(X^{\circ 2})^\top\beta_{\text{sq}}} has a target-law standard deviation of
-\eqn{\approx 3.2}, which saturates \code{expit()} (treated-arm prevalence
-\eqn{\approx 0.98}, a near-degenerate outcome regression). For the binary
-outcome the covariate signal is standardized to a controlled logit-scale
-spread (\code{FACE_BINARY_SIGNAL_SD}) via \code{face_binary_logit()}.
-}
-\details{
-The centring / scaling moments are computed \strong{once} from the fixed
-\eqn{\nu = 0} target reference population — the same population (and RNG seed)
-used by \code{calculate_face_truth()} — so the realized data and both truth
-branches share one deterministic transform. They must never be recomputed from
-realized (mixed-site) covariates, which would silently shift the estimand.
+The standardized-logit calibration of \code{.face_reference_population()}
+together with the reference-population outcome means. The configuration is
+required because C2 and C4 change the outcome mechanism and hence the
+calibration.
 }
 \keyword{internal}

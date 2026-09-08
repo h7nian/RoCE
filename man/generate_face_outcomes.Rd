@@ -16,7 +16,10 @@ generate_face_outcomes(
   outcome_type = "continuous",
   binary_calib = NULL,
   effect_mod_strength = 0,
-  em_direction = NULL
+  em_direction = NULL,
+  X_dagger = NULL,
+  misspecification_strength = 0,
+  outcome_shift_map = NULL
 )
 }
 \arguments{
@@ -48,6 +51,18 @@ recovers the standard FACE DGP.}
 
 \item{em_direction}{Optional covariate direction for effect modification.
 When omitted, a deterministic normalized direction is used.}
+
+\item{X_dagger}{Transformed covariates from \code{.face_x_dagger()};
+required when \code{misspecification_strength > 0}.}
+
+\item{misspecification_strength}{Mixing weight of the transformed
+coordinates in the true outcome predictor (0 recovers the quadratic
+mechanism).}
+
+\item{outcome_shift_map}{Optional named numeric vector from
+\code{build_face_outcome_shift_map()}: an additive shift of both
+potential-outcome arms on the linear-predictor scale (added to the
+calibrated logit for binary outcomes). \code{NULL} applies no shift.}
 }
 \value{
 Numeric vector of outcomes (length n).

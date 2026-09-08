@@ -23,7 +23,7 @@ run_tate_crossfit(
   nuisance_lambda_rule = c("min", "1se"),
   parallel_arms = FALSE,
   aggregation_lambda_grid = NULL,
-  screening_rule = c("soft_penalty", "hard_threshold")
+  screening_rule = c("soft_penalty", "hard_threshold", "quadratic_bias")
 )
 }
 \arguments{
@@ -104,7 +104,8 @@ outer-training sample. It must be \code{NULL} for a fixed numeric
 
 \item{screening_rule}{Source-screening rule passed to
 \code{\link{calculate_tate_crossfit_aggregation}}. The default retains the
-manuscript soft penalty; hard thresholding is available for diagnostics.}
+manuscript soft penalty; hard thresholding is a diagnostic and
+\code{"quadratic_bias"} the pre-specified smooth sensitivity rule.}
 }
 \value{
 A RoCE TATE result. Arm-specific fits are combined before

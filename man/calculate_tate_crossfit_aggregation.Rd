@@ -12,7 +12,7 @@ calculate_tate_crossfit_aggregation(
   lambda_rule = c("min", "1se"),
   verbose = TRUE,
   aggregation_lambda_grid = NULL,
-  screening_rule = c("soft_penalty", "hard_threshold")
+  screening_rule = c("soft_penalty", "hard_threshold", "quadratic_bias")
 )
 }
 \arguments{
@@ -38,7 +38,10 @@ truncated-Wald multipliers used only when
 \item{screening_rule}{Source-screening rule. \code{"soft_penalty"} uses
 the manuscript's truncated-Wald L1 penalty. \code{"hard_threshold"} is
 an explicit diagnostic that excludes sources above the foldwise Wald
-cutoff before variance minimization.}
+cutoff before variance minimization. \code{"quadratic_bias"} is the
+pre-specified smooth sensitivity rule with penalty
+\eqn{n_t^{3/4}\sum_j \delta_j^2\eta_j^2} (main.tex
+rem:quadratic_bias_rule); it never sets a weight exactly to zero.}
 }
 \value{
 A RoCE result list for the TATE estimator.

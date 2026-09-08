@@ -231,7 +231,8 @@ test_that("every fold-parallel nuisance CV path is deterministic", {
       ),
       initial_density_ratio = select_lambda_cv_initial_density_ratio_cpp(
         X, A, mean_phi, lambda_grid,
-        n_folds = 3L, max_iter = 1000L, tol = 1e-4, A_val = 1L
+        n_folds = 3L, max_iter = 1000L, tol = 1e-4, A_val = 1L,
+        M_tau = 5
       ),
       calibrated_density_ratio =
         select_lambda_cv_calibrated_density_ratio_cpp(
@@ -266,7 +267,7 @@ test_that("every fold-parallel nuisance CV path is deterministic", {
   expect_error(
     select_lambda_cv_initial_density_ratio_cpp(
       X, A, c(0.5, rep(0, p)), lambda_grid,
-      n_folds = 3L, max_iter = 500L, tol = 1e-5, A_val = 1L
+      n_folds = 3L, max_iter = 500L, tol = 1e-5, A_val = 1L, M_tau = 5
     ),
     "must be a positive integer"
   )
@@ -289,7 +290,7 @@ test_that("nuisance CV errors when no candidate converges in every fold", {
   expect_error(
     select_lambda_cv_initial_density_ratio_cpp(
       X, A, c(0.5, rep(0, p)), lambda_grid,
-      n_folds = 3L, max_iter = 1L, tol = 1e-12, A_val = 1L
+      n_folds = 3L, max_iter = 1L, tol = 1e-12, A_val = 1L, M_tau = 5
     ),
     "no lambda converged with a finite validation loss across every CV fold"
   )
@@ -319,7 +320,7 @@ test_that("nuisance CV records and skips a terminal failed lambda tail", {
   lambda_grid <- c(1e6, 1e5, 1e4, rep(1e-10, 12L))
   result <- select_lambda_cv_initial_density_ratio_cpp(
     X, A, c(0.5, rep(0, p)), lambda_grid,
-    n_folds = 3L, max_iter = 1L, tol = 1e-12, A_val = 1L
+    n_folds = 3L, max_iter = 1L, tol = 1e-12, A_val = 1L, M_tau = 5
   )
 
   expect_equal(result$lambda_min, 1e6)
@@ -353,7 +354,7 @@ test_that("CV functions fail fast on all-control data (empty treated set)", {
   )
   expect_error(
     select_lambda_cv_initial_density_ratio_cpp(X, A, mean_grad_psi,
-                                               lambda_grid, 3, 100, 1e-4, 1L),
+                                               lambda_grid, 3, 100, 1e-4, 1L, 5),
     "no observations with A_val"
   )
   expect_error(

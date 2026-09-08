@@ -18,9 +18,11 @@ generate_simulation_data(
   dgp_type = "face",
   ate_deviation = 0,
   n_deviated_sites = 0L,
+  deviation_mechanism = "treated_arm",
   effect_mod_strength = 0,
   n_target = NULL,
   n_source_sizes = NULL,
+  misspecification_strength = FACE_MISSPECIFICATION_STRENGTH,
   warn_ignored = TRUE
 )
 }
@@ -81,6 +83,10 @@ TATE difference.}
 \item{n_deviated_sites}{Number of leading deviated source sites under the
 FACE DGP.}
 
+\item{deviation_mechanism}{\code{"treated_arm"} (default) or
+\code{"both_arms"}: how the deviated sources deviate under the FACE DGP
+(see \code{\link{generate_face_data}}).}
+
 \item{effect_mod_strength}{Source-only treatment-effect-modification strength
 under the FACE DGP; zero recovers the standard DGP.}
 
@@ -88,6 +94,10 @@ under the FACE DGP; zero recovers the standard DGP.}
 
 \item{n_source_sizes}{Optional vector of source-site sizes for explicit
 FACE-DGP allocation.}
+
+\item{misspecification_strength}{Mixing weight of the transformed covariates
+in the misspecified FACE mechanisms of C2--C4 (see
+\code{generate_face_data()}); ignored by C1 and by the RoCE DGP.}
 
 \item{warn_ignored}{Whether to warn when a valid argument is irrelevant to
 the selected DGP.}

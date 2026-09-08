@@ -2,52 +2,37 @@
 % Please edit documentation in R/data_generation_face.R
 \name{calculate_face_truth}
 \alias{calculate_face_truth}
-\title{Compute superpopulation truth for the FACE paper DGP (target-population specific)}
+\title{Superpopulation truth of the FACE paper DGP (target-population specific)}
 \usage{
 calculate_face_truth(
   p,
+  config,
   kappa = FACE_KAPPA,
   outcome_type = "continuous",
+  misspecification_strength = FACE_MISSPECIFICATION_STRENGTH,
   n_ref = 100000L,
-  ref_seed = 99999L,
-  binary_calib = NULL
+  ref_seed = 99999L
 )
 }
 \arguments{
 \item{p}{Number of covariates.}
 
-\item{kappa}{Location parameter (default \code{FACE_KAPPA}).}
+\item{config}{Configuration string (see \code{generate_face_data()}).}
+
+\item{kappa}{Location parameter of the covariate law.}
 
 \item{outcome_type}{"continuous" or "binary".}
 
-\item{n_ref}{Reference population size (default 100000).}
+\item{misspecification_strength}{Mixing weight omega of the transformed
+coordinates in the misspecified mechanisms.}
 
-\item{ref_seed}{Fixed RNG seed for reproducibility (default 99999).}
-
-\item{binary_calib}{Optional result from
-\code{get_face_binary_calibration()} computed with the same reference
-settings. When supplied for a binary outcome, its stored truth moments are
-reused instead of drawing the deterministic reference population again.}
+\item{n_ref, ref_seed}{Size and seed of the reference draw.}
 }
 \value{
 Named list with \code{mu1_superpop}, \code{mu0_superpop},
-  \code{ate_superpop} (continuous: \code{FACE_ATE_TARGET}; binary: the implied
-  risk difference), \code{n_ref}, and \code{ref_seed}.
+  \code{ate_superpop}, \code{n_ref}, and \code{ref_seed}.
 }
 \description{
-Evaluates \eqn{E_t[Y(a)]} via Monte Carlo integration over the target-site
-covariate distribution (\eqn{X \sim N(\kappa, I_p)}, \eqn{\nu = 0}).
-}
-\details{
-\strong{Continuous:} \eqn{E_t[Y(a)] = E_t[\eta] + \Delta_T\,a}, so
-\eqn{\text{ate\_superpop} = \Delta_T = } \code{FACE_ATE_TARGET}. Analytically
-\eqn{E_t[\eta] = \sum_{j \le 4} \beta_{\text{sq},j}(1 + \kappa^2)} because
-\eqn{E[X_j - \kappa] = 0} and \eqn{E[X_j^2] = 1 + \kappa^2}.
-
-\strong{Binary:} \eqn{E_t[Y(a)] = E_t[\text{expit}(g(X) + \Delta_{\text{bin}}\,a)]}
-with \eqn{g} the standardized logit signal (\code{face_binary_logit()}); here
-\eqn{\Delta_{\text{bin}}} is a log-odds shift, so \code{ate_superpop} is the
-implied target-population \emph{risk difference} (\eqn{\approx 0.21}), not
-\eqn{\Delta_{\text{bin}}}.
-The MC approach is used for consistency with \code{calculate_superpopulation_truth()}.
+Target-population potential-outcome means for a configuration, computed on
+the deterministic reference population of \code{.face_reference_population()}.
 }

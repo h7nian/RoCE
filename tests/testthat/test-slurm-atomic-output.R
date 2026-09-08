@@ -567,12 +567,15 @@ test_that("production submission is cutoff-gated and batch-bounded", {
   expect_true(any(grepl(
     "CUTOFF_SELECTION_GATE", drivers[[3L]], fixed = TRUE
   )))
+  # HISTORY #0010 raised the grouped caps so the 18 setting blocks can run
+  # concurrently, each scoped by ROCE_SETTING and bounded by its own ladder.
   expect_true(any(grepl(
-    '"${BATCH_SIZE}" -gt 5', drivers[[3L]], fixed = TRUE
+    '"${BATCH_SIZE}" -gt 500', drivers[[3L]], fixed = TRUE
   )))
   expect_true(any(grepl(
-    '"${MAX_CONCURRENT}" -gt 2', drivers[[3L]], fixed = TRUE
+    '"${MAX_CONCURRENT}" -gt 50', drivers[[3L]], fixed = TRUE
   )))
+  expect_true(any(grepl("ROCE_SETTING", drivers[[3L]], fixed = TRUE)))
   expect_true(any(grepl(
     "enforce_roce_array_safety_cap 5 2", drivers[[5L]], fixed = TRUE
   )))
