@@ -408,7 +408,7 @@ weight-layer derivative has no kink and uses the penalty curvature plus the
   the prototype's `quadratic_weight_layer_n100_v1/weight_layer_rows.csv`.
 
 ### 4. Acceptance criteria
-- [ ] (a) normal-equation residual ≤ 1e-12 relative on every inner fold of the test fixture (and ≤ 1e-6 at run time inside the solver); discrepancy-free case equals `optimize_weights(lambda = 0)` to 1e-8 (its coordinate descent stops at `WEIGHT_OPT_TOL = 1e-8`; amended after the substitute review) → ___ [PENDING]
+- [ ] (a) normal-equation residual ≤ 1e-12 relative on every inner fold of the test fixture (and ≤ 1e-6 at run time inside the solver); discrepancy-free case equals the exact unpenalized solve `solve(Q, -l)` to 1e-10 and `optimize_weights(lambda = 0)` to 1e-6 (its coordinate descent stops at `WEIGHT_OPT_TOL = 1e-8`, which left a 3e-8 relative gap in run 18565508; amended after the substitute review and that run) → ___ [PENDING]
 - [ ] (b) finite-difference check of the quadratic weight layer: |numerical − analytical| ≤ 1e-8·max(1, |analytical|) → ___ [PENDING]
 - [ ] (c) 100-seed replay: estimates and weight-layer SEs equal the prototype's candidate rows to ≤ 1e-8 → ___ [PENDING]
 - [ ] (d) full build + testthat: 0 failures, 0 errors → ___ [PENDING]

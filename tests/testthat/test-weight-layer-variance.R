@@ -156,7 +156,13 @@ test_that("quadratic-bias weights solve their normal equations", {
     0, aligned$avg_target_est, aligned$C_cross,
     clip_weights = FALSE
   )
-  expect_equal(RoCE:::.quadratic_bias_weights(aligned), as.numeric(unpenalized), tolerance = 1e-8)
+  aligned_form <- RoCE:::.variance_quadratic_form(aligned, psd_ridge = 0)
+  expect_equal(
+    RoCE:::.quadratic_bias_weights(aligned),
+    drop(solve(aligned_form$Q, -aligned_form$l)),
+    tolerance = 1e-10
+  )
+  expect_equal(RoCE:::.quadratic_bias_weights(aligned), as.numeric(unpenalized), tolerance = 1e-6)
   # A larger discrepancy shrinks that source's weight toward zero.
   shifted <- moments
   shifted$avg_source_est[1L] <- shifted$avg_target_est + 10 * max(abs(discrepancy), 0.1)
