@@ -710,6 +710,24 @@ A3 = 33443 on the same tree.
   absolute path as job 33807.
 - A1 = 33441 running. A4/A5 follow A1–A3.
 
+**Gate-hardening round (2026-09-08).** The gates found five real defects before any
+production task ran; each is fixed on main and the gates were rerun from a clean root:
+1. `ROCE_CHECK_ROOT` must be absolute (the check script `cd`s into it before staging) — A2
+   died in 8 s (job 33442).
+2. The #0008 patch added `M_tau` to `select_lambda_cv_initial_density_ratio_cpp`; seven test
+   call sites still used the old signature (job 33441, commit 9d83a967).
+3. The submitter-cap contract test still asserted the pre-#0010 caps 5/2 (same commit).
+4. `man/` was stale after the #0006–#0009 roxygen changes: R CMD check reported codoc
+   mismatches (same commit), then undocumented arguments on `calculate_face_propensity`,
+   `fit_initial_density_ratio` and `run_simulation_study` (job 37155, commit b5882878).
+5. `audit_roce_contracts.sh` scanned with `rg`, absent in batch, so `|| true` made it a silent
+   no-op (commit 9a366d8e); the `grep` replacement then matched compiled `src/*.o` and
+   `src/RoCE.so`, fixed with `-I` in a380869f (jobs 35389/35390).
+
+A1 passed with 0 test failures at job 37154. Because commit b5882878 touched `R/` and `man/`,
+the A1 gate's `package_source_fingerprint` went stale, so both gates were rerun on the final
+tree: A1 = 38766, A2 = 38764.
+
 Defect found while reading the A2 log and fixed in 9a366d8e: `audit_roce_contracts.sh`
 scanned for retired identifiers with `rg`, which does not exist in the batch environment, and
 its trailing `|| true` made the scan a silent no-op in every gate. It now uses `grep` with
