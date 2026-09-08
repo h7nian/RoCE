@@ -687,7 +687,10 @@ place). Gate sequence, in order:
 - [ ] (e) n = 500: all 18 blocks committed and audited; `aggregate_direct_tate.R` and the per-setting diagnostics run on both families → ___ [PENDING]
 
 ### 5. Validation results (filled after running)
-PENDING
+Gates launched 2026-09-08 on tree 0fde383e: A1 test audit job 18580683
+(`Rlib_production_20260908_v1`), A2 R CMD check job 18580684
+(`package_check_production_20260908_v1`), A3 manifest families job 18580685
+(`production_20260908_v1/`). A4/A5 follow A1–A3.
 
 ### 6. Decision + rationale
 PENDING
