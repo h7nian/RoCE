@@ -293,6 +293,7 @@ landing. Findings and handling:
 
 ### 5. Validation results (filled after running)
 PENDING — test job 18550689 (`./test.sh`), package replay job 18550690 (depends on the test job), submitted 2026-09-07 after the substitute review fixes and the unit-mass length fix (first full run 18546449 failed: inner records index the full site, the mass vector was sized by the inner training sample). The test job also covers #0006.
+2026-09-08: job 18550689 built and ran the full suite (tree f7436de3: #0005 + #0006 + #0007); the only errors were the ten tests of `test-slurm-atomic-output.R`, which read `repo_root` from the helper's own environment (not visible after `load_all()`; pre-existing since the a03e3b5f snapshot, unrelated to these entries). Fixed in `helper-load.R` (commit 63809d41, `repo_root` exposed on the attached helper environment); resubmitted as test job 18564623 with the replay/reproduction jobs dependent on it.
 
 ### 6. Decision + rationale
 PENDING
