@@ -726,7 +726,16 @@ production task ran; each is fixed on main and the gates were rerun from a clean
 
 A1 passed with 0 test failures at job 37154. Because commit b5882878 touched `R/` and `man/`,
 the A1 gate's `package_source_fingerprint` went stale, so both gates were rerun on the final
-tree: A1 = 38766, A2 = 38764.
+tree (commit 54ef944e).
+
+- **A1 tests [PASS]** (job 38766): 0 failures, 0 errors; gate written in
+  `Rlib_production_20260908_v1/audit_tests_passed.txt`, source fingerprint
+  `0efa5eb4…` matching the tree.
+- **A2 R CMD check [PASS]** (job 38764): `Status: OK`; gate in
+  `package_check_production_20260908_v1/r_cmd_check_passed.txt` with the same source
+  fingerprint. The A3 manifest gate's three recorded md5s still match, so it stands.
+- **A4 smoke** submitted as job 40502 (C3/K4/rho 0, 40 CPUs, 5 CV threads, production library),
+  writing to `production_20260908_v1/smoke_final_direct_tate_raw`.
 
 Defect found while reading the A2 log and fixed in 9a366d8e: `audit_roce_contracts.sh`
 scanned for retired identifiers with `rg`, which does not exist in the batch environment, and
