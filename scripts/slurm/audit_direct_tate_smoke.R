@@ -48,7 +48,8 @@ add_check <- function(name, passed, detail) {
 expected_methods <- c(
   "one_round_crossfit", "target_only", "sample_size", "inverse_variance",
   "federated_dr", "pooled_dr", "one_round_crossfit_ate_armwise",
-  "one_round_crossfit_ate", "target_only_ate", "sample_size_ate",
+  "one_round_crossfit_ate", "one_round_crossfit_ate_quadratic_bias",
+  "target_only_ate", "sample_size_ate",
   "inverse_variance_ate", "federated_dr_ate", "pooled_dr_ate"
 )
 required_columns <- c(

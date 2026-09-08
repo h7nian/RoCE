@@ -422,26 +422,20 @@ test_that("FACE binary superpopulation truth matches generated data", {
   expect_equal(mean(d$Y_0[t_idx]), d$mu0_true, tolerance = 0.05)
 })
 
-test_that("FACE binary truth reuses matching calibration moments exactly", {
+test_that("FACE binary calibration and truth come from one reference population", {
   calibration <- RoCE:::get_face_binary_calibration(
-    p = 4, n_ref = 2000L, ref_seed = 731L
+    p = 4, n_ref = 2000L, ref_seed = 731L, config = "C2"
   )
-  reused <- RoCE:::calculate_face_truth(
-    p = 4, outcome_type = "binary", n_ref = 2000L, ref_seed = 731L,
-    binary_calib = calibration
+  truth <- RoCE:::calculate_face_truth(
+    p = 4, outcome_type = "binary", n_ref = 2000L, ref_seed = 731L, config = "C2"
   )
-  recomputed <- RoCE:::calculate_face_truth(
-    p = 4, outcome_type = "binary", n_ref = 2000L, ref_seed = 731L
+  expect_equal(calibration$mu1_superpop, truth$mu1_superpop, tolerance = 0)
+  expect_equal(calibration$mu0_superpop, truth$mu0_superpop, tolerance = 0)
+  expect_equal(truth$ate_superpop, truth$mu1_superpop - truth$mu0_superpop)
+  correct <- RoCE:::calculate_face_truth(
+    p = 4, outcome_type = "binary", n_ref = 2000L, ref_seed = 731L, config = "C1"
   )
-
-  expect_equal(reused, recomputed, tolerance = 0)
-  expect_error(
-    RoCE:::calculate_face_truth(
-      p = 5, outcome_type = "binary", n_ref = 2000L, ref_seed = 731L,
-      binary_calib = calibration
-    ),
-    "does not match"
-  )
+  expect_false(isTRUE(all.equal(correct$mu1_superpop, truth$mu1_superpop)))
 })
 
 test_that("FACE continuous estimand is exactly FACE_ATE_TARGET and the binary patch is inert", {
@@ -466,21 +460,61 @@ test_that("FACE continuous estimand is exactly FACE_ATE_TARGET and the binary pa
   expect_identical(d_samp$Y, d_rep$Y)
 })
 
-test_that("generate_face_data config affects W_outcome and Z_site", {
-  set.seed(42)
-  data_c1 <- generate_face_data(300, K = 2, p = 10, config = "C1")
-  set.seed(42)
-  data_c2 <- generate_face_data(300, K = 2, p = 10, config = "C2")
-  set.seed(42)
-  data_c3 <- generate_face_data(300, K = 2, p = 10, config = "C3")
-  
-  # C1 vs C2: same Z_site (both correct), different W_outcome
-  expect_equal(ncol(data_c1$Z_site), ncol(data_c2$Z_site))
-  expect_false(ncol(data_c1$W_outcome) == ncol(data_c2$W_outcome))
-  
-  # C1 vs C3: same W_outcome (both correct), different Z_site
-  expect_equal(ncol(data_c1$W_outcome), ncol(data_c3$W_outcome))
-  expect_false(ncol(data_c1$Z_site) == ncol(data_c3$Z_site))
+test_that("generate_face_data uses one working basis and misspecifies the true mechanism", {
+  generate <- function(config, strength = FACE_MISSPECIFICATION_STRENGTH) {
+    set.seed(42)
+    generate_face_data(300, K = 2, p = 10, config = config, outcome_type = "binary",
+                       misspecification_strength = strength)
+  }
+  data_c1 <- generate("C1")
+  data_c2 <- generate("C2")
+  data_c3 <- generate("C3")
+  data_c4 <- generate("C4")
+
+  # Both nuisance models see the same quadratic basis in every configuration.
+  for (data in list(data_c1, data_c2, data_c3, data_c4)) {
+    expect_identical(data$Z_site, data$W_outcome)
+    expect_equal(ncol(data$Z_site), 2L * ncol(data$X))
+    expect_equal(data$Z_site, cbind(sweep(data$X, 2L, FACE_KAPPA, "-"), data$X^2))
+  }
+  expect_identical(data_c1$X, data_c2$X)
+  expect_identical(data_c1$X_dagger, data_c3$X_dagger)
+
+  # C2 changes the outcome mechanism (and its truth), C3 the treatment mechanism.
+  expect_identical(data_c1$A, data_c2$A)
+  expect_false(identical(data_c1$Y_1, data_c2$Y_1))
+  expect_false(isTRUE(all.equal(data_c1$mu1_true, data_c2$mu1_true)))
+  expect_false(identical(data_c1$A, data_c3$A))
+  expect_equal(data_c1$mu1_true, data_c3$mu1_true)
+  expect_false(identical(data_c1$A, data_c4$A))
+  expect_equal(data_c2$mu1_true, data_c4$mu1_true)
+
+  # Zero strength reproduces C1 exactly for every configuration.
+  for (config in c("C2", "C3", "C4")) {
+    data_zero <- generate(config, strength = 0)
+    expect_identical(data_zero$Y, data_c1$Y)
+    expect_identical(data_zero$A, data_c1$A)
+    expect_equal(data_zero$mu1_true, data_c1$mu1_true)
+  }
+
+  # Transformed signal coordinates are standardized on the reference population.
+  reference <- RoCE:::.face_reference_population(
+    p = 10, kappa = FACE_KAPPA, config = "C2",
+    misspecification_strength = FACE_MISSPECIFICATION_STRENGTH,
+    outcome_type = "binary", n_ref = 20000L, ref_seed = 99999L
+  )
+  expect_length(reference$standardization$mean, FACE_SIGNAL_COORDINATES)
+  expect_true(all(reference$standardization$sd > 0))
+  expect_error(generate("C2", strength = 1.5), "misspecification_strength")
+  expect_identical(generate("C1", strength = 0.5)$misspecification_strength, 0)
+  expect_identical(generate("C2", strength = 0.5)$misspecification_strength, 0.5)
+  expect_error(
+    generate_simulation_data(
+      n_total = 60, K = 1, p = 3, config = "C2", dgp_type = "roce",
+      estimand_type = "sample", misspecification_strength = 0.5
+    ),
+    "applies only to dgp_type = 'face'"
+  )
 })
 
 test_that("generate_simulation_data dispatches face DGP correctly", {

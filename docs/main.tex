@@ -556,6 +556,28 @@ The original FACE adaptive-aggregation objective \citep[Equation~(11)]{han2025fe
 where $\lambda_{\mathrm{sq},N}$ is a diverging tuning parameter. We instead use the self-normalized truncated-Wald version in \cref{eq:agg_penalized_objective}, following FACE \citep[Remark~9]{han2025federated}, because it puts source discrepancies on a standard-error scale. The Supplemental Material gives the corresponding squared-discrepancy objective and the stronger tuning/separation conditions under which it gives the same oracle selection conclusion.
 \end{remark}
 
+\begin{remark}[Smooth quadratic-bias sensitivity rule]\label{rem:quadratic_bias_rule}
+Because the truncated-Wald rule is only directionally differentiable at its
+activation threshold, every experiment also reports a pre-specified smooth
+alternative: with $n_t$ the inner training size and
+$\widehat{\delta}_j\coloneqq\widehat{\tau}_{t,s_j}-\widehat{\tau}_{ot}
+=-\mathrm{disc}_j^\tau$,
+\[
+\widehat{\boldsymbol{\eta}}^{\mathrm{q}}
+=\arg\min_{\boldsymbol{\eta}\in\mathbb R^K}\;
+n_t\,\widehat{\Var}\{\widehat{\tau}_{\mathrm{agg}}(\boldsymbol{\eta})\}
++n_t^{3/4}\sum_{j=1}^K\widehat{\delta}_j^{\,2}\eta_j^{2},
+\]
+a ridge-type analogue of the FACE squared-discrepancy penalty. Its normal
+equations are linear, no source weight is set exactly to zero, and the
+exponent $3/4$ lies inside the window $(1/2,1)$ for which compatible-source
+penalties vanish while incompatible-source contributions are
+$o_p(N_{\mathrm{all}}^{-1/2})$; it was fixed before any result was examined.
+The weight-adjusted standard error of \cref{sec:adaptive_aggregation} applies
+with the smooth curvature replacing the active-set system. The rule is
+reported as a sensitivity estimator next to the primary truncated-Wald rule.
+\end{remark}
+
 For a cross-fitted observation, let $\widehat{\Phi}_i^\tau$ denote the
 uncentered, site-scaled pseudo-value induced by
 \cref{eq:direct_tate_aggregation}: target observations carry the target-only and
@@ -575,8 +597,47 @@ pseudo-values:
 \end{equation}
 Centering is within site, as required by the fixed-site multisample asymptotic
 regime. Each site need only return its sample size, pseudo-value sum, and
-centered sum of squares. The reported standard error is
-$\{\widehat V_\tau/N_{\mathrm{all}}\}^{1/2}$.
+centered sum of squares.
+
+\paragraph{Variance of the learned weights.}
+The pseudo-values in \cref{eq:tate_federated_variance} condition on the fold
+weights $\widehat{\boldsymbol{\eta}}^{(-k_1)}$. Each weight vector solves
+\cref{eq:agg_penalized_objective} on inner-fold moments that are themselves
+sample averages, so its sampling variation contributes a first-order term
+whenever a retained source has a non-zero discrepancy. Writing
+$\boldsymbol{L}_{k_1}=\partial\widehat{\tau}_{\mathrm{agg}}/\partial\boldsymbol{\eta}^{(-k_1)}$
+for the fold-$k_1$ discrepancy contributions
+$\widehat{\tau}_{t,s_j}-\widehat{\tau}_{ot}$,
+\[
+\widehat{\tau}_{\mathrm{agg}}(\widehat{\boldsymbol{\eta}})
+-\widehat{\tau}_{\mathrm{agg}}(\boldsymbol{\eta}^{*})
+=\sum_{k_1}\boldsymbol{L}_{k_1}^{T}
+\bigl(\widehat{\boldsymbol{\eta}}^{(-k_1)}-\boldsymbol{\eta}^{*(-k_1)}\bigr)
++o_p(N_{\mathrm{all}}^{-1/2}).
+\]
+On the active set $\mathcal{S}=\{j:\widehat{\eta}_j\ne0\}$ the minimizer satisfies
+the stationarity system
+$2N_{\mathrm{all}}(\boldsymbol{Q}_{\mathcal{S}\mathcal{S}}\widehat{\boldsymbol{\eta}}_{\mathcal{S}}
++\boldsymbol{l}_{\mathcal{S}})+\boldsymbol{p}_{\mathcal{S}}\circ
+\operatorname{sign}(\widehat{\boldsymbol{\eta}}_{\mathcal{S}})=\boldsymbol{0}$, where
+$\boldsymbol{Q}$ and $\boldsymbol{l}$ collect the quadratic and linear
+coefficients of the variance objective and $p_j=(\lambda\widehat t_j^\tau-1)_+$.
+Differentiating this system with respect to the inner-fold moments gives the
+derivative of $\widehat{\boldsymbol{\eta}}^{(-k_1)}$ with respect to the empirical
+mass $w_i$ of every training observation in closed form
+(\cref{supp:weight_layer}). Adding
+$N_{\mathrm{all}}\sum_{k_1}\boldsymbol{L}_{k_1}^{T}\,
+\partial\widehat{\boldsymbol{\eta}}^{(-k_1)}/\partial w_i$ to $\widehat{\Phi}_i^\tau$
+gives weight-adjusted pseudo-values $\widetilde{\Phi}_i^\tau$; the reported
+standard error is $\{\widetilde V_\tau/N_{\mathrm{all}}\}^{1/2}$ with
+$\widetilde V_\tau$ the within-site centered sum of squares of
+$\widetilde{\Phi}_i^\tau$, and the fixed-weight value
+$\{\widehat V_\tau/N_{\mathrm{all}}\}^{1/2}$ is retained as a diagnostic. The
+adjustment vanishes when no source is retained, requires no resampling, and is
+a first-order delta-method correction in the regular regime; at an activation
+boundary $\lambda\widehat t_j^\tau=1$ the soft-threshold map is only
+directionally differentiable, so, as for any data-adaptive selection rule, the
+interval is not asymptotically exact there \citep{fang2019inference}.
 
 \subsection{Federated Algorithm}\label{sec:algorithms}
 
@@ -878,16 +939,30 @@ experiment below, source $s_1$ instead uses $\Delta_{s_1}=1+\rho$. Thus
 $\rho$ is a source-specific log-odds shift; the reported TATE is the target
 risk difference, not the log-odds coefficient.
 
-The fitted design matrices vary by configuration. C(1) uses the full quadratic
-bases $Z=[X,X^{\circ2}]$ for site/treatment calibration and
-$W=[X-\kappa,X^{\circ2}]$ for outcome regression. C(2) retains the full
-calibration basis but fits the outcome model using $W=X$. C(3) fits the
-site/propensity nuisance using $Z=X$ but retains the correctly specified
-quadratic outcome basis. Because the source covariates are skew-normal, the
-quadratic exponential-tilting basis in C(1)--C(2) is a close working
-approximation to, rather than an exact parametric representation of, the
-source-to-target density ratio; the outcome regression is exactly specified in
-C(1) and C(3).
+Both nuisance models use the same working feature map in every configuration,
+$\phi(\boldsymbol X)=[\boldsymbol X-\kappa\boldsymbol 1,\boldsymbol X^{\circ2}]$,
+as the theory assumes. Misspecification is instead placed in the true
+mechanisms, following the transformed-covariate designs of
+\citet{kang2007demystifying} and \citet{tan2020model}. Let
+$\boldsymbol X^{\dagger}$ replace the four signal coordinates by
+$\exp(X_1/2)$, $X_2/\{1+\exp(X_1)\}+10$, $(X_1X_3/25+0.6)^3$ and
+$(X_2+X_4+20)^2$, each standardized on the target reference population to
+location $\kappa$ and unit scale, and let $\eta(\cdot)$ denote the
+linear-plus-quadratic predictor above. The misspecified mechanisms use
+$\eta_{\omega}(\boldsymbol X)=(1-\omega)\eta(\boldsymbol X)+\omega\,\eta(\boldsymbol X^{\dagger})$
+with $\omega=0.75$: C(1) uses $\eta$ for both the outcome and the treatment
+mechanism, C(2) uses $\eta_{\omega}$ for the outcome mechanism only, C(3)
+for the treatment mechanism only, and C(4) for both. The strength
+$\omega=0.75$ was fixed before the production runs as the largest value on
+the grid $\{0.25,0.5,0.75,1\}$ for which the misspecified predictor keeps a
+coefficient of determination between $0.6$ and $0.9$ on $\phi(\boldsymbol X)$
+in both C(2) and C(3) (observed $0.62$ and $0.66$) while no inference
+truncation is triggered and propensity clipping does not exceed its C(1)
+level. Because the source covariates are skew-normal, the quadratic
+exponential-tilting basis is a close working approximation to, rather than an
+exact parametric representation of, the source-to-target density ratio even
+in C(1); the outcome regression is exactly specified in C(1) and C(3) and the
+treatment mechanism in C(1) and C(2).
 
 The TATE production experiment is designed to use 500 Monte Carlo replicates for each
 configuration--$K$--$\rho$ combination. We compare RoCE TATE (the

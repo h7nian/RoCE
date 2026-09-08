@@ -18,7 +18,7 @@ main<-function(args=commandArgs(trailingOnly=TRUE)) {
     stopifnot(nrow(audit)==2L,max(audit$kkt_error)<1e-4,max(audit$point_error)<1e-12)
   }
   ps<-RoCE:::get_face_ps_parameters(100L);outcome<-RoCE:::get_face_outcome_parameters(100L)
-  calibration<-RoCE:::get_face_binary_calibration(100L,kappa=RoCE:::FACE_KAPPA)
+  calibration<-RoCE:::get_face_binary_calibration(100L,config="C1",kappa=RoCE:::FACE_KAPPA)
   scores<-gradients<-clipping<-list()
   for(batch in 1:25) {
     covariates<-RoCE:::with_seed(928731L+batch,RoCE:::generate_face_covariates(2000L,c(2000L,2000L),100L))

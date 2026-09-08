@@ -181,7 +181,8 @@ if (length(setdiff(required_result_columns, names(results))) > 0L) {
 base_methods <- c(
   "one_round_crossfit", "target_only", "sample_size", "inverse_variance",
   "federated_dr", "pooled_dr", "one_round_crossfit_ate_armwise",
-  "one_round_crossfit_ate", "target_only_ate", "sample_size_ate",
+  "one_round_crossfit_ate", "one_round_crossfit_ate_quadratic_bias",
+  "target_only_ate", "sample_size_ate",
   "inverse_variance_ate", "federated_dr_ate", "pooled_dr_ate"
 )
 expected_methods <- c(base_methods, if (expect_hard) {

@@ -106,7 +106,11 @@
 
 aggregate_fold_estimates <- function(fold_aggregated_estimates, all_phi_agg,
                                      N_all, n_t, n_source_full,
-                                     fold_weights, n_folds, verbose) {
+                                     fold_weights, n_folds, verbose,
+                                     fold_info, inner_fold_info,
+                                     fold_lambdas, fold_weight_psd_ridge,
+                                     screening_rule = c("soft_penalty", "hard_threshold", "quadratic_bias")) {
+  screening_rule <- match.arg(screening_rule)
   # =========================================================================
   # UNIFIED ESTIMATING EQUATION (Pitfall 1 fix)
   # =========================================================================
@@ -146,7 +150,18 @@ aggregate_fold_estimates <- function(fold_aggregated_estimates, all_phi_agg,
     stop("Group sizes (n_t + sum(n_source_full)) must equal N_all")
   }
 
-  final_variance <- .multisite_pseudovalue_variance(all_phi_agg, group_sizes)
+  # The reported variance adds the delta-method contribution of the learned
+  # fold weights to the fixed-weight pseudo-value variance (main.tex
+  # sec:adaptive_aggregation, "Variance of the learned weights").
+  weight_layer <- .weight_layer_variance(
+    all_phi_agg, n_t, n_source_full,
+    .weight_layer_gradient(
+      fold_info, inner_fold_info, fold_weights, fold_lambdas, screening_rule,
+      fold_weight_psd_ridge, n_t, n_source_full
+    )
+  )
+  final_variance <- weight_layer$variance
+  variance_fixed_weights <- weight_layer$fixed_variance
 
   se <- sqrt(final_variance)
   ci_lower <- final_estimate - Z_ALPHA_05 * se
@@ -160,14 +175,18 @@ aggregate_fold_estimates <- function(fold_aggregated_estimates, all_phi_agg,
     cat(sprintf("      - Point estimate (Phi_bar): %.6f\n", final_estimate))
     cat(sprintf("      - Fold-average estimate:    %.6f  (diff=%.2e)\n",
                 fold_avg_estimate, abs(final_estimate - fold_avg_estimate)))
-    cat(sprintf("      - Variance (within-site): %.6f (SE=%.4f)\n", final_variance, se))
+    cat(sprintf("      - Variance (within-site, fixed weights): %.6f\n", variance_fixed_weights))
+    cat(sprintf("      - Variance (with weight layer): %.6f (SE=%.4f)\n", final_variance, se))
     cat(paste0("   95% CI: [", round(ci_lower, 4), ", ", round(ci_upper, 4), "]\n"))
   }
 
   return(list(
     final_estimate = final_estimate,
     final_variance = final_variance,
+    variance_fixed_weights = variance_fixed_weights,
     se = se,
+    se_fixed_weights = sqrt(variance_fixed_weights),
+    weight_layer = weight_layer[c("indirect_variance", "cross_term", "kink_cells", "fold_source_cells")],
     ci_lower = ci_lower,
     ci_upper = ci_upper,
     average_weights = average_weights
@@ -958,7 +977,7 @@ select_aggregation_lambda_inner_cv <- function(components, verbose = FALSE,
                                     verbose, lambda_rule = c("min", "1se"),
                                     aggregation_lambda_grid = NULL,
                                     screening_rule = c(
-                                      "soft_penalty", "hard_threshold"
+                                      "soft_penalty", "hard_threshold", "quadratic_bias"
                                     )) {
   lambda_rule <- match.arg(lambda_rule)
   screening_rule <- match.arg(screening_rule)
@@ -1088,6 +1107,22 @@ select_aggregation_lambda_inner_cv <- function(components, verbose = FALSE,
       }
       attr(eta_k1, "optimizer_iterations") <- optimizer_iterations
       attr(eta_k1, "psd_ridge") <- optimizer_psd_ridge
+    } else if (identical(screening_rule, "quadratic_bias")) {
+      eta_k1 <- .quadratic_bias_weights(c(
+        variances_k1,
+        list(
+          C_ot = inner_v$C_ot,
+          C_cross = prepare_cross_matrix(inner_v$C_cross, K),
+          n_t = n_samples_k1$n_t,
+          n_s = n_samples_k1$n_s,
+          avg_target_est = inner_v$avg_target_est,
+          avg_source_est = inner_v$avg_source_est
+        )
+      ))
+      # fold_wald_statistics and fold_penalty_coefficients stay the
+      # truncated-Wald diagnostics; the quadratic rule does not use them.
+      attr(eta_k1, "optimizer_iterations") <- 1L
+      attr(eta_k1, "psd_ridge") <- 0
     } else {
       eta_k1 <- optimize_weights(
         inner_v$avg_source_est, variances_k1, inner_v$C_ot, n_samples_k1,
@@ -1522,7 +1557,12 @@ calculate_crossfit_aggregation <- function(data_split, target_data, source_sites
   final_agg <- aggregate_fold_estimates(
     fold_aggregated_estimates, all_phi_agg,
     N_all, n_t, n_source_full,
-    fold_weights, n_folds, verbose
+    fold_weights, n_folds, verbose,
+    fold_info = fold_info,
+    inner_fold_info = inner_fold_info,
+    fold_lambdas = fold_lambdas,
+    fold_weight_psd_ridge = fold_weight_psd_ridge,
+    screening_rule = "soft_penalty"
   )
 
   final_estimate <- final_agg$final_estimate
@@ -1577,6 +1617,9 @@ calculate_crossfit_aggregation <- function(data_split, target_data, source_sites
     estimate = final_estimate,
     se = se,
     variance = final_variance,
+    se_fixed_weights = final_agg$se_fixed_weights,
+    variance_fixed_weights = final_agg$variance_fixed_weights,
+    weight_layer = final_agg$weight_layer,
     ci_lower = ci_lower,
     ci_upper = ci_upper,
     target_only = list(
@@ -1659,7 +1702,10 @@ calculate_crossfit_aggregation <- function(data_split, target_data, source_sites
 #' @param screening_rule Source-screening rule. \code{"soft_penalty"} uses
 #'   the manuscript's truncated-Wald L1 penalty. \code{"hard_threshold"} is
 #'   an explicit diagnostic that excludes sources above the foldwise Wald
-#'   cutoff before variance minimization.
+#'   cutoff before variance minimization. \code{"quadratic_bias"} is the
+#'   pre-specified smooth sensitivity rule with penalty
+#'   \eqn{n_t^{3/4}\sum_j \delta_j^2\eta_j^2} (main.tex
+#'   rem:quadratic_bias_rule); it never sets a weight exactly to zero.
 #' @param verbose Print progress.
 #' @return A RoCE result list for the TATE estimator.
 #' @export
@@ -1669,7 +1715,7 @@ calculate_tate_crossfit_aggregation <- function(
     lambda_rule = c("min", "1se"),
     verbose = TRUE,
     aggregation_lambda_grid = NULL,
-    screening_rule = c("soft_penalty", "hard_threshold")) {
+    screening_rule = c("soft_penalty", "hard_threshold", "quadratic_bias")) {
   lambda_rule <- match.arg(lambda_rule)
   screening_rule <- match.arg(screening_rule)
   required_intermediates <- c("fold_info", "inner_fold_info")
@@ -1746,7 +1792,12 @@ calculate_tate_crossfit_aggregation <- function(
   final <- aggregate_fold_estimates(
     phase2$fold_aggregated_estimates, all_phi_tau,
     N_all, n_t, n_source_full,
-    phase2$fold_weights, n_folds, verbose
+    phase2$fold_weights, n_folds, verbose,
+    fold_info = fold_info,
+    inner_fold_info = inner_fold_info,
+    fold_lambdas = phase2$fold_lambdas,
+    fold_weight_psd_ridge = phase2$fold_weight_psd_ridge,
+    screening_rule = screening_rule
   )
 
   target_tau_raw <- .assemble_target_pseudovalues(
@@ -1812,6 +1863,9 @@ calculate_tate_crossfit_aggregation <- function(
     estimate = final$final_estimate,
     se = final$se,
     variance = final$final_variance,
+    se_fixed_weights = final$se_fixed_weights,
+    variance_fixed_weights = final$variance_fixed_weights,
+    weight_layer = final$weight_layer,
     ci_lower = final$ci_lower,
     ci_upper = final$ci_upper,
     target_only = list(

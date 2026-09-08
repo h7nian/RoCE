@@ -168,6 +168,10 @@ include_hard_threshold_diagnostic <- roce_parse_boolean(
   Sys.getenv("ROCE_INCLUDE_HARD_THRESHOLD_DIAGNOSTIC", "false"),
   "ROCE_INCLUDE_HARD_THRESHOLD_DIAGNOSTIC"
 )
+include_quadratic_bias_rule <- roce_parse_boolean(
+  Sys.getenv("ROCE_INCLUDE_QUADRATIC_BIAS_RULE", "true"),
+  "ROCE_INCLUDE_QUADRATIC_BIAS_RULE"
+)
 methods <- roce_parse_method_list(group$methods)
 simulation_args <- list(
   sim_id = as.integer(group$sim_id),
@@ -190,6 +194,7 @@ simulation_args <- list(
   parallel_treatment_arms = resource_plan$parallel_treatment_arms,
   include_hard_threshold_diagnostic =
     include_hard_threshold_diagnostic,
+  include_quadratic_bias_rule = include_quadratic_bias_rule,
   dgp_type = "face"
 )
 

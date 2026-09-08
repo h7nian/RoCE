@@ -149,6 +149,17 @@ expected_methods <- c(
   "one_round_crossfit_ate", "target_only_ate", "sample_size_ate",
   "inverse_variance_ate", "federated_dr_ate", "pooled_dr_ate"
 )
+# The quadratic-bias row is requested by default; results written before the
+# column existed fail the method-set check below by design.
+quadratic_bias_rule_disabled <-
+  "quadratic_bias_rule_requested" %in% names(raw) &&
+  all(!is.na(raw$quadratic_bias_rule_requested)) &&
+  all(!as.logical(raw$quadratic_bias_rule_requested))
+if (!quadratic_bias_rule_disabled) {
+  expected_methods <- c(
+    expected_methods, "one_round_crossfit_ate_quadratic_bias"
+  )
+}
 hard_threshold_requested <-
   "hard_threshold_diagnostic_requested" %in% names(raw) &&
   all(!is.na(raw$hard_threshold_diagnostic_requested)) &&

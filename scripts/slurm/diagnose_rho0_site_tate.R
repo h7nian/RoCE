@@ -29,7 +29,7 @@ kappa <- RoCE:::FACE_KAPPA
 source_skewness_max <- RoCE:::FACE_NU_SOURCE_MAX
 treatment_shift <- RoCE:::FACE_BINARY_ATE_TARGET
 outcome_parameters <- get_face_outcome_parameters(p)
-binary_calibration <- RoCE:::get_face_binary_calibration(p, kappa = kappa)
+binary_calibration <- RoCE:::get_face_binary_calibration(p, config = "C1", kappa = kappa)
 target_tate <- binary_calibration$mu1_superpop -
   binary_calibration$mu0_superpop
 

@@ -54,7 +54,7 @@ if (dir.exists(output_root)) {
       X^2 %*% data$out_params$beta_squared
   )
   calibration <- RoCE:::get_face_binary_calibration(
-    data$p, kappa = RoCE:::FACE_KAPPA
+    data$p, config = data$config, kappa = RoCE:::FACE_KAPPA
   )
   baseline <- RoCE:::face_binary_logit(eta, calibration)
   list(

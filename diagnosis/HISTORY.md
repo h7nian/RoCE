@@ -207,7 +207,7 @@ libraries; (B) C1 seed-20001 refit versus the #0002 stored fit.
 - [ ] (f) R CMD check `Status: OK` → ___ [PENDING]
 
 ### 5. Validation results (filled after running)
-PENDING — Slurm job 18549000 (resubmitted after an internal-function call fix and the #0005 unit-mass fix; `diagnosis/truncation_alignment/run_truncation_alignment.sh`, depends on the #0002 C1 cell), submitted 2026-09-07.
+PENDING — Slurm job 18550692 (resubmitted after an internal-function call fix and the #0005 unit-mass fix; the C1 identity refit now uses the #0006 in-package DGP; `diagnosis/truncation_alignment/run_truncation_alignment.sh`), submitted 2026-09-07.
 
 ### 6. Decision + rationale
 PENDING
@@ -287,7 +287,164 @@ landing. Findings and handling:
 10. Supplement ridge wording → **FIX**.
 
 ### 5. Validation results (filled after running)
-PENDING — test job 18548998 (`./test.sh`), package replay job 18548999 (depends on the test job), submitted 2026-09-07 after the substitute review fixes and the unit-mass length fix (first full run 18546449 failed: inner records index the full site, the mass vector was sized by the inner training sample).
+PENDING — test job 18550689 (`./test.sh`), package replay job 18550690 (depends on the test job), submitted 2026-09-07 after the substitute review fixes and the unit-mass length fix (first full run 18546449 failed: inner records index the full site, the mass vector was sized by the inner training sample). The test job also covers #0006.
+
+### 6. Decision + rationale
+PENDING
+
+<a id="0006"></a>
+## 0006 — 2026-09-07 — Land the common-basis DGP with X-dagger misspecification  [MIGRATION]
+
+> commit: (pending)
+> previous related: [#0002](#0002) (Stage 1, DECIDED-PASS, omega* = 0.75)
+> stage: 2 (migration into `R/`; no `src/` change)
+> method.tex section: `docs/main.tex` §simulations configuration paragraph (line ~920); README "Simulation Configurations"
+
+### 1. Symptom / motivation
+The package still implements C2/C3/C4 by dropping the quadratic block from one working
+basis, which breaks the common-feature-map assumption of the theory (#0002 §1).
+
+### 2. Theoretical analysis
+As in #0002: both nuisances use phi(X) = [X − kappa, X^2]; misspecification lives in the
+true mechanism through eta_mix = (1 − omega) eta(X) + omega eta(X†) with omega = 0.75.
+
+### 3. Decomposition
+- `R/constants.R`: `FACE_MISSPECIFICATION_STRENGTH <- 0.75`, `FACE_SIGNAL_COORDINATES <- 4L`
+  (used by the parameter getters instead of the literal 4).
+- `R/data_generation_face.R`: `.face_transformed_coordinates()`, `.face_standardization()`,
+  `.face_x_dagger()`, `.face_mixed_predictor()`, `.face_misspecification_strengths()`,
+  `.face_reference_population()` (standardization, binary calibration and truth from one
+  reference draw); `calculate_face_propensity()` and `generate_face_outcomes()` accept
+  `X_dagger` + strength; `get_face_binary_calibration()` and `calculate_face_truth()` become
+  configuration-aware wrappers of the reference population; `generate_face_data()` builds
+  one basis for every configuration and returns the transformed `X_dagger`.
+- `generate_simulation_data(misspecification_strength = FACE_MISSPECIFICATION_STRENGTH)`.
+- Tests: configuration tests rewritten (common basis; C2/C4 change Y and truth, C3/C4
+  change A; strength 0 reproduces C1); binary-calibration reuse test adapted. The 13
+  `test-c2-*` probes and their helper encode the retired C2 definition and move to
+  `diagnosis/c2/archived_tests/`; their output directories are removed.
+- Documentation: manuscript configuration paragraph, README table, roxygen.
+
+### 4. Acceptance criteria
+- [ ] (a) package DGP reproduces the #0002 prototype for seed 20001: standardization constants and binary calibration equal to 1e-12; truth equal to 1e-12 for C1, C2/C3/C4 at omega 0.75 → ___ [PENDING]
+- [ ] (b) package refit of C2 and C3 (omega 0.75, seed 20001) reproduces the prototype fits' estimate, fixed-weight SE and fold weights to 1e-10 → ___ [PENDING]
+- [ ] (c) full build + testthat: 0 failures, 0 errors → ___ [PENDING]
+- [ ] (d) rho-reuse invariance tests pass under the new C3 (treatment mechanism misspecified) → ___ [PENDING]
+- [ ] (e) substitute Rule 7a review recorded; Rule 24 audit → ___ [PENDING]
+
+### 7. Review note
+Reviewer verdict: faithful port of the prototype, follows from §2, no blocking defects;
+RNG-order equivalence and the HISTORY truths (C1 0.2063, C2 0.2173) reproduced
+independently. Findings and handling:
+1. `misspecification_strength` absent from result rows, so cells from the retired and the
+   new DGP definitions could be merged under the same `config` label → **FIX**:
+   `run_single_simulation()` writes `misspecification_strength` (the strength actually
+   applied; 0 under C1 and for the roce DGP) on every row.
+2. Continuous outcome under C2/C4 unvalidated and heavy-tailed (standardized cubic
+   coordinate reaches |z| ≈ 15–20; predictor max 32 → 293 at ω = 0.75) → **DEFER**:
+   production continuous cells are C1-only; documented in the `generate_face_data()`
+   roxygen and parked in CurrentState §4. A continuous C2 sanity check is required before
+   any continuous C2–C4 cell is run.
+3. `get_face_binary_calibration()` / `calculate_face_truth()` defaulted to `config = "C1"`,
+   silently wrong for C2/C4 callers → **FIX**: `config` is now a required positional
+   argument of both; the four callers (`diagnose_rho0_site_tate.R`,
+   `diagnose_c3_target_remainder.R`, two `diagnosis/tate_common_weight/check_*.R`) pass it.
+4. Diff carries #0005 hunks → **DEFER**: #0005, #0006 and #0007 were validated by one test
+   job on the same tree and land as one commit; the entry numbers are named in the message.
+5. Rho-reuse invariance safe → no action.
+6. Edge cases (p < 4, invalid strength, strength ignored for `dgp_type = "roce"`) →
+   **FIX** for the last item: an explicit `misspecification_strength` with the roce DGP now
+   stops; the rest need no action.
+7. Minor → **FIX**: the returned `misspecification_strength` is the strength applied (0
+   under C1); `X_centered` is built only in the effect-modification branch. The double
+   predictor evaluation in `.face_reference_population()` is left as is (same as the
+   prototype, transient).
+
+### 5. Validation results (filled after running)
+PENDING — test job 18550689 (`./test.sh`), package reproduction array 18550691 (`diagnosis/dgp_common_basis/run_dgp_common_basis.sh`, 4 configurations, depends on the test job), submitted 2026-09-07.
+
+### 6. Decision + rationale
+PENDING
+
+<a id="0007"></a>
+## 0007 — 2026-09-07 — Land the smooth quadratic-bias weight rule as the sensitivity estimator  [MIGRATION]
+
+> commit: (pending)
+> previous related: Stage-1 candidate `diagnosis/tate_common_weight/QUADRATIC_BIAS_WEIGHT_CANDIDATE.md`, `QUADRATIC_BIAS_WEIGHT_N100_REVIEW.md`, `ANALYTIC_WEIGHT_LAYER_REVIEW.md` (n = 100: coverage 0.93 / 0.92 / 0.93 / 0.94 / 0.94 / 0.93 with its weight layer); [#0005](#0005)
+> stage: 2 (migration into `R/`)
+> method.tex section: `docs/main.tex` new rem:quadratic_bias_rule; `docs/supplemental.tex` §supp:weight_layer (quadratic paragraph)
+
+### 1. Symptom / motivation
+User decision 2026-09-07: rule A (truncated Wald) stays primary and rule B (smooth quadratic
+bias penalty, power 3/4) is computed alongside in every experiment so that switching the
+primary later needs no rerun.
+
+### 2. Theoretical analysis
+Objective n_t Var(eta) + n_t^{3/4} sum_j delta_j^2 eta_j^2 (rate window (1/2, 1)); linear
+normal equations (Q + n_t^{-1/4} diag(delta^2)) eta = -l; smooth everywhere, so the
+weight-layer derivative has no kink and uses the penalty curvature plus the
+2 n_t^{-1/4} delta_j d delta_j eta_j term.
+
+### 3. Decomposition
+- `R/aggregation_weight_rules.R`: `.quadratic_bias_weights()` (Cholesky solve on the
+  diagonally scaled curvature, positive-definiteness check, residual check).
+- `screening_rule = "quadratic_bias"` accepted by `run_tate_crossfit()`,
+  `calculate_tate_crossfit_aggregation()`, `.compute_phase2_weights()`,
+  `estimate_tate_weight_bootstrap()`; `AGG_QUADRATIC_BIAS_POWER <- 0.75`.
+- `.soft_threshold_weight_derivative()` generalized to `.weight_rule_derivative()`
+  (rule-specific active set, curvature and penalty term).
+- `run_single_simulation()` adds the `<method>_ate_quadratic_bias` row from the same arm
+  fits; QC method lists and the required diagnostic column list updated.
+- Tests: quadratic weights solve their normal equations and coincide with the
+  unpenalized variance-optimal weights when discrepancies vanish; finite-difference
+  check of the quadratic weight layer; simulation smoke row present.
+- Replay: package replay of the quadratic rule on the 100 v19 seeds compared with
+  the prototype's `quadratic_weight_layer_n100_v1/weight_layer_rows.csv`.
+
+### 4. Acceptance criteria
+- [ ] (a) normal-equation residual ≤ 1e-12 relative on every inner fold of the test fixture (and ≤ 1e-6 at run time inside the solver); discrepancy-free case equals `optimize_weights(lambda = 0)` to 1e-8 (its coordinate descent stops at `WEIGHT_OPT_TOL = 1e-8`; amended after the substitute review) → ___ [PENDING]
+- [ ] (b) finite-difference check of the quadratic weight layer: |numerical − analytical| ≤ 1e-8·max(1, |analytical|) → ___ [PENDING]
+- [ ] (c) 100-seed replay: estimates and weight-layer SEs equal the prototype's candidate rows to ≤ 1e-8 → ___ [PENDING]
+- [ ] (d) full build + testthat: 0 failures, 0 errors → ___ [PENDING]
+- [ ] (e) substitute Rule 7a review recorded; Rule 24 audit → ___ [PENDING]
+
+### 7. Review note
+Reviewer verdict: rule solve equivalent to the prototype's prototype (Q = A/n_t, l = linear/n_t);
+quadratic branch of `.weight_rule_derivative()` verified by hand as the exact implicit-function
+derivative and mapped term by term onto the prototype's `quadratic_weight_influence.R`; no blocking
+mathematical defects. Findings and handling:
+1. Package checks only Q + P positive definite, the prototype also required the unpenalized variance
+   quadratic → **FIX**: `.require_positive_definite()` checks Q first, then Q + P.
+2. Derivative exact and equivalent → no action.
+3. Unconditional quadratic row: a `chol()` failure or a check failure in this path would abort
+   the whole replicate including the primary row → **FIX**: `include_quadratic_bias_rule`
+   (default TRUE, strictly logical) gates the row; `ROCE_INCLUDE_QUADRATIC_BIAS_RULE` in the
+   rho-group task runner; rows record `quadratic_bias_rule_requested`; the checkpoint audit
+   drops the method only when every row says FALSE.
+4. Row-count change rejects pre-#0007 checkpoints/results at audit time → **DEFER** to the
+   #0009 schema freeze; noted here: results and checkpoints written before this entry are
+   incompatible with the audits (fail-closed, not silent).
+5. Primary point-estimate path unchanged → no action.
+6. Criterion (a) wording (1e-10 not attainable; "every fold" tested on one fold) → **FIX**:
+   criterion amended to 1e-8 for the coordinate-descent comparison; the test now checks the
+   normal equations on every inner fold.
+7. Replay does not exercise the Phase-2 wiring → **noted in §5**: the wiring is covered by the
+   quadratic FD test's unit-mass identity (`.weight_layer_functional(unit) == fit$estimate`).
+8. `lambda_selection = "cv"` still runs the inner CV under the quadratic rule; the Wald
+   diagnostics on the quadratic row are descriptive only → **DEFER** (production uses the fixed
+   multiplier; the diagnostics are shared across rules by design, see the Phase-2 comment).
+9. Non-finite `l` / weights gave an unhelpful error → **FIX**: explicit `is.finite` checks on
+   the moments, the curvature and the solution.
+10. Edge cases (K = 1, zero/huge discrepancy, small n_t) handled; duplicated sources fail hard
+    where the primary path would ridge → accepted under fail-fast (item 3 covers recovery).
+11. Missing `skip_on_cran()` → **FIX**.
+
+### 5. Validation results (filled after running)
+PENDING — the full test job 18550689 was still queued when #0007 landed in the tree, so it
+builds and tests #0005 + #0006 + #0007 together; package replay job 18552835
+(`diagnosis/quadratic_bias_rule/run_quadratic_bias_rule.sh`, depends on the test job). The
+replay exercises `.quadratic_bias_weights()` on recomputed moments; the Phase-2 wiring is
+covered by the quadratic FD test's unit-mass identity.
 
 ### 6. Decision + rationale
 PENDING

@@ -72,19 +72,29 @@ No C2/C3, K=4/8, or RHC results exist for the current TATE estimator.
    of a x4 nuisance cost in production — awaiting the user's answer.
 5. **#0005 [MIGRATION] weight-layer variance into `R/`** — IN-FLIGHT
    (substitute review recorded; full tests + package replay pending).
-6. #0006 [MIGRATION] common-basis DGP with `misspecification_strength = 0.75`
-   into `R/data_generation_face.R`, README/main.tex configuration table.
-7. #0007 [MIGRATION] truncation-aligned tilting loss into `src/` (after #0003).
-8. #0008 Method-row schema freeze (target_only, roce A, roce B, roce armwise,
+6. **#0006 [MIGRATION] common-basis DGP** with `misspecification_strength = 0.75`
+   — IN-FLIGHT (substitute review recorded and its fixes applied; full tests +
+   4-config reproduction pending).
+7. **#0007 [MIGRATION] smooth quadratic-bias weight rule** (`screening_rule =
+   "quadratic_bias"`, simulation row `<method>_ate_quadratic_bias` gated by
+   `include_quadratic_bias_rule = TRUE`, quadratic weight layer) — IN-FLIGHT
+   (substitute review recorded and its fixes applied; tests + 100-seed replay
+   pending).
+8. #0008 [MIGRATION] truncation-aligned tilting loss into `src/` (after #0003).
+9. #0009 Method-row schema freeze (target_only, roce A, roce B, roce armwise,
    SS, IVW, federated_dr, pooled_dr), shared-shift scenario S, manifest
    rebuild (500 x C1-C3 x K=2,4,8 + S), staged gates n = 10 / 50 / 100.
-9. #0009 Production runs, aggregation, figures/tables, paper updates
-   (substitute Rule 7c review before numbers leave).
-10. #0010 RHC with the frozen package; #0011 cleanup (rename `direct_tate`
-    -> `tate`, retire root `main.R`/`realdata.R` legacy pipeline, README,
-    archive `diagnosis/tate_common_weight`).
+10. #0010 Production runs, aggregation, figures/tables, paper updates
+    (substitute Rule 7c review before numbers leave).
+11. #0011 RHC with the frozen package; #0012 cleanup (rename `screening_rule`
+    -> `weight_rule`, `direct_tate` -> `tate`, retire root `main.R`/`realdata.R`
+    legacy pipeline, README, archive `diagnosis/tate_common_weight`).
 
 ## 4. Parked for later (not v1 blockers)
+
+- Continuous outcome under C2/C4 with `misspecification_strength > 0` is
+  unvalidated and heavy-tailed (#0006 review); production continuous cells are
+  C1-only. Add a continuous C2 sanity check before any such cell is run.
 
 - Worker warning capture (`warning_capture_complete = FALSE`): structured
   capture candidate exists under `results/.../condition_capture_candidate.*`;

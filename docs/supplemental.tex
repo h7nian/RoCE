@@ -2234,6 +2234,109 @@ with strict inequality whenever there exists $j\in\mathcal{J}_\tau^*$ such that
 \]
 \end{proposition}
 
+\subsection{Influence of the Learned Weights}\label{supp:weight_layer}
+
+This subsection records the first-order correction used by the reported
+standard error (\maincref{sec:adaptive_aggregation}) for the sampling variation
+of the fold weights. Fix an outer fold $k_1$ and let
+$\boldsymbol{m}=(\widehat V_{ot}^\tau,\widehat V_{t,s_j}^\tau,\widehat V_{s_j}^\tau,
+\widehat C_{ot,s_j}^\tau,\widehat C_{t,s_j,s_k}^\tau,\widehat\tau_{ot},
+\widehat\tau_{t,s_j})$ denote the inner-fold moments computed on the training
+sample $\mathcal{T}_{k_1}$ that enter \maincref{eq:agg_penalized_objective}.
+With $n_t$ and $n_{s_j}$ the inner training sizes and
+$N_{\mathrm{all}}=n_t+\sum_j n_{s_j}$, the objective equals
+$N_{\mathrm{all}}\{\boldsymbol{\eta}^T\boldsymbol{Q}\boldsymbol{\eta}
++2\boldsymbol{l}^T\boldsymbol{\eta}\}+\sum_j p_j|\eta_j|$ up to a constant, where
+\[
+Q_{jk}=\frac{\widehat V_{ot}^\tau-\widehat C_{ot,s_j}^\tau-\widehat C_{ot,s_k}^\tau
++\mathbf{1}(j\ne k)\,\widehat C_{t,s_j,s_k}^\tau}{n_t}
++\mathbf{1}(j=k)\Bigl(\frac{\widehat V_{t,s_j}^\tau}{n_t}
++\frac{\widehat V_{s_j}^\tau}{n_{s_j}}\Bigr),
+\qquad
+l_j=\frac{\widehat C_{ot,s_j}^\tau-\widehat V_{ot}^\tau}{n_t},
+\]
+$p_j=(\lambda\widehat t_j^\tau-1)_+$, $\widehat t_j^\tau=|d_j|/s_j$,
+$d_j=\widehat\tau_{ot}-\widehat\tau_{t,s_j}$ and
+$s_j^2=\widehat V_{ot}^\tau/n_t+\widehat V_{t,s_j}^\tau/n_t
++\widehat V_{s_j}^\tau/n_{s_j}-2\widehat C_{ot,s_j}^\tau/n_t$.
+Let $\mathcal{S}$ be the active set of the minimizer $\widehat{\boldsymbol{\eta}}$
+and $\boldsymbol{\sigma}=\operatorname{sign}(\widehat{\boldsymbol{\eta}}_{\mathcal{S}})$.
+The stationarity condition
+$2N_{\mathrm{all}}(\boldsymbol{Q}_{\mathcal{S}\mathcal{S}}\widehat{\boldsymbol{\eta}}_{\mathcal{S}}
++\boldsymbol{l}_{\mathcal{S}})+\boldsymbol{p}_{\mathcal{S}}\circ\boldsymbol{\sigma}
+=\boldsymbol{0}$ holds. The numerical ridge of
+\maincref{sec:adaptive_aggregation} is added to the diagonal of the
+curvature $2\boldsymbol{Q}$ when it is active; because it depends on the
+moments through an eigenvalue, the implementation reports the weight-layer
+correction only when the ridge is inactive. Away from the activation boundaries
+$\lambda\widehat t_j^\tau=1$ the active set and the signs are locally constant,
+and the implicit function theorem gives
+\begin{equation}\label{eq:supp_weight_derivative}
+\mathrm{d}\widehat{\boldsymbol{\eta}}_{\mathcal{S}}
+=-\boldsymbol{Q}_{\mathcal{S}\mathcal{S}}^{-1}\Bigl\{
+(\mathrm{d}\boldsymbol{Q}_{\mathcal{S}\mathcal{S}})\widehat{\boldsymbol{\eta}}_{\mathcal{S}}
++\mathrm{d}\boldsymbol{l}_{\mathcal{S}}
++\frac{\boldsymbol{\sigma}\circ\mathrm{d}\boldsymbol{p}_{\mathcal{S}}}{2N_{\mathrm{all}}}
+\Bigr\},
+\qquad
+\mathrm{d}\widehat{\boldsymbol{\eta}}_{\mathcal{S}^c}=\boldsymbol{0},
+\end{equation}
+with $\mathrm{d}p_j=\lambda\,\mathbf{1}(\lambda\widehat t_j^\tau>1)\,
+\{\operatorname{sign}(d_j)\,\mathrm{d}d_j/s_j-|d_j|\,\mathrm{d}(s_j^2)/(2s_j^3)\}$
+and $\mathrm{d}\boldsymbol{Q}$, $\mathrm{d}\boldsymbol{l}$, $\mathrm{d}(s_j^2)$,
+$\mathrm{d}d_j$ the corresponding linear combinations of the moment
+differentials.
+
+The moments are functionals of the empirical masses $w_i$ of the inner-fold
+observations. Writing $c_i$ for the within-inner-fold centered value and $y_i$
+for the raw value of the relevant influence component, and $W$ for the total
+mass of the site, the derivatives at unit mass are
+$\partial\widehat V/\partial w_i=(c_i^2-\widehat V)/W$,
+$\partial\widehat C/\partial w_i=(c_ic_i'-\widehat C)/W$, and
+$\partial(\mathrm{mean})/\partial w_i=(y_i-\mathrm{mean})/W$; the derivative of
+the fold-specific centering vanishes because centered values sum to zero within
+each inner fold. Target observations enter every target moment, whereas
+source-$s_j$ observations enter only $\widehat V_{s_j}^\tau$ and
+$\widehat\delta_{t,s_j}^\tau$.
+
+Let $L_{k_1,j}=\partial\widehat\tau_{\mathrm{agg}}/\partial\eta^{(-k_1)}_j$ be
+the fold-$k_1$ contribution of $\widehat\tau_{t,s_j}-\widehat\tau_{ot}$ with the
+actual target and source fold fractions, and
+$\boldsymbol{h}=\boldsymbol{Q}_{\mathcal{S}\mathcal{S}}^{-1}\boldsymbol{L}_{k_1,\mathcal{S}}$.
+The weight-layer gradient of observation $i$ is
+$g_i^{\mathrm{w}}=-\sum_{k_1}\boldsymbol{h}^T\boldsymbol{v}_i^{(k_1)}$, where
+$\boldsymbol{v}_i^{(k_1)}$ is the brace in \cref{eq:supp_weight_derivative}
+evaluated at $\partial\boldsymbol{m}/\partial w_i$ and the sum runs over the
+outer folds whose training sample contains $i$. With the direct gradient
+$g_i^{\mathrm{d}}=(\widehat\Phi_i^\tau-\overline{\widehat\Phi}_r^\tau)/N_{\mathrm{all}}$
+of \maincref{eq:tate_federated_variance}, the reported variance is
+\[
+\frac{\widetilde V_\tau}{N_{\mathrm{all}}}
+=\sum_r\sum_{i\in\mathcal{D}_r}\bigl(g_i^{\mathrm{d}}+g_i^{\mathrm{w}}\bigr)^2
+=\frac{\widehat V_\tau}{N_{\mathrm{all}}}
++\sum_i (g_i^{\mathrm{w}})^2+2\sum_i g_i^{\mathrm{d}}g_i^{\mathrm{w}},
+\]
+which reduces to the fixed-weight variance when every source is screened out
+and retains the direct--indirect cross term, which can be negative. Because the
+expansion is taken at the realized active set, the correction is the
+first-order delta-method (equivalently, stacked estimating equation) variance
+in the regular regime; at an activation boundary the soft-threshold map is only
+directionally differentiable, so the interval is not asymptotically exact
+there \citep{fang2019inference}. Nuisance fits and fold membership are held
+fixed in this expansion: their first-order effect is controlled by the
+calibration orthogonality of \cref{supp:pairwise_asymptotics}.
+
+For the smooth quadratic-bias rule of \maincref{rem:quadratic_bias_rule} the
+stationarity system is $\{\boldsymbol{Q}+n_t^{-1/4}\operatorname{diag}
+(\widehat{\boldsymbol\delta}^{2})\}\widehat{\boldsymbol\eta}
++\boldsymbol{l}=\boldsymbol{0}$ on all $K$ coordinates, so
+$\mathrm{d}\widehat{\boldsymbol\eta}
+=-\{\boldsymbol{Q}+n_t^{-1/4}\operatorname{diag}(\widehat{\boldsymbol\delta}^{2})\}^{-1}
+\{(\mathrm{d}\boldsymbol{Q})\widehat{\boldsymbol\eta}+\mathrm{d}\boldsymbol{l}
++2n_t^{-1/4}\,\widehat{\boldsymbol\delta}\circ\mathrm{d}\widehat{\boldsymbol\delta}
+\circ\widehat{\boldsymbol\eta}\}$, with the same moment influences; the
+map is differentiable everywhere, so no kink caveat arises.
+
 \subsection{Aggregation Supporting Lemmas}\label{supp:aggregation_supporting_lemmas}
 
 To keep the remaining proofs readable, use the generic shorthand

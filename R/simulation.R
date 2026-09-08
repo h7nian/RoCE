@@ -10,7 +10,7 @@
 #   3. run_simulation_study - Full study orchestration with checkpointing
 
 .is_tate_method <- function(method) {
-  grepl("_ate(?:_armwise|_hard_threshold)?$", method, perl = TRUE)
+  grepl("_ate(?:_armwise|_hard_threshold|_quadratic_bias)?$", method, perl = TRUE)
 }
 
 .bind_sim_result_list <- function(rows) {
@@ -235,12 +235,13 @@
          call. = FALSE)
   }
   screening_rule <- match.arg(
-    screening_rule, c("soft_penalty", "hard_threshold")
+    screening_rule, c("soft_penalty", "hard_threshold", "quadratic_bias")
   )
   stream_offset <- switch(
     screening_rule,
     soft_penalty = 13007,
-    hard_threshold = 17011
+    hard_threshold = 17011,
+    quadratic_bias = 19013
   )
   modulus <- as.double(.Machine$integer.max) - 1
   as.integer((as.double(sim_id) * 104729 + stream_offset) %% modulus + 1)
@@ -742,7 +743,7 @@
   required <- c(
     "weights", "fold_wald_statistics", "fold_penalty_coefficients",
     "fold_weight_optimizer_iterations", "fold_weight_psd_ridge",
-    "clip_diagnostics"
+    "clip_diagnostics", "se_fixed_weights", "weight_layer"
   )
   missing <- required[vapply(required, function(field) {
     is.null(result[[field]])
@@ -767,6 +768,10 @@
     max_weight_psd_ridge = max(result$fold_weight_psd_ridge),
     weight_psd_ridge_fold_fraction =
       mean(result$fold_weight_psd_ridge > 0),
+    se_fixed_weights = result$se_fixed_weights,
+    weight_layer_indirect_variance = result$weight_layer$indirect_variance,
+    weight_layer_cross_term = result$weight_layer$cross_term,
+    weight_layer_kink_cells = result$weight_layer$kink_cells,
     inference_logit_truncated = clip_total$logit_truncated,
     inference_logit_truncation_fraction =
       clip_total$logit_truncation_fraction,
@@ -790,13 +795,14 @@
 #' @param K Integer number of source sites
 #' @param p Integer number of covariates
 #' @param config configuration ("C1", "C2", "C3", or "C4"). For the
-#'   FACE negative-transfer DGP, C1 uses rich quadratic calibration and the
-#'   correct quadratic outcome basis; the skew-normal source-to-target density
-#'   ratio is not exactly log-quadratic, so C1 is a rich working-model setting
-#'   rather than literal joint parametric correctness. C2 drops the quadratic
-#'   outcome terms, C3 drops the quadratic calibration terms, and C4 drops
-#'   both. For the separate RoCE DGP, the analogous C1--C4 bases are exact
-#'   or misspecified as documented by \code{generate_simulation_data()}.
+#'   FACE negative-transfer DGP, both nuisance models always use the quadratic
+#'   working basis; C2 misspecifies the true outcome mechanism, C3 the true
+#'   treatment mechanism, and C4 both, through the transformed covariates of
+#'   \code{generate_face_data()}. The skew-normal source-to-target density
+#'   ratio is not exactly log-quadratic, so even C1 is a rich working-model
+#'   setting rather than literal joint parametric correctness. For the
+#'   separate RoCE DGP, the analogous C1--C4 bases are exact or misspecified as
+#'   documented by \code{generate_simulation_data()}.
 #' @param methods vector of methods to run
 #' @param verbose Logical. Print progress messages via \code{log_info}.
 #' @param n_cores_internal number of cores for internal parallelization (source sites).
@@ -877,6 +883,11 @@
 #'   before variance minimization. Defaults to \code{FALSE}; this diagnostic
 #'   reuses the fitted nuisances and does not replace the primary soft-penalty
 #'   estimator.
+#' @param include_quadratic_bias_rule Logical. Also evaluate the pre-specified
+#'   smooth quadratic-bias sensitivity rule (\code{screening_rule =
+#'   "quadratic_bias"}) as the \code{<method>_ate_quadratic_bias} row. Defaults
+#'   to \code{TRUE}; it reuses the fitted nuisances and does not replace the
+#'   primary soft-penalty estimator.
 #' @param n_weight_bootstrap Number of multiplier-bootstrap draws that relearn
 #'   the common source weights for the primary soft-penalty direct-TATE row.
 #'   Use 0 (the default) to disable this diagnostic without changing existing
@@ -918,6 +929,7 @@ run_single_simulation <- function(sim_id, n_total = 1000, K = 3, p = 4,
                                  n_source_sizes   = NULL,
                                  nuisance_lambda_rule = c("min", "1se"),
                                  include_hard_threshold_diagnostic = FALSE,
+                                 include_quadratic_bias_rule = TRUE,
                                  n_weight_bootstrap = 0L) {
 
   nuisance_lambda_rule <- .match_nuisance_lambda_rule(
@@ -931,6 +943,11 @@ run_single_simulation <- function(sim_id, n_total = 1000, K = 3, p = 4,
       "include_hard_threshold_diagnostic must be TRUE or FALSE.",
       call. = FALSE
     )
+  }
+  if (length(include_quadratic_bias_rule) != 1L ||
+      is.na(include_quadratic_bias_rule) ||
+      !is.logical(include_quadratic_bias_rule)) {
+    stop("include_quadratic_bias_rule must be TRUE or FALSE.", call. = FALSE)
   }
   if (length(aggregation_lambda) != 1L ||
       !is.finite(aggregation_lambda) || aggregation_lambda <= 0) {
@@ -1537,6 +1554,43 @@ run_single_simulation <- function(sim_id, n_total = 1000, K = 3, p = 4,
         }
         results_list[[length(results_list) + 1L]] <- direct_tate_row
 
+        # The smooth quadratic-bias rule is the pre-specified sensitivity
+        # estimator; it reuses the same arm-specific nuisance fits. The gate
+        # lets a production run recover from a failure in this path without
+        # touching the primary row.
+        if (isTRUE(include_quadratic_bias_rule)) {
+          quadratic_tate_res <- calculate_tate_crossfit_aggregation(
+            data_split = data_split,
+            mu1_result = mu1_cf,
+            mu0_result = mu0_res,
+            lambda_selection = aggregation_lambda,
+            verbose = FALSE,
+            screening_rule = "quadratic_bias"
+          )
+          quadratic_tate_row <- .make_simulation_result_row(
+            sim_id = sim_id,
+            method = paste0(crossfit_method, "_ate_quadratic_bias"),
+            estimate = quadratic_tate_res$estimate,
+            se = quadratic_tate_res$se,
+            truth = tate_truth,
+            n_total = n_total,
+            K = K,
+            p = p,
+            config = config,
+            heterogeneity_type = heterogeneity_type,
+            estimand_type = estimand_type
+          )
+          quadratic_diagnostics <- c(
+            .summarize_tate_aggregation_diagnostics(quadratic_tate_res),
+            crossfit_diagnostics
+          )
+          for (diagnostic_name in names(quadratic_diagnostics)) {
+            quadratic_tate_row[[diagnostic_name]] <-
+              quadratic_diagnostics[[diagnostic_name]]
+          }
+          results_list[[length(results_list) + 1L]] <- quadratic_tate_row
+        }
+
         if (isTRUE(include_hard_threshold_diagnostic)) {
           hard_tate_res <- calculate_tate_crossfit_aggregation(
             data_split = data_split,
@@ -1700,6 +1754,10 @@ run_single_simulation <- function(sim_id, n_total = 1000, K = 3, p = 4,
     results$ci_lower <- results$estimate - Z_ALPHA_05 * results$se
     results$ci_upper <- results$estimate + Z_ALPHA_05 * results$se
     results$dgp_type <- dgp_type
+    # DGP provenance: the misspecification strength actually applied (0 under
+    # C1 and for the roce DGP), so cells from different DGP definitions cannot
+    # be merged silently under the same config label.
+    results$misspecification_strength <- data$misspecification_strength %||% 0
     results$outcome_family <- family
     results$heterogeneity_type <- result_heterogeneity_type
     results$or_degenerate_folds <- n_or_degenerate
@@ -1715,6 +1773,7 @@ run_single_simulation <- function(sim_id, n_total = 1000, K = 3, p = 4,
     results$M_tau_inference <- M_tau_inference
     results$hard_threshold_diagnostic_requested <-
       include_hard_threshold_diagnostic
+    results$quadratic_bias_rule_requested <- include_quadratic_bias_rule
     weight_bootstrap_numeric <- c(
       "variance_weight_relearn_bootstrap", "se_weight_relearn_bootstrap",
       "se_fixed_weight_bootstrap", "weight_uncertainty_ratio",

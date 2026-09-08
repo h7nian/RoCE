@@ -185,6 +185,17 @@ test_that("simulation treatment-arm scheduling does not change TATE results", {
     , drop = FALSE
   ]
   expect_equal(nrow(hard), 1L)
+  quadratic <- sequential[
+    sequential$method == "one_round_crossfit_ate_quadratic_bias",
+    , drop = FALSE
+  ]
+  expect_equal(nrow(quadratic), 1L)
+  expect_true(all(sequential$misspecification_strength == 0))
+  expect_true(all(is.finite(unlist(quadratic[c(
+    "estimate", "se", "se_fixed_weights", "weight_layer_indirect_variance"
+  )]))))
+  expect_identical(quadratic$weight_layer_kink_cells, 0)
+  expect_true(all(sequential$quadratic_bias_rule_requested))
   expect_true(all(is.finite(unlist(hard[c(
     "face_initial_dr_nonconverged",
     "face_calibrated_dr_nonconverged",
@@ -220,6 +231,14 @@ test_that("hard-threshold diagnostic flag is strictly logical", {
       include_hard_threshold_diagnostic = "yes"
     ),
     "must be TRUE or FALSE",
+    fixed = TRUE
+  )
+})
+
+test_that("quadratic-bias rule flag is strictly logical", {
+  expect_error(
+    run_single_simulation(sim_id = 1L, include_quadratic_bias_rule = NA),
+    "include_quadratic_bias_rule must be TRUE or FALSE",
     fixed = TRUE
   )
 })

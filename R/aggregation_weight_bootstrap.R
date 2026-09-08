@@ -647,7 +647,7 @@ estimate_tate_weight_bootstrap <- function(
     screening_rule <- tate_result$aggregation_screening_rule
   }
   screening_rule <- match.arg(
-    screening_rule, c("soft_penalty", "hard_threshold")
+    screening_rule, c("soft_penalty", "hard_threshold", "quadratic_bias")
   )
 
   had_seed <- exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)

@@ -39,8 +39,6 @@ tmp/
 src/RcppExports.cpp
 R/RcppExports.R
 
-# Diagnostic test outputs (test-c2-alignment-violation.R etc.)
-tests/testthat/c2_alignment_output/
 
 # ---- added 2026-09-07 (iterate-with-discipline bootstrap) ----
 # R session/plot artifacts

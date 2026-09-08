@@ -103,6 +103,20 @@ LAMBDA_MIN_RATIO_HIGH_DIM <- 0.01
 #' Minimum variance floor (prevent division by zero)
 VARIANCE_MIN <- 1e-6
 
+#' Tolerances for the delta-method weight layer of the aggregation variance
+#' (\code{R/aggregation_weight_influence.R}): a fold weight below
+#' \code{WEIGHT_LAYER_ACTIVE_TOLERANCE} is inactive; a stationarity residual
+#' above \code{WEIGHT_LAYER_KKT_TOLERANCE} times the magnitude of the
+#' stationarity terms means the stored weights do not solve the penalized
+#' objective; a Wald statistic within \code{WEIGHT_LAYER_KINK_TOLERANCE} of the
+#' activation cutoff is counted as a kink; recomputed inner-fold moments and
+#' site gradient sums must agree with their references within
+#' \code{WEIGHT_LAYER_MOMENT_TOLERANCE} relative to their magnitude.
+WEIGHT_LAYER_ACTIVE_TOLERANCE <- 1e-12
+WEIGHT_LAYER_KKT_TOLERANCE <- 1e-6
+WEIGHT_LAYER_KINK_TOLERANCE <- 1e-6
+WEIGHT_LAYER_MOMENT_TOLERANCE <- 1e-10
+
 #' Maximum absolute value for estimates (clipping bound)
 ESTIMATE_MAX <- 1e6
 
@@ -153,6 +167,12 @@ AGG_WALD_LAMBDA <- local({
 
 #' @rdname aggregation_wald_defaults
 AGG_WALD_CUTOFF <- 1 / AGG_WALD_LAMBDA
+
+#' Rate exponent of the smooth quadratic-bias sensitivity rule
+#' (\code{.quadratic_bias_weights()}): the penalty n_t^power sum_j delta_j^2
+#' eta_j^2 lies inside the sufficient window (1/2, 1) and was fixed before any
+#' result was examined (diagnosis/tate_common_weight/QUADRATIC_BIAS_WEIGHT_CANDIDATE.md).
+AGG_QUADRATIC_BIAS_POWER <- 0.75
 
 #' Maximum iterations for weight optimization (optimize_weights)
 WEIGHT_OPT_MAX_ITER <- 10000L
@@ -416,6 +436,18 @@ FACE_NOISE_SD <- 2 * sqrt(5)
 #' All sites use the same κ (midpoint of the (0.10, 0.15) range in the paper).
 FACE_KAPPA <- 0.125
 
+#' Number of leading covariates that carry the signal (non-zero outcome and
+#' propensity coefficients) and, under misspecification, the Kang--Schafer-style
+#' transforms of \code{.face_transformed_coordinates()}.
+FACE_SIGNAL_COORDINATES <- 4L
+
+#' Mixing weight omega of the transformed covariates in the misspecified true
+#' mechanisms of C2--C4: eta_omega = (1 - omega) eta(X) + omega eta(X_dagger).
+#' Pre-registered at 0.75 (diagnosis/HISTORY.md #0002): the largest grid value
+#' keeping the misspecified predictor's R^2 on the working basis inside
+#' [0.6, 0.9] for both C2 and C3 with no inference truncation.
+FACE_MISSPECIFICATION_STRENGTH <- 0.75
+
 #' Maximum skewness parameter ν for source-site covariates (paper: ν ∈ [0, 0.2]).
 #' Source sites receive equally-spaced ν values between ν_max/K and ν_max.
 FACE_NU_SOURCE_MAX <- 0.2
@@ -437,7 +469,7 @@ FACE_NU_SOURCE_MAX <- 0.2
 #'   each a numeric vector of length p.
 #' @export
 get_face_outcome_parameters <- function(p) {
-  n_nonzero <- min(4L, p)
+  n_nonzero <- min(FACE_SIGNAL_COORDINATES, p)
   # Equally-spaced from 0.4 to 1.2 (same spacing as the paper's 10-covariate setting)
   beta_nonzero <- seq(0.4, 1.2, length.out = n_nonzero)
   list(
@@ -460,7 +492,7 @@ get_face_outcome_parameters <- function(p) {
 #'   each a numeric vector of length p.
 #' @export
 get_face_ps_parameters <- function(p) {
-  n_nonzero <- min(4L, p)
+  n_nonzero <- min(FACE_SIGNAL_COORDINATES, p)
   alpha1_nonzero <- seq(0.5, -0.5, length.out = n_nonzero)  # equally-spaced decrements
   alpha2_nonzero <- c(-0.5, rep(0, n_nonzero - 1L))
   list(

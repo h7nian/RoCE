@@ -32,7 +32,8 @@ test_that("TATE method classification includes diagnostic aggregation rules", {
   expect_true(all(.is_tate_method(c(
     "one_round_crossfit_ate",
     "one_round_crossfit_ate_armwise",
-    "one_round_crossfit_ate_hard_threshold"
+    "one_round_crossfit_ate_hard_threshold",
+    "one_round_crossfit_ate_quadratic_bias"
   ))))
   expect_false(any(.is_tate_method(c(
     "one_round_crossfit", "target_only", "treated_mean"
@@ -406,6 +407,8 @@ test_that("hard-threshold diagnostics enforce exclusion and zero weight", {
     mean_wald_statistic = 1, penalized_source_fold_fraction = 0.5,
     max_weight_optimizer_iterations = 3,
     max_weight_psd_ridge = 0, weight_psd_ridge_fold_fraction = 0,
+    se_fixed_weights = 0.01, weight_layer_indirect_variance = 1e-6,
+    weight_layer_cross_term = 0, weight_layer_kink_cells = 0,
     inference_logit_truncated = 0,
     inference_logit_truncation_fraction = 0,
     inference_max_abs_logit = 2, inference_safety_clip_count = 0

@@ -119,11 +119,68 @@ generate_face_covariates <- function(n_target, n_source_sizes, p,
 #' @param alpha1 Linear PS coefficients (length p).
 #' @param alpha2 Squared PS coefficients (length p).
 #' @return Numeric vector of propensity scores (length n).
-calculate_face_propensity <- function(X, alpha1, alpha2) {
-  X_sq  <- X^2
-  eta   <- as.numeric(X %*% alpha1 + X_sq %*% alpha2)
+calculate_face_propensity <- function(X, alpha1, alpha2, X_dagger = NULL,
+                                      misspecification_strength = 0) {
+  eta <- .face_mixed_predictor(X, X_dagger, alpha1, alpha2, kappa = 0,
+                               strength = misspecification_strength)
   p_treat <- logistic(eta)
   pmax(pmin(p_treat, POSITIVITY_UPPER), POSITIVITY_LOWER)
+}
+
+# Kang--Schafer-style transforms of the leading signal coordinates. The true
+# C2--C4 mechanisms mix these with the untransformed coordinates so that the
+# truth lies outside the quadratic working basis phi(X) (main.tex,
+# sec:simulations). With fewer than four covariates only the transforms whose
+# inputs exist are used.
+.face_transformed_coordinates <- function(X) {
+  transforms <- list(
+    function(X) exp(X[, 1] / 2),
+    function(X) X[, 2] / (1 + exp(X[, 1])) + 10,
+    function(X) (X[, 1] * X[, 3] / 25 + 0.6)^3,
+    function(X) (X[, 2] + X[, 4] + 20)^2
+  )
+  n_signal <- min(FACE_SIGNAL_COORDINATES, ncol(X))
+  do.call(cbind, lapply(transforms[seq_len(n_signal)], function(transform) transform(X)))
+}
+
+.face_standardization <- function(transformed) {
+  list(mean = colMeans(transformed), sd = apply(transformed, 2L, stats::sd))
+}
+
+# X with its signal coordinates replaced by the transformed coordinates,
+# standardized on the target reference population to location kappa and unit
+# scale so that the same coefficient vectors apply to X and X_dagger.
+.face_x_dagger <- function(X, standardization, kappa) {
+  transformed <- .face_transformed_coordinates(X)
+  for (j in seq_len(ncol(transformed))) {
+    X[, j] <- kappa + (transformed[, j] - standardization$mean[j]) / standardization$sd[j]
+  }
+  X
+}
+
+# Linear-plus-quadratic predictor (X - kappa)' linear + (X^2)' squared, mixed
+# between X and X_dagger: eta_omega = (1 - omega) eta(X) + omega eta(X_dagger).
+.face_mixed_predictor <- function(X, X_dagger, linear, squared, kappa, strength) {
+  predictor <- function(M) {
+    as.numeric(sweep(M, 2L, kappa, "-") %*% linear + (M^2) %*% squared)
+  }
+  if (strength == 0) return(predictor(X))
+  if (is.null(X_dagger)) {
+    stop(".face_mixed_predictor: X_dagger is required when the misspecification strength is positive.",
+         call. = FALSE)
+  }
+  (1 - strength) * predictor(X) + strength * predictor(X_dagger)
+}
+
+# Which true mechanisms a configuration misspecifies.
+.face_misspecification_strengths <- function(config, strength) {
+  if (length(strength) != 1L || !is.finite(strength) || strength < 0 || strength > 1) {
+    stop("misspecification_strength must be a single number in [0, 1].", call. = FALSE)
+  }
+  list(
+    outcome = if (config %in% c("C2", "C4")) strength else 0,
+    propensity = if (config %in% c("C3", "C4")) strength else 0
+  )
 }
 
 #' Build a site-to-treatment-shift mapping for the FACE paper DGP
@@ -161,56 +218,95 @@ build_face_ate_map <- function(K, ate_deviation = 0.0, n_deviated = 0L,
   c(ate_map, source_ates)
 }
 
-#' Logit-scale calibration for the binary FACE paper DGP
+#' Reference population of the FACE paper DGP
 #'
-#' The raw linear predictor \eqn{\eta = (X-\kappa)^\top\beta_{\text{lin}} +
-#' (X^{\circ 2})^\top\beta_{\text{sq}}} has a target-law standard deviation of
-#' \eqn{\approx 3.2}, which saturates \code{expit()} (treated-arm prevalence
-#' \eqn{\approx 0.98}, a near-degenerate outcome regression). For the binary
-#' outcome the covariate signal is standardized to a controlled logit-scale
-#' spread (\code{FACE_BINARY_SIGNAL_SD}) via \code{face_binary_logit()}.
+#' One deterministic draw of the target covariate law (\code{n_ref} units,
+#' \code{ref_seed}) supplies the standardization of the transformed
+#' coordinates, the standardized-logit calibration of the binary outcome, and
+#' the superpopulation truth for the requested configuration. Both the data
+#' generator and the truth use this same population, so truth and data share
+#' one transform by construction.
 #'
-#' The centring / scaling moments are computed \strong{once} from the fixed
-#' \eqn{\nu = 0} target reference population — the same population (and RNG seed)
-#' used by \code{calculate_face_truth()} — so the realized data and both truth
-#' branches share one deterministic transform. They must never be recomputed from
-#' realized (mixed-site) covariates, which would silently shift the estimand.
-#'
-#' @inheritParams calculate_face_truth
-#' @param signal_sd Target logit-scale sd of the covariate signal
-#'   (default \code{FACE_BINARY_SIGNAL_SD}).
-#' @return Named list containing the calibration moments and the corresponding
-#'   target-population binary potential-outcome means. The latter are reused by
-#'   \code{calculate_face_truth()} so a simulation task does not regenerate the
-#'   same deterministic reference population.
+#' @param p Number of covariates.
+#' @param kappa Location parameter of the covariate law.
+#' @param config Configuration string (see \code{generate_face_data()}).
+#' @param misspecification_strength Mixing weight omega of the transformed
+#'   coordinates in the misspecified mechanisms.
+#' @param outcome_type "continuous" or "binary".
+#' @param n_ref,ref_seed Size and seed of the reference draw.
+#' @return List with \code{standardization}, \code{calibration} (binary only:
+#'   \code{eta_mean}, \code{eta_sd}, \code{signal_sd}), \code{mu1_superpop},
+#'   \code{mu0_superpop}, \code{ate_superpop}, and the arguments.
 #' @keywords internal
-get_face_binary_calibration <- function(p, kappa = FACE_KAPPA,
-                                        signal_sd = FACE_BINARY_SIGNAL_SD,
-                                        n_ref = 100000L, ref_seed = 99999L) {
+.face_reference_population <- function(p, kappa, config, misspecification_strength,
+                                       outcome_type, n_ref = 100000L,
+                                       ref_seed = 99999L) {
+  strengths <- .face_misspecification_strengths(config, misspecification_strength)
   out_params <- get_face_outcome_parameters(p)
-  eta_ref <- with_seed(ref_seed, {
+  with_seed(ref_seed, {
     X_ref <- generate_face_covariates(n_target       = n_ref,
                                       n_source_sizes = integer(0),
                                       p              = p,
                                       kappa          = kappa)$X
-    as.numeric(sweep(X_ref, 2L, kappa, "-") %*% out_params$beta_linear +
-               (X_ref^2)                    %*% out_params$beta_squared)
+    standardization <- .face_standardization(.face_transformed_coordinates(X_ref))
+    X_dagger_ref <- .face_x_dagger(X_ref, standardization, kappa)
+    eta_ref <- .face_mixed_predictor(
+      X_ref, X_dagger_ref, out_params$beta_linear, out_params$beta_squared,
+      kappa, strengths$outcome
+    )
+    if (outcome_type == "binary") {
+      calibration <- list(
+        eta_mean = mean(eta_ref),
+        eta_sd = max(stats::sd(eta_ref), EPSILON_DEFAULT),
+        signal_sd = FACE_BINARY_SIGNAL_SD
+      )
+      g_ref <- face_binary_logit(eta_ref, calibration)
+      mu0_superpop <- mean(logistic(g_ref))
+      mu1_superpop <- mean(logistic(g_ref + FACE_BINARY_ATE_TARGET))
+    } else {
+      calibration <- NULL
+      mu0_superpop <- mean(eta_ref)
+      mu1_superpop <- mu0_superpop + FACE_ATE_TARGET
+    }
+    list(
+      standardization = standardization,
+      calibration = calibration,
+      mu1_superpop = mu1_superpop,
+      mu0_superpop = mu0_superpop,
+      ate_superpop = mu1_superpop - mu0_superpop,
+      n_ref = as.integer(n_ref),
+      ref_seed = as.integer(ref_seed),
+      p = as.integer(p),
+      kappa = as.numeric(kappa),
+      config = config,
+      misspecification_strength = as.numeric(misspecification_strength)
+    )
   })
-  calibration <- list(
-    eta_mean = mean(eta_ref),
-    eta_sd = max(stats::sd(eta_ref), EPSILON_DEFAULT),
-    signal_sd = signal_sd
+}
+
+#' Binary-outcome calibration of the FACE paper DGP
+#'
+#' The standardized-logit calibration of \code{.face_reference_population()}
+#' together with the reference-population outcome means. The configuration is
+#' required because C2 and C4 change the outcome mechanism and hence the
+#' calibration.
+#'
+#' @inheritParams .face_reference_population
+#' @param signal_sd Target logit-scale standard deviation of the signal.
+#' @keywords internal
+get_face_binary_calibration <- function(p, config, kappa = FACE_KAPPA,
+                                        signal_sd = FACE_BINARY_SIGNAL_SD,
+                                        n_ref = 100000L, ref_seed = 99999L,
+                                        misspecification_strength = FACE_MISSPECIFICATION_STRENGTH) {
+  if (!identical(as.numeric(signal_sd), as.numeric(FACE_BINARY_SIGNAL_SD))) {
+    stop("get_face_binary_calibration: signal_sd is fixed at FACE_BINARY_SIGNAL_SD.",
+         call. = FALSE)
+  }
+  reference <- .face_reference_population(
+    p, kappa, config, misspecification_strength, "binary", n_ref, ref_seed
   )
-  g_ref <- face_binary_logit(eta_ref, calibration)
-  calibration$mu0_superpop <- mean(logistic(g_ref))
-  calibration$mu1_superpop <- mean(
-    logistic(g_ref + FACE_BINARY_ATE_TARGET)
-  )
-  calibration$n_ref <- as.integer(n_ref)
-  calibration$ref_seed <- as.integer(ref_seed)
-  calibration$p <- as.integer(p)
-  calibration$kappa <- as.numeric(kappa)
-  calibration
+  c(reference$calibration,
+    reference[c("mu0_superpop", "mu1_superpop", "n_ref", "ref_seed", "p", "kappa")])
 }
 
 #' Map the raw FACE linear predictor onto the standardized binary logit scale
@@ -265,6 +361,11 @@ face_binary_logit <- function(eta, calib) {
 #'   recovers the standard FACE DGP.
 #' @param em_direction Optional covariate direction for effect modification.
 #'   When omitted, a deterministic normalized direction is used.
+#' @param X_dagger Transformed covariates from \code{.face_x_dagger()};
+#'   required when \code{misspecification_strength > 0}.
+#' @param misspecification_strength Mixing weight of the transformed
+#'   coordinates in the true outcome predictor (0 recovers the quadratic
+#'   mechanism).
 #' @return Numeric vector of outcomes (length n).
 generate_face_outcomes <- function(X, A, R, beta_lin, beta_sq, ate_map,
                                          kappa        = FACE_KAPPA,
@@ -272,10 +373,11 @@ generate_face_outcomes <- function(X, A, R, beta_lin, beta_sq, ate_map,
                                          outcome_type = "continuous",
                                          binary_calib = NULL,
                                          effect_mod_strength = 0,
-                                         em_direction = NULL) {
-  X_centered <- sweep(X, 2L, kappa, "-")
-  X_sq       <- X^2
-  eta        <- as.numeric(X_centered %*% beta_lin + X_sq %*% beta_sq)
+                                         em_direction = NULL,
+                                         X_dagger = NULL,
+                                         misspecification_strength = 0) {
+  eta        <- .face_mixed_predictor(X, X_dagger, beta_lin, beta_sq, kappa,
+                                      misspecification_strength)
   delta      <- ate_map[R]  # site-specific treatment shift, same length as R
 
   # Source-only effect modification. A covariate-dependent treatment-effect term
@@ -294,7 +396,7 @@ generate_face_outcomes <- function(X, A, R, beta_lin, beta_sq, ate_map,
     }
     is_source <- as.numeric(R != "t")
     tau <- delta + effect_mod_strength * is_source *
-           as.numeric(X_centered %*% em_direction)
+           as.numeric(sweep(X, 2L, kappa, "-") %*% em_direction)
   }
 
   if (outcome_type == "binary") {
@@ -309,111 +411,22 @@ generate_face_outcomes <- function(X, A, R, beta_lin, beta_sq, ate_map,
   }
 }
 
-#' Compute superpopulation truth for the FACE paper DGP (target-population specific)
+#' Superpopulation truth of the FACE paper DGP (target-population specific)
 #'
-#' Evaluates \eqn{E_t[Y(a)]} via Monte Carlo integration over the target-site
-#' covariate distribution (\eqn{X \sim N(\kappa, I_p)}, \eqn{\nu = 0}).
+#' Target-population potential-outcome means for a configuration, computed on
+#' the deterministic reference population of \code{.face_reference_population()}.
 #'
-#' \strong{Continuous:} \eqn{E_t[Y(a)] = E_t[\eta] + \Delta_T\,a}, so
-#' \eqn{\text{ate\_superpop} = \Delta_T = } \code{FACE_ATE_TARGET}. Analytically
-#' \eqn{E_t[\eta] = \sum_{j \le 4} \beta_{\text{sq},j}(1 + \kappa^2)} because
-#' \eqn{E[X_j - \kappa] = 0} and \eqn{E[X_j^2] = 1 + \kappa^2}.
-#'
-#' \strong{Binary:} \eqn{E_t[Y(a)] = E_t[\text{expit}(g(X) + \Delta_{\text{bin}}\,a)]}
-#' with \eqn{g} the standardized logit signal (\code{face_binary_logit()}); here
-#' \eqn{\Delta_{\text{bin}}} is a log-odds shift, so \code{ate_superpop} is the
-#' implied target-population \emph{risk difference} (\eqn{\approx 0.21}), not
-#' \eqn{\Delta_{\text{bin}}}.
-#' The MC approach is used for consistency with \code{calculate_superpopulation_truth()}.
-#'
-#' @param p           Number of covariates.
-#' @param kappa       Location parameter (default \code{FACE_KAPPA}).
-#' @param outcome_type "continuous" or "binary".
-#' @param n_ref       Reference population size (default 100000).
-#' @param ref_seed    Fixed RNG seed for reproducibility (default 99999).
-#' @param binary_calib Optional result from
-#'   \code{get_face_binary_calibration()} computed with the same reference
-#'   settings. When supplied for a binary outcome, its stored truth moments are
-#'   reused instead of drawing the deterministic reference population again.
+#' @inheritParams .face_reference_population
 #' @return Named list with \code{mu1_superpop}, \code{mu0_superpop},
-#'   \code{ate_superpop} (continuous: \code{FACE_ATE_TARGET}; binary: the implied
-#'   risk difference), \code{n_ref}, and \code{ref_seed}.
-calculate_face_truth <- function(p, kappa = FACE_KAPPA,
-                                       outcome_type = "continuous",
-                                       n_ref = 100000L, ref_seed = 99999L,
-                                       binary_calib = NULL) {
-  if (outcome_type == "binary" && !is.null(binary_calib)) {
-    required <- c(
-      "mu0_superpop", "mu1_superpop", "n_ref", "ref_seed", "p", "kappa"
-    )
-    if (!is.list(binary_calib) ||
-        any(!required %in% names(binary_calib)) ||
-        !identical(as.integer(binary_calib$n_ref), as.integer(n_ref)) ||
-        !identical(as.integer(binary_calib$ref_seed), as.integer(ref_seed)) ||
-        !identical(as.integer(binary_calib$p), as.integer(p)) ||
-        !isTRUE(all.equal(
-          as.numeric(binary_calib$kappa), as.numeric(kappa),
-          tolerance = 0, check.attributes = FALSE
-        )) ||
-        any(!is.finite(c(
-          binary_calib$mu0_superpop, binary_calib$mu1_superpop
-        )))) {
-      stop(
-        "calculate_face_truth: binary_calib does not match the requested reference population.",
-        call. = FALSE
-      )
-    }
-    return(list(
-      mu1_superpop = as.numeric(binary_calib$mu1_superpop),
-      mu0_superpop = as.numeric(binary_calib$mu0_superpop),
-      ate_superpop = as.numeric(
-        binary_calib$mu1_superpop - binary_calib$mu0_superpop
-      ),
-      n_ref = as.integer(n_ref),
-      ref_seed = as.integer(ref_seed)
-    ))
-  }
-  with_seed(ref_seed, {
-    # Target-site covariates: X ~ N(kappa, 1) (ν = 0 → symmetric)
-    ref_covs <- generate_face_covariates(
-      n_target       = n_ref,
-      n_source_sizes = integer(0),
-      p              = p,
-      kappa          = kappa
-    )
-    X_ref      <- ref_covs$X
-    out_params <- get_face_outcome_parameters(p)
-
-    X_centered <- sweep(X_ref, 2L, kappa, "-")
-    X_sq       <- X_ref^2
-    eta_ref    <- as.numeric(X_centered %*% out_params$beta_linear +
-                             X_sq       %*% out_params$beta_squared)
-
-    if (outcome_type == "binary") {
-      # Binary: E[Y(a)] = E[expit(g(X) + Δ_bin · a)], g the standardized signal.
-      # This reference (same n_ref / ref_seed) reproduces the calibration moments
-      # baked into the data via get_face_binary_calibration(), so truth and data
-      # share one transform by construction.
-      calib <- list(eta_mean  = mean(eta_ref),
-                    eta_sd    = max(stats::sd(eta_ref), EPSILON_DEFAULT),
-                    signal_sd = FACE_BINARY_SIGNAL_SD)
-      g_ref        <- face_binary_logit(eta_ref, calib)
-      mu0_superpop <- mean(logistic(g_ref))
-      mu1_superpop <- mean(logistic(g_ref + FACE_BINARY_ATE_TARGET))
-    } else {
-      # Continuous: E[Y(a)] = E[η] + Δ_T · a
-      mu0_superpop <- mean(eta_ref)
-      mu1_superpop <- mu0_superpop + FACE_ATE_TARGET
-    }
-
-    list(
-      mu1_superpop = mu1_superpop,
-      mu0_superpop = mu0_superpop,
-      ate_superpop = mu1_superpop - mu0_superpop,
-      n_ref        = n_ref,
-      ref_seed     = ref_seed
-    )
-  })
+#'   \code{ate_superpop}, \code{n_ref}, and \code{ref_seed}.
+calculate_face_truth <- function(p, config, kappa = FACE_KAPPA,
+                                 outcome_type = "continuous",
+                                 misspecification_strength = FACE_MISSPECIFICATION_STRENGTH,
+                                 n_ref = 100000L, ref_seed = 99999L) {
+  reference <- .face_reference_population(
+    p, kappa, config, misspecification_strength, outcome_type, n_ref, ref_seed
+  )
+  reference[c("mu1_superpop", "mu0_superpop", "ate_superpop", "n_ref", "ref_seed")]
 }
 
 #' Resolve per-site sample sizes for the FACE paper DGP
@@ -490,22 +503,25 @@ resolve_face_site_sizes <- function(n_total = NULL, n_target = NULL,
 #' downstream code (\code{split_data_by_site()}, estimation algorithms, etc.)
 #' requires no modification.
 #'
-#' \strong{Config semantics for the FACE paper DGP:}
+#' \strong{Config semantics for the FACE paper DGP:} both nuisance models
+#' always use the working basis \eqn{\phi(X) = [X - \kappa, X^2]}
+#' (\code{Z_site} and \code{W_outcome} are identical). Misspecification lives
+#' in the true mechanism: the leading signal coordinates are replaced by
+#' standardized Kang--Schafer-style transforms \eqn{X^\dagger}
+#' (\code{.face_x_dagger()}) and the true predictor becomes
+#' \eqn{(1 - \omega)\eta(X) + \omega\eta(X^\dagger)} with
+#' \eqn{\omega = } \code{misspecification_strength}.
 #' \itemize{
-#'   \item C1 (rich calibration, correct OR): calibration uses
-#'         \eqn{[X, X^2]}; OR uses \eqn{[X - \kappa, X^2]}.
-#'   \item C2 (rich calibration, misspecified OR): calibration uses
-#'         \eqn{[X, X^2]};
-#'         OR uses only \eqn{X} (drops quadratic block).
-#'   \item C3 (misspecified calibration, correct OR): calibration uses only
-#'         \eqn{X};
-#'         OR uses \eqn{[X - \kappa, X^2]}.
-#'   \item C4 (both working bases reduced): calibration uses only \eqn{X};
-#'         OR uses only \eqn{X}.
+#'   \item C1: outcome and treatment mechanisms use \eqn{\eta(X)} (both
+#'         working models correctly specified).
+#'   \item C2: outcome mechanism misspecified (\eqn{\eta_\omega}), treatment
+#'         mechanism correct.
+#'   \item C3: treatment mechanism misspecified, outcome mechanism correct.
+#'   \item C4: both mechanisms misspecified.
 #' }
 #' The treatment propensity is quadratic before the DGP's finite-sample
 #' clipping, but the skew-normal source-to-target density ratio is not exactly
-#' log-quadratic. Thus C1--C2 provide a rich calibration basis rather than an
+#' log-quadratic, so even C1 is a rich working-model setting rather than an
 #' exactly specified merged site/treatment model.
 #'
 #' @param n_total          Total observations across all sites (equal-split
@@ -525,7 +541,16 @@ resolve_face_site_sizes <- function(n_total = NULL, n_target = NULL,
 #' @param n_source_sizes   Optional integer vector of per-site source sample
 #'                         sizes; when supplied, \code{K} and the total are taken
 #'                         from it and \code{n_total} is ignored.
-#' @return Named list with the same fields as the RoCE DGP output.
+#' @param misspecification_strength Mixing weight \eqn{\omega} of the
+#'   transformed coordinates in the misspecified mechanisms of C2--C4
+#'   (default \code{FACE_MISSPECIFICATION_STRENGTH}); ignored by C1. The
+#'   misspecified configurations are validated for binary outcomes only
+#'   (HISTORY #0002/#0006); the continuous outcome under C2/C4 inherits the
+#'   heavy-tailed transformed predictor without calibration.
+#' @return Named list with the same fields as the RoCE DGP output;
+#'   \code{X_dagger} holds the transformed covariates and
+#'   \code{misspecification_strength} the strength actually applied (0 under
+#'   C1).
 generate_face_data <- function(n_total = NULL, K = 3, p = 4, config = "C1",
                                      estimand_type    = "superpopulation",
                                      outcome_type     = "continuous",
@@ -533,7 +558,8 @@ generate_face_data <- function(n_total = NULL, K = 3, p = 4, config = "C1",
                                      n_deviated_sites = 0L,
                                      effect_mod_strength = 0,
                                      n_target         = NULL,
-                                     n_source_sizes   = NULL) {
+                                     n_source_sizes   = NULL,
+                                     misspecification_strength = FACE_MISSPECIFICATION_STRENGTH) {
   # ---- 1. Resolve per-site sample sizes. Equal split across K + 1 sites by
   #         default (FACE-paper convention); explicit per-site sizes when both
   #         n_target and n_source_sizes are supplied. ----
@@ -551,37 +577,34 @@ generate_face_data <- function(n_total = NULL, K = 3, p = 4, config = "C1",
   )
   X  <- cov_list$X
   R  <- cov_list$R
-  X_dagger <- X   # No nonlinear transform in this DGP; keep for structural consistency
-
-  # ---- 3. Build design matrices for PS and Outcome (config-dependent) ----
-  X_sq <- X^2
   kappa <- cov_list$kappa
 
-  # Z_site: used to fit the merged site / treatment calibration model.
-  #   C1, C2: rich quadratic working basis
-  #   C3, C4: reduced linear-only basis (drops the squared block)
-  Z_site <- if (config %in% c("C1", "C2")) cbind(X, X_sq) else X
-
-  # W_outcome: used to fit the outcome regression.
-  #   C1, C3: correctly specified [X - kappa, X^2] basis
-  #   C2, C4: misspecified X-only basis (drops the squared block)
-  X_centered <- sweep(X, 2L, kappa, "-")
-  W_outcome  <- if (config %in% c("C1", "C3")) cbind(X_centered, X_sq) else X
+  # ---- 3. Reference population, transformed covariates, common working basis ----
+  # The reference draw fixes the standardization of the transformed coordinates,
+  # the binary calibration and the superpopulation truth; it does not advance
+  # the caller's RNG stream.
+  strengths <- .face_misspecification_strengths(config, misspecification_strength)
+  reference <- .face_reference_population(
+    p, kappa, config, misspecification_strength, outcome_type
+  )
+  X_dagger <- .face_x_dagger(X, reference$standardization, kappa)
+  basis <- cbind(sweep(X, 2L, kappa, "-"), X^2)
 
   # ---- 4. Propensity scores and treatment assignment ----
   ps_params <- get_face_ps_parameters(p)
-  p_treat   <- calculate_face_propensity(X, ps_params$alpha1, ps_params$alpha2)
+  p_treat   <- calculate_face_propensity(X, ps_params$alpha1, ps_params$alpha2,
+                                         X_dagger, strengths$propensity)
   A         <- rbinom(n_total, 1L, p_treat)
 
   # ---- 5. Site-specific treatment shifts and potential outcomes ----
   #   The treatment shift lives on each outcome's linear-predictor scale: a mean shift
   #   (Δ_T) for the continuous outcome, a log-odds shift (Δ_bin) for the binary
   #   outcome. The binary linear predictor is additionally standardized to a
-  #   controlled logit-scale spread (binary_calib) to avoid expit() saturation.
+  #   controlled logit-scale spread (calibration) to avoid expit() saturation.
   out_params   <- get_face_outcome_parameters(p)
   is_binary    <- outcome_type == "binary"
   base_ate     <- if (is_binary) FACE_BINARY_ATE_TARGET else FACE_ATE_TARGET
-  binary_calib <- if (is_binary) get_face_binary_calibration(p, kappa = kappa) else NULL
+  binary_calib <- reference$calibration
   ate_map      <- build_face_ate_map(K, ate_deviation, n_deviated_sites,
                                      base_ate = base_ate)
 
@@ -589,18 +612,17 @@ generate_face_data <- function(n_total = NULL, K = 3, p = 4, config = "C1",
   # This enforces consistency exactly: Y_i = A_i Y_i(1) + (1-A_i)Y_i(0).
   # The conditional observed-data distribution is unchanged relative to drawing
   # Y directly at the realized treatment, while avoiding a third outcome draw.
-  A_ones  <- rep(1L, n_total)
-  A_zeros <- rep(0L, n_total)
-  Y_1 <- generate_face_outcomes(X, A_ones,  R, out_params$beta_linear,
-                                      out_params$beta_squared, ate_map, kappa,
-                                      outcome_type = outcome_type,
-                                      binary_calib = binary_calib,
-                                      effect_mod_strength = effect_mod_strength)
-  Y_0 <- generate_face_outcomes(X, A_zeros, R, out_params$beta_linear,
-                                      out_params$beta_squared, ate_map, kappa,
-                                      outcome_type = outcome_type,
-                                      binary_calib = binary_calib,
-                                      effect_mod_strength = effect_mod_strength)
+  draw_outcomes <- function(A_fixed) {
+    generate_face_outcomes(X, A_fixed, R, out_params$beta_linear,
+                           out_params$beta_squared, ate_map, kappa,
+                           outcome_type = outcome_type,
+                           binary_calib = binary_calib,
+                           effect_mod_strength = effect_mod_strength,
+                           X_dagger = X_dagger,
+                           misspecification_strength = strengths$outcome)
+  }
+  Y_1 <- draw_outcomes(rep(1L, n_total))
+  Y_0 <- draw_outcomes(rep(0L, n_total))
   Y <- ifelse(A == 1L, Y_1, Y_0)
 
   # ---- 6. True potential-outcome means ----
@@ -608,13 +630,11 @@ generate_face_data <- function(n_total = NULL, K = 3, p = 4, config = "C1",
 
   if (estimand_type == "sample") {
     # Sample-specific truth: computed from the realized target observations
-    X_centered_target <- sweep(X[target_idx, , drop = FALSE], 2L, kappa, "-")
-    X_sq_target       <- X[target_idx, , drop = FALSE]^2
-    eta_target <- as.numeric(
-      X_centered_target %*% out_params$beta_linear +
-      X_sq_target       %*% out_params$beta_squared
+    eta_target <- .face_mixed_predictor(
+      X[target_idx, , drop = FALSE], X_dagger[target_idx, , drop = FALSE],
+      out_params$beta_linear, out_params$beta_squared, kappa, strengths$outcome
     )
-    if (outcome_type == "binary") {
+    if (is_binary) {
       # Same deterministic logit transform as the data (binary_calib), so the
       # realized-sample estimand matches how Y was generated.
       g_target <- face_binary_logit(eta_target, binary_calib)
@@ -624,22 +644,13 @@ generate_face_data <- function(n_total = NULL, K = 3, p = 4, config = "C1",
       mu0_true <- mean(eta_target)
       mu1_true <- mu0_true + base_ate
     }
-    mu1_realized <- mean(Y_1[target_idx])
-    mu0_realized <- mean(Y_0[target_idx])
-
   } else {
     # Superpopulation truth: fixed across simulations (Monte Carlo integration)
-    superpop_truth <- calculate_face_truth(
-      p = p,
-      kappa = kappa,
-      outcome_type = outcome_type,
-      binary_calib = binary_calib
-    )
-    mu1_true     <- superpop_truth$mu1_superpop
-    mu0_true     <- superpop_truth$mu0_superpop
-    mu1_realized <- mean(Y_1[target_idx])   # sample-specific (for reference logging)
-    mu0_realized <- mean(Y_0[target_idx])
+    mu1_true <- reference$mu1_superpop
+    mu0_true <- reference$mu0_superpop
   }
+  mu1_realized <- mean(Y_1[target_idx])   # sample-specific (for reference logging)
+  mu0_realized <- mean(Y_0[target_idx])
 
   # ---- 7. Assemble output list (matches RoCE DGP structure) ----
   list(
@@ -667,8 +678,9 @@ generate_face_data <- function(n_total = NULL, K = 3, p = 4, config = "C1",
     ate_map      = ate_map,
     treatment_shift_map = ate_map,
     config       = config,
-    Z_site       = Z_site,
-    W_outcome    = W_outcome,
+    misspecification_strength = if (any(unlist(strengths) > 0)) misspecification_strength else 0,
+    Z_site       = basis,
+    W_outcome    = basis,
     estimand_type = estimand_type,
     outcome_type  = outcome_type,
     dgp_type      = "face"

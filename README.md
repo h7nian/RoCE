@@ -31,7 +31,7 @@ outcome means $\mu^a_t=E_t\{Y(a)\}$.
 - **Doubly Robust Estimators**: Calibrated loss functions for Neyman Orthogonality
 - **Two Communication Protocols**: Two-round and one-round algorithms
 - **Two-Level Cross-fitting**: Enhanced robustness through nested sample splitting
-- **TATE Aggregation**: One common source-weight vector selected from the TATE variance and Wald discrepancies
+- **TATE Aggregation**: One common source-weight vector selected from the TATE variance and Wald discrepancies; the smooth quadratic-bias rule (`screening_rule = "quadratic_bias"`) is computed alongside as a pre-specified sensitivity estimator
 - **C++ Acceleration**: High-performance coordinate descent with GLMNET-style optimizations
 - **Comparison Methods**: Target-only, sample-size weighted, inverse-variance weighted, Federated-DR, and Pooled-DR estimators with paired-arm variance
 
@@ -176,7 +176,7 @@ Both protocols use nested sample splitting to provide:
 - Neyman Orthogonality through calibrated loss functions
 - Cross-calibrated plug-in order where calibrated α uses γ_init as the weight plug-in
 - Outer-fold separation between weight learning and evaluation
-- A TATE variance computed from within-site centered, treated-minus-control pseudo-values, which automatically includes cross-arm covariance
+- A TATE variance computed from within-site centered, treated-minus-control pseudo-values, which automatically includes cross-arm covariance, plus the delta-method contribution of the learned source weights (`se`; the fixed-weight version is returned as `se_fixed_weights`)
 
 ## Grouped nuisance CV for resampling
 
@@ -197,15 +197,20 @@ groups are balanced by origin count, so row counts per fold can differ.
 
 ## Simulation Configurations
 
-The reported FACE-style simulation uses quadratic true mechanisms.
-Configurations change the fitted working bases exposed to the estimators:
+Both nuisance models use the same working basis $\phi(X)=[X-\kappa, X^2]$ in
+every configuration. Misspecification is placed in the true mechanism: the
+four signal coordinates are replaced by standardized Kang--Schafer-style
+transforms $X^\dagger$ and the true predictor is mixed as
+$(1-\omega)\,\eta(X)+\omega\,\eta(X^\dagger)$ with
+$\omega=$ `FACE_MISSPECIFICATION_STRENGTH` $=0.75$ (pre-registered, see
+`diagnosis/HISTORY.md` #0002):
 
-| Config | Fitted Site Basis | Fitted Outcome Basis | Description |
-|--------|-------------------|----------------------|-------------|
-| C1 | $[X,X^2]$ | $[X-\kappa,X^2]$ | Both working bases include the quadratic terms |
-| C2 | $[X,X^2]$ | $X$ | Outcome model misspecified |
-| C3 | $X$ | $[X-\kappa,X^2]$ | Site/treatment model misspecified |
-| C4 | $X$ | $X$ | Both misspecified |
+| Config | True outcome mechanism | True treatment mechanism | Description |
+|--------|------------------------|--------------------------|-------------|
+| C1 | $\eta(X)$ | $\eta(X)$ | Both models correctly specified |
+| C2 | $\eta_\omega(X)$ | $\eta(X)$ | Outcome model misspecified |
+| C3 | $\eta(X)$ | $\eta_\omega(X)$ | Site/treatment model misspecified |
+| C4 | $\eta_\omega(X)$ | $\eta_\omega(X)$ | Both misspecified |
 
 ## Running Simulations on HPC (SLURM)
 

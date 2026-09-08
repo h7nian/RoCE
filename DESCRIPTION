@@ -61,6 +61,8 @@ Collate:
     'estimators_target.R'
     'estimators_oracle.R'
     'comparison_methods.R'
+    'aggregation_weight_influence.R'
+    'aggregation_weight_rules.R'
     'cross_fitting_aggregation.R'
     'aggregation_weight_bootstrap.R'
     'cross_fitting_algorithms.R'

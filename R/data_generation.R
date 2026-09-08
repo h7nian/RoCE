@@ -619,6 +619,9 @@ calculate_superpopulation_truth <- function(p, K = 3, config,
 #' @param n_target Optional target-site size for explicit FACE-DGP allocation.
 #' @param n_source_sizes Optional vector of source-site sizes for explicit
 #'   FACE-DGP allocation.
+#' @param misspecification_strength Mixing weight of the transformed covariates
+#'   in the misspecified FACE mechanisms of C2--C4 (see
+#'   \code{generate_face_data()}); ignored by C1 and by the RoCE DGP.
 #' @param warn_ignored Whether to warn when a valid argument is irrelevant to
 #'   the selected DGP.
 #' @return list with all generated data
@@ -664,6 +667,9 @@ generate_simulation_data <- function(n_total = NULL, K = 3, p = 4, config = "C1"
                                    # Explicit per-site sample sizes (FACE DGP only)
                                    n_target         = NULL,
                                    n_source_sizes   = NULL,
+                                   # Mixing weight of the transformed covariates in the
+                                   # misspecified FACE mechanisms (C2--C4).
+                                   misspecification_strength = FACE_MISSPECIFICATION_STRENGTH,
                                    warn_ignored = TRUE) {
   # Explicit per-site sample sizes are a FACE-DGP feature. Reject them for the
   # roce DGP (which controls site sizes via site_allocation) rather than
@@ -671,6 +677,10 @@ generate_simulation_data <- function(n_total = NULL, K = 3, p = 4, config = "C1"
   if ((!is.null(n_source_sizes) || !is.null(n_target)) && dgp_type != "face") {
     stop("n_target / n_source_sizes (explicit per-site sizes) are supported only ",
          "for dgp_type = 'face'; the roce DGP sets site sizes via site_allocation.",
+         call. = FALSE)
+  }
+  if (!missing(misspecification_strength) && dgp_type != "face") {
+    stop("misspecification_strength applies only to dgp_type = 'face'.",
          call. = FALSE)
   }
   # In per-site mode, derive a concrete n_total (and K) so the centralized
@@ -715,7 +725,8 @@ generate_simulation_data <- function(n_total = NULL, K = 3, p = 4, config = "C1"
         n_deviated_sites = as.integer(n_deviated_sites),
         effect_mod_strength = effect_mod_strength,
         n_target         = n_target,
-        n_source_sizes   = n_source_sizes
+        n_source_sizes   = n_source_sizes,
+        misspecification_strength = misspecification_strength
       )
     )
   }

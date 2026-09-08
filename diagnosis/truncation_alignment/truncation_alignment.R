@@ -69,14 +69,16 @@ C1_REFERENCE_FIT <- "diagnosis/out/dgp_common_basis/C1_omega0.00/fit.rds"
 }
 
 .c1_identity_check <- function() {
-  source("diagnosis/dgp_common_basis/dgp_common_basis.R", local = TRUE)
-  kappa <- RoCE:::FACE_KAPPA
-  reference <- .reference_population(0, 0, kappa)
-  data <- .generate_common_basis_data("C1", 0, reference, kappa)
+  set.seed(20001L)
+  data <- generate_simulation_data(
+    K = 2L, p = 100L, config = "C1", dgp_type = "face", outcome_type = "binary",
+    estimand_type = "superpopulation", n_target = 1000L, n_source_sizes = c(1000L, 1000L),
+    warn_ignored = FALSE
+  )
   fit <- run_tate_crossfit(
     split_data_by_site(data), n_folds = 5L, communication_mode = "one_round",
     lambda_selection = RoCE:::AGG_WALD_LAMBDA, verbose = FALSE,
-    M_tau = 5, M_tau_inference = 5, n_cores = length(N_SOURCE),
+    M_tau = 5, M_tau_inference = 5, n_cores = 2L,
     nlambda_init = 100L, family = "binomial", nuisance_lambda_rule = "min"
   )
   stored <- readRDS(C1_REFERENCE_FIT)$fit

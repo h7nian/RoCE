@@ -424,6 +424,23 @@ test_that("TATE cross-fitting returns one common source-weight vector", {
     ),
     "strictly positive"
   )
+
+  quadratic <- calculate_tate_crossfit_aggregation(
+    data_split = data_split,
+    mu1_result = result$arm_results$mu1,
+    mu0_result = result$arm_results$mu0,
+    lambda_selection = RoCE:::AGG_WALD_LAMBDA,
+    screening_rule = "quadratic_bias",
+    verbose = FALSE
+  )
+  expect_identical(quadratic$aggregation_screening_rule, "quadratic_bias")
+  expect_true(all(quadratic$fold_source_included))
+  expect_true(all(quadratic$fold_weight_psd_ridge == 0))
+  expect_identical(quadratic$weight_layer$kink_cells, 0L)
+  # The Wald diagnostics are descriptive and identical across rules.
+  expect_equal(quadratic$fold_wald_statistics, result$fold_wald_statistics)
+  expect_equal(quadratic$fold_penalty_coefficients, result$fold_penalty_coefficients)
+  expect_true(all(is.finite(c(quadratic$estimate, quadratic$se, quadratic$se_fixed_weights))))
   expect_equal(
     hard_screened$variance,
     RoCE:::.multisite_pseudovalue_variance(

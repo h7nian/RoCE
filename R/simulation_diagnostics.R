@@ -29,6 +29,8 @@
     "mean_wald_statistic", "penalized_source_fold_fraction",
     "max_weight_optimizer_iterations", "max_weight_psd_ridge",
     "weight_psd_ridge_fold_fraction",
+    "se_fixed_weights", "weight_layer_indirect_variance",
+    "weight_layer_cross_term", "weight_layer_kink_cells",
     "inference_logit_truncated", "inference_logit_truncation_fraction",
     "inference_max_abs_logit", "inference_safety_clip_count"
   )
@@ -242,7 +244,9 @@
     method_values %in% c(
       "one_round_crossfit_ate", "two_round_crossfit_ate",
       "one_round_crossfit_ate_hard_threshold",
-      "two_round_crossfit_ate_hard_threshold"
+      "two_round_crossfit_ate_hard_threshold",
+      "one_round_crossfit_ate_quadratic_bias",
+      "two_round_crossfit_ate_quadratic_bias"
     )
 
   count_matrix <- if (length(available_counts) > 0L) {
@@ -622,7 +626,9 @@
     method_values %in% c(
       "one_round_crossfit_ate", "two_round_crossfit_ate",
       "one_round_crossfit_ate_hard_threshold",
-      "two_round_crossfit_ate_hard_threshold"
+      "two_round_crossfit_ate_hard_threshold",
+      "one_round_crossfit_ate_quadratic_bias",
+      "two_round_crossfit_ate_quadratic_bias"
     )
   direct_aggregation_columns <-
     .direct_tate_aggregation_diagnostic_columns()
@@ -650,6 +656,11 @@
       any(group$max_weight_psd_ridge < 0) ||
       any(group$weight_psd_ridge_fold_fraction < 0 |
             group$weight_psd_ridge_fold_fraction > 1) ||
+      any(group$se_fixed_weights < 0) ||
+      any(group$weight_layer_indirect_variance < 0) ||
+      any(group$weight_layer_kink_cells < 0 |
+            group$weight_layer_kink_cells !=
+              floor(group$weight_layer_kink_cells)) ||
       any(group$inference_logit_truncated < 0 |
             group$inference_logit_truncated !=
               floor(group$inference_logit_truncated)) ||

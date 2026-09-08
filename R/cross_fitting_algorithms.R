@@ -1610,7 +1610,8 @@ run_crossfit <- function(data_split, n_folds = N_FOLDS_DEFAULT,
 #'   sites. Defaults to \code{FALSE} for backward-compatible resource use.
 #' @param screening_rule Source-screening rule passed to
 #'   \code{\link{calculate_tate_crossfit_aggregation}}. The default retains the
-#'   manuscript soft penalty; hard thresholding is available for diagnostics.
+#'   manuscript soft penalty; hard thresholding is a diagnostic and
+#'   \code{"quadratic_bias"} the pre-specified smooth sensitivity rule.
 #' @export
 run_tate_crossfit <- function(
     data_split, n_folds = N_FOLDS_DEFAULT,
@@ -1630,7 +1631,7 @@ run_tate_crossfit <- function(
     nuisance_lambda_rule = c("min", "1se"),
     parallel_arms = FALSE,
     aggregation_lambda_grid = NULL,
-    screening_rule = c("soft_penalty", "hard_threshold")) {
+    screening_rule = c("soft_penalty", "hard_threshold", "quadratic_bias")) {
   tate_started_at <- proc.time()[["elapsed"]]
   communication_mode <- match.arg(communication_mode)
   lambda_rule <- match.arg(lambda_rule)

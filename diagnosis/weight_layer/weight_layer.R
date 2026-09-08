@@ -17,7 +17,7 @@ RHO_VALUES <- c(0, 0.5, 1, 1.5, 2, 2.5)
   sizes <- fit$intermediates$sample_sizes
   gradient <- RoCE:::.weight_layer_gradient(
     fit$intermediates$fold_info, fit$intermediates$inner_fold_info,
-    fit$fold_weights, fit$fold_lambdas, penalized = TRUE,
+    fit$fold_weights, fit$fold_lambdas, screening_rule = "soft_penalty",
     fit$fold_weight_psd_ridge, sizes$n_t, sizes$n_source
   )
   RoCE:::.weight_layer_variance(fit$all_phi_agg, sizes$n_t, sizes$n_source, gradient)
