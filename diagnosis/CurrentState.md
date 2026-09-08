@@ -5,7 +5,7 @@
 > History lives in `HISTORY.md`.
 >
 > Last updated: 2026-09-07
-> Last updating HISTORY entry: [#0002](HISTORY.md#0002)
+> Last updating HISTORY entry: [#0001](HISTORY.md#0001) (DECIDED-PASS)
 
 ---
 
@@ -44,12 +44,21 @@ C1, p = 100, K = 2, 1000 observations per site, 100 independent seeds
 | 2 | 0.0317 | 0.0348 | 0.90 | 0.83 | -0.007 |
 | 2.5 | 0.0301 | 0.0348 | 0.93 | 0.92 | -0.010 |
 
+Target-only coverage 0.92. Mechanism (n=100 decomposition): at rho=1 source
+`s1` keeps mean fold weight 0.15 with Wald statistic 1-3, adding +0.023 bias;
+fold-weight SD 0.05-0.14 times discrepancy 0.13-0.20 is the missing SD.
+
+**#0001 (2026-09-07, DECIDED-PASS): delta-method weight-layer SE for the
+production soft-threshold rule, replayed on the same 100 seeds** — SE/SD
+1.03 / 1.03 / 0.99 / 0.96 / 0.97 / 1.02, coverage 0.93 / 0.91 / 0.88 / 0.94 /
+0.93 / 0.96 for rho = 0 … 2.5; points unchanged. Awaiting Stage-2 migration.
+
 No C2/C3, K=4/8, or RHC results exist for the current TATE estimator.
 
 ## 3. Active issues (open iterations)
 
-1. **#0001 Weight-layer influence for the soft-threshold rule** — Stage 1.
-   Symptom: SE omits Var(eta_hat) term. Status: PROPOSED. Blocker: none.
+1. **#0001 Weight-layer influence for the soft-threshold rule** — Stage 1
+   DECIDED-PASS (HISTORY #0001). Next: Stage 2 migration (#0005a).
 2. **#0002 Common working basis + X-dagger misspecification pilot** — Stage 1.
    Symptom: C2/C3 bases break the common-phi orthogonality assumption of
    `docs/main.tex:222`. Status: PROPOSED. Blocker: none.

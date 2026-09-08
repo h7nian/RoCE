@@ -3,7 +3,7 @@
 ## Iterations
 
 <a id="0001"></a>
-## 0001 — 2026-09-07 — Weight-layer influence function for the soft-threshold aggregation rule  [IN-FLIGHT]
+## 0001 — 2026-09-07 — Weight-layer influence function for the soft-threshold aggregation rule  [DECIDED-PASS]
 
 > commit: a03e3b5f (baseline snapshot)
 > previous related: none (first entry)
@@ -51,19 +51,38 @@ weights with the package's `optimize_weights()` (identical clipping/floors) so t
 numerical derivative is of the production rule. Replay over the 100 saved v19 seeds.
 
 ### 4. Acceptance criteria
-- [ ] (a) seed 10013 bundle, 6 rho × 8 directions: max |numerical − analytical| ≤ 1e-8 (ε = 1e-5) → ___ [PENDING]
-- [ ] (b) fixed-weight estimate and variance reproduce stored `fit$estimate`, `fit$variance` to ≤ 1e-12 → ___ [PENDING]
-- [ ] (c) direct-only FD error > 1e-5 in ≥ 1 direction (weight layer non-trivial) → ___ [PENDING]
-- [ ] (d) no inner-record observation appears in its own outer evaluation fold (assertion) → ___ [PENDING]
-- [ ] (e) n=100 replay: weight-layer coverage ≥ 0.88 at rho = 1 and rho = 1.5 → ___ [PENDING]
-- [ ] (f) n=100 replay: mean weight-layer SE / empirical SD ∈ [0.90, 1.10] at every rho; rho=0 coverage ∈ [0.92, 0.97] → ___ [PENDING]
-- [ ] (g) kink count (|lambda t_j − 1| < 1e-6) reported; ≤ 1% of fold×source cells → ___ [PENDING]
+- [x] (a) seed 10013 bundle, 6 rho × 8 directions: max |numerical − analytical| ≤ 1e-8 (ε = 1e-5) → 1.7e-10 [PASS]
+- [x] (b) fixed-weight estimate and variance reproduce stored `fit$estimate`, `fit$variance` to ≤ 1e-12 → asserted for all 600 fits [PASS]
+- [x] (c) direct-only FD error > 1e-5 in ≥ 1 direction (weight layer non-trivial) → min 1.0e-4, max 1.4e-2 [PASS]
+- [x] (d) no inner-record observation appears in its own outer evaluation fold (assertion) → asserted, 600 fits [PASS]
+- [x] (e) n=100 replay: weight-layer coverage ≥ 0.88 at rho = 1 and rho = 1.5 → 0.88 / 0.94 [PASS]
+- [x] (f) n=100 replay: mean weight-layer SE / empirical SD ∈ [0.90, 1.10] at every rho; rho=0 coverage ∈ [0.92, 0.97] → 1.027, 1.032, 0.993, 0.956, 0.970, 1.020; rho=0 coverage 0.93 [PASS]
+- [x] (g) kink count (|lambda t_j − 1| < 1e-6) reported; ≤ 1% of fold×source cells → 0 of 6000 [PASS]
 
 ### 5. Validation results (filled after running)
-PENDING — Slurm job 18530725 (`diagnosis/weight_layer/run_weight_layer.sh`), submitted 2026-09-07.
+Slurm job 18530725 (`diagnosis/weight_layer/run_weight_layer.sh`), 3 min 17 s, single core.
+Output `diagnosis/out/weight_layer/v1/` (sha256 manifest inside). Saved v19 fits, no refits.
+
+| rho | bias | empirical SD | fixed-weight SE | weight-layer SE | SE/SD fixed → layer | coverage fixed → layer |
+|---|---|---|---|---|---|---|
+| 0 | -0.0120 | 0.0220 | 0.0220 | 0.0226 | 1.00 → 1.03 | 0.93 → 0.93 |
+| 0.5 | +0.0108 | 0.0237 | 0.0220 | 0.0244 | 0.93 → 1.03 | 0.87 → 0.91 |
+| 1 | +0.0106 | 0.0305 | 0.0234 | 0.0303 | 0.77 → 0.99 | 0.82 → 0.88 |
+| 1.5 | -0.0004 | 0.0333 | 0.0251 | 0.0319 | 0.75 → 0.96 | 0.83 → 0.94 |
+| 2 | -0.0066 | 0.0312 | 0.0258 | 0.0302 | 0.83 → 0.97 | 0.90 → 0.93 |
+| 2.5 | -0.0099 | 0.0286 | 0.0262 | 0.0291 | 0.92 → 1.02 | 0.93 → 0.96 |
+
+Coverage MCSE ≈ 0.025. The direct/indirect cross term is negative in 40/100 seeds at rho=0
+and 4/100 at rho=1; dropping it would overstate variance at rho=0 and understate it at
+rho=1, confirming that a scalar SE multiplier cannot represent this correction. The
+residual dip at rho=1 (0.88) is the retained-source bias (+0.0106 ≈ 0.35 SD), not SE.
 
 ### 6. Decision + rationale
-PENDING
+DECIDED-PASS. The delta-method weight layer removes the SE understatement at every rho
+without changing point estimates, resampling, or applying a multiplier. Migrate to the
+package (Stage 2, entry #0005): report `se` = weight-layer SE as the analytic SE, keep
+`se_fixed_weights` as a diagnostic, document the derivation in the Supplement and the
+kink caveat in the main text. The rho=1 bias is reported as the weak-separation regime.
 
 <a id="0002"></a>
 ## 0002 — 2026-09-07 — Common working basis and X-dagger misspecification: strength pilot  [IN-FLIGHT]
