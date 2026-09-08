@@ -153,4 +153,9 @@ assign("get_smoke_result", function(mode = c("two_round", "one_round")) {
   cache[[key]]
 }, envir = test_internal_env)
 
+# Repository root for tests that source repository-only scripts (scripts/slurm).
+# It lives on the attached search-path environment because the helper's own
+# environment is not visible to the test files after load_all().
+assign("repo_root", repo_root, envir = test_internal_env)
+
 attach(test_internal_env, name = "ROCE_test_internals", warn.conflicts = FALSE)
