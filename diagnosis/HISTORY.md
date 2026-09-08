@@ -506,7 +506,7 @@ sources are reused unchanged); the treated-arm mechanism keeps the control-arm r
 - [ ] (a) shared-shift grouped reuse equals the independent fit on the K=1/p=3 fixture to 1e-12 (all `rho_equivalence_columns`) → ___ [PENDING]
 - [ ] (b) treated-arm grouped reuse unchanged: existing reuse tests pass byte-identically → ___ [PENDING]
 - [ ] (c) full build + testthat from the worktree (`USE_SOURCE=true`): 0 failures, 0 errors → ___ [PENDING]
-- [ ] (d) manifest family build + `audit_mc500_manifests.R` pass for both families in a scratch root (500 replications: 16200 + 5400 tasks, 4500 + 1500 groups) → ___ [PENDING]
+- [x] (d) manifest family build + `audit_mc500_manifests.R` pass for both families in a scratch root (500 replications: 27000 + 9000 primary tasks, 4500 + 1500 groups) → job 18555672: both audits passed; main 27000/4500 (54 settings), shared_shift 9000/1500 (18 settings); grouped columns 3/4/6/7 unchanged (`deviation_mechanism` after `methods`) [PASS]
 - [ ] (e) smoke task (`manifest_smoke_single.csv`) through `run_direct_tate_task.R` + `audit_direct_tate_smoke.R` with the frozen row set → ___ [PENDING]
 - [ ] (f) substitute Rule 7a review recorded; Rule 24 audit → ___ [PENDING]
 
@@ -545,7 +545,12 @@ reference mu0 arm carries the same fields as mu1); the treated-arm path is byte-
    sites' draws but the reuse validator would stop rather than reuse → noted, no action.
 
 ### 5. Validation results (filled after running)
-PENDING
+- (d) 2026-09-08, job 18555672 (`prepare_mc500_manifests.sh` with `ROCE_MANIFEST_ROOT` in the
+  session scratchpad, cutoff gate from the main tree): main family 27000 primary / 4500 grouped
+  rows, 54 settings, diagnostics manifests (smoke 1, cutoff 1000, truncation 2000);
+  shared-shift family 9000 / 1500, 18 settings; both `manifest_audit_passed.txt` gates written
+  with `family=`, `experiment=`, `deviation_mechanism=` lines.
+- (a)–(c), (e), (f): PENDING (worktree test job 18555671 queued).
 
 ### 6. Decision + rationale
 PENDING
