@@ -133,6 +133,19 @@ After all structural checks pass, the audit atomically writes
 K-specific manifests. The grouped production submitter verifies those hashes,
 p=100, 500-replicate, and B=5000 declarations before calling Slurm.
 
+The same job then builds the shared-shift family (HISTORY #0009) under
+`results/direct_tate_mc500_b5000/shared_shift/` with the same file names: a
+9,000-row main manifest (`experiment = shared_shift`, C(1), K = 2/4/8, the six
+rho values read as a shared log-odds shift of both arms of `s1`,
+`deviation_mechanism = both_arms`), its K-specific partition, and a 1,500-row
+grouped manifest, audited with `audit_mc500_manifests.R <root> 500 5000
+shared_shift`. Every manifest carries `deviation_mechanism` as its last
+column; the grouped submitter, task runners, row annotation, checkpoint audit,
+and aggregation read it, and the grouped submitter derives the group count
+from the primary manifest instead of assuming 4,500. To submit that family,
+pass its root as the manifest root and `.../shared_shift/raw` as the output
+root; its result root must hold its own reuse-equivalence gate (below).
+
 The choice of multiplier-bootstrap count can be checked independently of
 nuisance fitting:
 
@@ -356,6 +369,14 @@ task and its corresponding six-rho grouped task with the final tested package.
 `audit_rho_reuse_equivalence.R` requires every shared non-timing statistical
 and diagnostic CSV field to be bit-for-bit identical and writes the reuse gate.
 This is an implementation/runtime audit, not Monte Carlo evidence.
+
+The locked setting is selected by `ROCE_REUSE_CONFIG`, `ROCE_REUSE_K`, and
+`ROCE_REUSE_RHO` (defaults C3 / 4 / 2.5). The shared-shift family audits its
+own both-arm reuse with `ROCE_REUSE_CONFIG=C1` on its manifest root; the gate
+records the `deviation_mechanism`, and `submit_rho_group_direct_tate.sh`
+requires the gate under the family's result root
+(`<result root>/rho_reuse_equivalence_final/rho_reuse_equivalence_passed.txt`)
+with the mechanism of the primary manifest.
 
 The final same-package audit used `p = 100`, C(3), `K = 4`, `rho = 2.5`,
 seed 1, 100 nuisance penalties, and 5,000 bootstrap draws. All 137 shared
