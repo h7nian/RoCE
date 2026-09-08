@@ -208,8 +208,8 @@ libraries; (B) C1 seed-20001 refit versus the #0002 stored fit.
 - [x] (b) baseline: max |untruncated score| ≤ 1e-6 and max |truncated score| > 1e-3 (documents the defect) → 1.27e-9 and 0.0736 (truncation fraction 0.132) [PASS]
 - [x] (c) candidate: max |untruncated score| > 1e-3 (the fit really changed) → 3.37e8 (the truncated solution's untruncated score explodes; radius-2 saturation as noted in §2) [PASS]
 - [x] (d) C1 identity: estimate, se, fold weights, target-only, source estimates differ ≤ 1e-10 from the #0002 C1 cell → all differences exactly 0; production radius inactive (truncation fraction 0) [PASS]
-- [ ] (e) full installed testthat: 0 failures, 0 errors → ___ [PENDING]
-- [ ] (f) R CMD check `Status: OK` → ___ [PENDING]
+- [ ] (e) full installed testthat: 0 failures, 0 errors → measured on the final tree that carries the same patch (#0008 (b), production gate A1 of #0010) [SUPERSEDED]
+- [ ] (f) R CMD check `Status: OK` → measured on the final tree (#0008 (c), production gate A2 of #0010) [SUPERSEDED]
 
 ### 5. Validation results (filled after running)
 Job 18550692 (2026-09-08, 2 h 59 min): steps 1–3 completed with (a)–(d) as recorded in §4
@@ -218,7 +218,13 @@ on the candidate) hit the 3 h limit inside `test-comparison-bootstrap-variance.R
 candidate source had been copied before the test-fixture fixes of #0005 §5 landed. Resubmitted
 as phase `tests` of the same script (rebuilds the candidate from the current tree + patch, runs
 only step 4 and R CMD check) with a 10 h limit: job recorded below.
-(e), (f): PENDING — job 18576245.
+(e), (f): job 18576245 (phase `tests`) ran 8 h 11 min and was still inside
+`test-comparison-bootstrap-variance.R` when the scheduler reset of 2026-09-08 13:05 cancelled
+every job on the account; the 3 h run had stalled at the same place. Cause: the script exported
+`ROCE_NUISANCE_CV_THREADS=5` for step 3 and the test suite's forked workers deadlock in the
+OpenMP nuisance-CV kernel with it (the main-tree runs never set it). The script now unsets it
+before step 4. Since #0008 applied the same patch to the main tree, (e)/(f) are measured there
+by the #0010 production gates A1/A2 instead of a third candidate run.
 
 ### 6. Decision + rationale
 PENDING
@@ -690,7 +696,9 @@ place). Gate sequence, in order:
 Gates launched 2026-09-08 on tree 0fde383e: A1 test audit job 18580683
 (`Rlib_production_20260908_v1`), A2 R CMD check job 18580684
 (`package_check_production_20260908_v1`), A3 manifest families job 18580685
-(`production_20260908_v1/`). A4/A5 follow A1–A3.
+(`production_20260908_v1/`); all three were cancelled unstarted by the cluster-wide scheduler
+reset at 13:05 (job numbering restarted) and resubmitted as A1 = 33441, A2 = 33442,
+A3 = 33443 on the same tree. A4/A5 follow A1–A3.
 
 ### 6. Decision + rationale
 PENDING

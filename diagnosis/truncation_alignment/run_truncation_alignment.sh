@@ -65,7 +65,11 @@ if [[ "${PHASE}" == "all" ]]; then
   R_LIBS="${CANDIDATE_LIB}" Rscript "diagnosis/${TASK}/${TASK}.R" "${OUT}" candidate
 fi
 
-# 4. Full installed test suite and R CMD check on the candidate.
+# 4. Full installed test suite and R CMD check on the candidate. The
+#    five-thread CV setting of step 3 must not reach the test suite: its
+#    forked workers deadlock in an OpenMP nuisance-CV kernel (the suite stalled
+#    for hours in test-comparison-bootstrap-variance.R with it exported).
+unset ROCE_NUISANCE_CV_THREADS
 (
   cd "${CANDIDATE_SRC}"
   R_LIBS="${CANDIDATE_LIB}" ROCE_TEST_INSTALLED=1 Rscript -e '
