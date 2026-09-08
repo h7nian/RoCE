@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================================
-# FACE-HD Quick Diagnosis Submission Script
+# RoCE Quick Diagnosis Submission Script
 # ============================================================================
 #
 # Submits a small MSI Slurm job that runs static and package-load diagnostics.
@@ -101,7 +101,7 @@ if [[ "${NO_REQUEUE}" == true ]]; then
 fi
 
 echo "======================================================"
-echo " FACE-HD Quick Diagnosis Submission"
+echo " RoCE Quick Diagnosis Submission"
 echo "======================================================"
 echo " Repo:           ${REPO_DIR}"
 echo " Dry run:        ${DRY_RUN}"

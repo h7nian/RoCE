@@ -1,4 +1,4 @@
-# Baseline Formula-to-Code Mapping (FACE-HD)
+# Baseline Formula-to-Code Mapping (RoCE)
 
 This note documents how each baseline estimator is implemented and where the key formulas appear in code.
 
@@ -12,9 +12,9 @@ This note documents how each baseline estimator is implemented and where the key
   - $\widehat{\mathrm{Var}}(\hat\mu_t^a)=\hat V_{ot}/n$ (with nuisance-adjusted IF in helper).
 
 Code:
-- `estimate_target_only`: [R/estimators_target.R](R/estimators_target.R#L24)
-- Cross-fit target-only: [R/estimators_target.R](R/estimators_target.R#L59)
-- AIPW IF helper: [R/estimators_helpers.R](R/estimators_helpers.R#L77)
+- `estimate_target_only`: [R/estimators_target.R](../R/estimators_target.R)
+- Cross-fit target-only: [R/estimators_target.R](../R/estimators_target.R)
+- AIPW IF helper: [R/estimators_helpers.R](../R/estimators_helpers.R)
 
 ## 2) Sample-size weighted (SS)
 
@@ -24,8 +24,8 @@ Code:
   - $\widehat{\mathrm{Var}}_{RE}=\sum_j (n_j/N)^2\{\widehat{\mathrm{Var}}_j+\hat\tau^2\}$.
 
 Code:
-- Estimator: [R/comparison_methods.R](R/comparison_methods.R#L37)
-- DL heterogeneity (`Q`, $\tau^2$, $I^2$): [R/estimators_helpers.R](R/estimators_helpers.R#L423)
+- Estimator: [R/comparison_methods.R](../R/comparison_methods.R)
+- DL heterogeneity (`Q`, $\tau^2$, $I^2$): [R/estimators_helpers.R](../R/estimators_helpers.R)
 
 ## 3) Inverse-variance weighted (IVW)
 
@@ -37,7 +37,7 @@ Code:
   - final variance is `max(var_random_effects, var_pooled)`.
 
 Code:
-- Estimator: [R/comparison_methods.R](R/comparison_methods.R#L149)
+- Estimator: [R/comparison_methods.R](../R/comparison_methods.R)
 
 ## 4) Tilted-AIPW baseline
 
@@ -47,22 +47,25 @@ Code:
   - `target_variance_component + source_variance_component`.
 
 Code:
-- Estimator + decomposition: [R/comparison_methods.R](R/comparison_methods.R#L309)
-- Decomposition terms: [R/comparison_methods.R](R/comparison_methods.R#L507-L536)
+- Estimator + decomposition: [R/comparison_methods.R](../R/comparison_methods.R)
+- Decomposition terms: [R/comparison_methods.R](../R/comparison_methods.R)
 
 ## 5) Federated-DR baseline
 
 - Source sites:
   - DR weights via exponential tilting against target moments.
   - Site AIPW IF + first-order DR-weight correction.
+  - The density-ratio score/Jacobian uses the full source sample, matching the
+    all-observation (`A_dummy = 1`) density-ratio fit; the treatment-arm
+    indicator enters through the AIPW pseudo-outcome, not the tilting score.
 - Aggregation:
   - IVW point estimate from site-level variances.
   - Variance decomposition consistent with shared-target structure:
     - `var_target_component + var_source_component`.
 
 Code:
-- Estimator: [R/comparison_methods.R](R/comparison_methods.R#L553)
-- Shared-target/source decomposition: [R/comparison_methods.R](R/comparison_methods.R#L651-L675)
+- Estimator: [R/comparison_methods.R](../R/comparison_methods.R)
+- Shared-target/source decomposition: [R/comparison_methods.R](../R/comparison_methods.R)
 
 ## 6) Pooled-DR baseline
 
@@ -73,17 +76,19 @@ Code:
   - $\widehat{\mathrm{Var}} = N^{-2}\sum_g\sum_{i\in g}(\hat\varphi_i-\bar\varphi_g)^2$.
 
 Code:
-- Estimator: [R/comparison_methods.R](R/comparison_methods.R#L690)
-- Stacked correction + WSS variance: [R/comparison_methods.R](R/comparison_methods.R#L760-L803)
+- Estimator: [R/comparison_methods.R](../R/comparison_methods.R)
+- Stacked correction + WSS variance: [R/comparison_methods.R](../R/comparison_methods.R)
 
 ## 7) Shared helper pieces
 
 - DR lambda CV for density-ratio model:
-  - [R/estimators_helpers.R](R/estimators_helpers.R#L475)
+  - [R/estimators_helpers.R](../R/estimators_helpers.R)
 - DR weights `exp(-eta)` with normalization/clipping:
-  - [R/estimators_helpers.R](R/estimators_helpers.R#L513)
+  - [R/estimators_helpers.R](../R/estimators_helpers.R)
+  - Normalized weights are clipped to `[0.1, 10]`; any clipping emits a run-log
+    warning so overlap stress is not silent.
 - Weighted AIPW now uses nuisance-adjusted IF helper:
-  - [R/estimators_helpers.R](R/estimators_helpers.R#L557)
+  - [R/estimators_helpers.R](../R/estimators_helpers.R)
 
 ## 8) Notes on strictness
 

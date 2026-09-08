@@ -6,7 +6,7 @@
 
 library(testthat)
 
-# Package loaded by helper-load.R (all functions available via FACEHD namespace)
+# Package loaded by helper-load.R (all functions available via RoCE namespace)
 
 # make_small_data_split + get_smoke_data_split + get_smoke_result are shared
 # helpers loaded via tests/testthat/helper-data.R before this file is sourced.

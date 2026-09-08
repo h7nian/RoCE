@@ -54,7 +54,7 @@ fi
 SBATCH_CMD+=(diagnosis/c2/c2_dr_cv_scale_patch_summarize.cmd)
 
 echo "======================================================"
-echo " FACE-HD C2 DR-CV Scale Patch Summary Submission"
+echo " RoCE C2 DR-CV Scale Patch Summary Submission"
 echo "======================================================"
 echo " Repo:       ${REPO_DIR}"
 echo " Dependency: ${DEPENDENCY:-none}"

@@ -29,4 +29,16 @@ test_that("target-only AIPW uses Z_site for propensity and W_outcome for outcome
   expect_gt(abs(stats::cor(res$prop_scores, Z[, 1L])), 0.45)
   expect_lt(abs(stats::cor(res$prop_scores, W[, 1L])), 0.25)
   expect_gt(abs(stats::cor(res$m_pred, W[, 1L])), 0.35)
+  expect_identical(res$nuisance_lambda_rule, "min")
+
+  expect_error(
+    estimate_target_only_crossfit(
+      target_data,
+      n_folds = 5L,
+      family = "binomial",
+      A_val = 1L,
+      nuisance_lambda_rule = "unsupported"
+    ),
+    "nuisance_lambda_rule must be either 'min' or '1se'"
+  )
 })

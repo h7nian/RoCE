@@ -1,5 +1,5 @@
 .method_reference_audit_enabled <- function() {
-  Sys.getenv("FACEHD_METHOD_REFERENCE_AUDIT", "0") %in%
+  Sys.getenv("ROCE_METHOD_REFERENCE_AUDIT", "0") %in%
     c("1", "TRUE", "true", "True")
 }
 
@@ -28,7 +28,7 @@
 test_that("local FACE/SMMAL references contain the audited CV and cross-fitting ideas", {
   skip_if_not(
     .method_reference_audit_enabled(),
-    "Set FACEHD_METHOD_REFERENCE_AUDIT=1 to run the method/reference audit."
+    "Set ROCE_METHOD_REFERENCE_AUDIT=1 to run the method/reference audit."
   )
 
   repo_root <- normalizePath(file.path(dirname(test_path()), "..", ".."), mustWork = TRUE)
@@ -49,7 +49,7 @@ test_that("local FACE/SMMAL references contain the audited CV and cross-fitting 
 test_that("main.tex and implementation encode FACE/SMMAL-style alignment", {
   skip_if_not(
     .method_reference_audit_enabled(),
-    "Set FACEHD_METHOD_REFERENCE_AUDIT=1 to run the method/reference audit."
+    "Set ROCE_METHOD_REFERENCE_AUDIT=1 to run the method/reference audit."
   )
 
   repo_root <- normalizePath(file.path(dirname(test_path()), "..", ".."), mustWork = TRUE)

@@ -35,27 +35,27 @@ if (!all(modes %in% c("one_round", "two_round"))) {
 }
 
 suppressPackageStartupMessages({
-  if (requireNamespace("FACEHD", quietly = FALSE)) {
-    library(FACEHD)
+  if (requireNamespace("RoCE", quietly = FALSE)) {
+    library(RoCE)
   } else if (requireNamespace("devtools", quietly = FALSE)) {
     devtools::load_all(".")
   } else {
-    stop("Neither installed FACEHD nor devtools available.", call. = FALSE)
+    stop("Neither installed RoCE nor devtools available.", call. = FALSE)
   }
 })
 
-facehd_constant <- function(name, default) {
-  ns <- asNamespace("FACEHD")
+roce_constant <- function(name, default) {
+  ns <- asNamespace("RoCE")
   if (exists(name, envir = ns, inherits = FALSE)) {
     return(get(name, envir = ns, inherits = FALSE))
   }
   default
 }
 
-facehd_function <- function(name) {
-  ns <- asNamespace("FACEHD")
+roce_function <- function(name) {
+  ns <- asNamespace("RoCE")
   if (!exists(name, envir = ns, inherits = FALSE)) {
-    stop(sprintf("FACEHD namespace does not contain required function '%s'.", name),
+    stop(sprintf("RoCE namespace does not contain required function '%s'.", name),
          call. = FALSE)
   }
   get(name, envir = ns, inherits = FALSE)
@@ -69,7 +69,7 @@ needed_functions <- c(
 )
 for (fn_name in needed_functions) {
   if (!exists(fn_name, mode = "function")) {
-    assign(fn_name, facehd_function(fn_name))
+    assign(fn_name, roce_function(fn_name))
   }
 }
 
@@ -82,19 +82,19 @@ if (!dr_cv_scale_patch %in% c("none", "validation_source_scale")) {
 if (dr_cv_scale_patch != "none") {
   source(file.path("diagnosis", "c2", "c2_dr_cv_scale_patch.R"))
   patch_info <- install_c2_dr_cv_scale_patch(train_scale = dr_cv_train_scale)
-  fit_initial_density_ratio <- facehd_function("fit_initial_density_ratio")
-  fit_unified_density_ratio <- facehd_function("fit_unified_density_ratio")
+  fit_initial_density_ratio <- roce_function("fit_initial_density_ratio")
+  fit_unified_density_ratio <- roce_function("fit_unified_density_ratio")
   cat(sprintf(
     "[residual-balance] installed diagnosis-only density-ratio CV scale patch: validation=%s train_scale=%s cpp=%s\n",
     dr_cv_scale_patch, patch_info$train_scale, patch_info$cpp_path
   ))
 }
 
-LOGISTIC_CLIP <- facehd_constant("LOGISTIC_CLIP", 50)
-M_TAU_DEFAULT <- facehd_constant("M_TAU_DEFAULT", 10)
-M_TAU_INFERENCE_DEFAULT <- facehd_constant("M_TAU_INFERENCE_DEFAULT", 10)
-FAMILY_BINOMIAL <- facehd_constant("FAMILY_BINOMIAL", 1L)
-LINK_LOGIT <- facehd_constant("LINK_LOGIT", 1L)
+LOGISTIC_CLIP <- roce_constant("LOGISTIC_CLIP", 50)
+M_TAU_DEFAULT <- roce_constant("M_TAU_DEFAULT", 10)
+M_TAU_INFERENCE_DEFAULT <- roce_constant("M_TAU_INFERENCE_DEFAULT", 10)
+FAMILY_BINOMIAL <- roce_constant("FAMILY_BINOMIAL", 1L)
+LINK_LOGIT <- roce_constant("LINK_LOGIT", 1L)
 `%||%` <- function(x, y) if (is.null(x)) y else x
 source(file.path("diagnosis", "c2", "c2_true_gamma_utils.R"))
 
@@ -327,7 +327,7 @@ data <- generate_simulation_data(
   outcome_type = "binary",
   heterogeneity_type = "none",
   shift_strength = 0.5,
-  dgp_type = "facehd",
+  dgp_type = "roce",
   warn_ignored = FALSE
 )
 split <- split_data_by_site(data)

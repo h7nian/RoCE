@@ -22,7 +22,7 @@ library(testthat)
 # ============================================================================
 
 test_that("init_checkpoint_config creates the directory and builds the expected paths", {
-  base_dir <- tempfile(pattern = "facehd_ckpt_init_")
+  base_dir <- tempfile(pattern = "roce_ckpt_init_")
 
   config <- init_checkpoint_config(checkpoint_dir = base_dir,
                                    setting_id = "demo_setting",
@@ -47,7 +47,7 @@ test_that("init_checkpoint_config creates the directory and builds the expected 
 # ============================================================================
 
 test_that("save_checkpoint -> load_checkpoint round-trips a non-trivial state list", {
-  base_dir <- tempfile(pattern = "facehd_ckpt_roundtrip_")
+  base_dir <- tempfile(pattern = "roce_ckpt_roundtrip_")
   config <- init_checkpoint_config(checkpoint_dir = base_dir,
                                    setting_id = "rt_setting",
                                    job_id = "rt_job")
@@ -81,7 +81,7 @@ test_that("save_checkpoint -> load_checkpoint round-trips a non-trivial state li
 })
 
 test_that("load_checkpoint returns NULL when no checkpoint file exists", {
-  base_dir <- tempfile(pattern = "facehd_ckpt_missing_")
+  base_dir <- tempfile(pattern = "roce_ckpt_missing_")
   config <- init_checkpoint_config(checkpoint_dir = base_dir,
                                    setting_id = "missing_setting",
                                    job_id = "missing_job")
@@ -91,7 +91,7 @@ test_that("load_checkpoint returns NULL when no checkpoint file exists", {
 })
 
 test_that("load_checkpoint fails fast when an existing checkpoint file is corrupt", {
-  base_dir <- tempfile(pattern = "facehd_ckpt_corrupt_")
+  base_dir <- tempfile(pattern = "roce_ckpt_corrupt_")
   config <- init_checkpoint_config(checkpoint_dir = base_dir,
                                    setting_id = "corrupt_setting",
                                    job_id = "corrupt_job")
@@ -108,7 +108,7 @@ test_that("load_checkpoint fails fast when an existing checkpoint file is corrup
 # ============================================================================
 
 test_that("check_preempt_signal flips with the on-disk presence of the signal file", {
-  base_dir <- tempfile(pattern = "facehd_ckpt_preempt_")
+  base_dir <- tempfile(pattern = "roce_ckpt_preempt_")
   config <- init_checkpoint_config(checkpoint_dir = base_dir,
                                    setting_id = "preempt_setting",
                                    job_id = "preempt_job")
@@ -120,7 +120,7 @@ test_that("check_preempt_signal flips with the on-disk presence of the signal fi
 })
 
 test_that("signal_checkpoint_saved creates the saved-signal file", {
-  base_dir <- tempfile(pattern = "facehd_ckpt_saved_")
+  base_dir <- tempfile(pattern = "roce_ckpt_saved_")
   config <- init_checkpoint_config(checkpoint_dir = base_dir,
                                    setting_id = "saved_setting",
                                    job_id = "saved_job")
@@ -136,7 +136,7 @@ test_that("signal_checkpoint_saved creates the saved-signal file", {
 # ============================================================================
 
 test_that("cleanup_checkpoint removes every artifact it knows about", {
-  base_dir <- tempfile(pattern = "facehd_ckpt_cleanup_")
+  base_dir <- tempfile(pattern = "roce_ckpt_cleanup_")
   config <- init_checkpoint_config(checkpoint_dir = base_dir,
                                    setting_id = "cleanup_setting",
                                    job_id = "cleanup_job")

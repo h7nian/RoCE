@@ -1,39 +1,44 @@
-# FACE-HD: Federated Adaptive Causal Estimation in High Dimensions
+# Robust Federated Causal Estimation (RoCE) through Calibrated High-Dimensional Models
 
 [![R Version](https://img.shields.io/badge/R-%3E%3D4.0.0-blue.svg)](https://www.r-project.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-> **Naming convention**: The paper refers to the method as **FACE-HD**. The R package
-> is named `FACEHD` (R packages cannot contain hyphens).
+> **Naming convention**: The paper refers to the method as **RoCE**. The R package
+> is named `RoCE` (R packages cannot contain hyphens).
 
 ## Overview
 
-FACE-HD implements federated learning algorithms for causal inference in multi-site settings. The package provides communication-efficient protocols with two-level cross-fitting for enhanced robustness against overfitting bias.
+RoCE implements federated causal estimators for multi-site data. Its primary
+estimator fits arm-specific high-dimensional nuisance functions, contrasts the
+treated and control influence components, and then learns one common set of
+source weights for the target average treatment effect (TATE). The package
+provides communication-efficient protocols with two-level cross-fitting.
 
 ### Target Estimand
 
-**Important**: This package estimates the **potential outcome mean** at the target site:
+The primary estimand is the **target average treatment effect**:
 
-$$\mu^1_t = E_t[Y(1)]$$
+$$\tau_t = E_t\{Y(1)-Y(0)\}=\mu^1_t-\mu^0_t.$$
 
-This is the expected outcome under treatment (A=1) for the **target site population**. To estimate the Average Treatment Effect (ATE), run the algorithm twice:
-
-$$\text{ATE} = \mu^1_t - \mu^0_t = E_t[Y(1)] - E_t[Y(0)]$$
-
-The framework extends symmetrically to estimate μ⁰ = E_t[Y(0)] by setting `A_val = 0`.
+Use `run_tate_crossfit()` for the primary TATE procedure. It forms the
+treated-minus-control influence values before variance estimation and source
+aggregation, retaining the within-site cross-arm covariance. The lower-level
+`run_crossfit(A_val = a)` interface remains available for secondary potential-
+outcome means $\mu^a_t=E_t\{Y(a)\}$.
 
 ### Key Features
 
 - **Doubly Robust Estimators**: Calibrated loss functions for Neyman Orthogonality
 - **Two Communication Protocols**: Two-round and one-round algorithms
 - **Two-Level Cross-fitting**: Enhanced robustness through nested sample splitting
-- **Optimal Aggregation**: Variance-minimizing combination of site-specific estimators
+- **TATE Aggregation**: One common source-weight vector selected from the TATE variance and Wald discrepancies
 - **C++ Acceleration**: High-performance coordinate descent with GLMNET-style optimizations
-- **Comparison Methods**: Target-only, sample-size weighted, inverse-variance weighted, and tilted AIPW estimators
+- **Comparison Methods**: Target-only, sample-size weighted, inverse-variance weighted, Federated-DR, and Pooled-DR estimators with paired-arm variance
 
 ### API Stability and Compatibility
 
-- **Canonical cross-fitting API**: `run_crossfit()` with `communication_mode = "two_round"` or `"one_round"`.
+- **Primary API**: `run_tate_crossfit()` with `communication_mode = "one_round"` (manuscript default) or `"two_round"`.
+- **Arm-specific API**: `run_crossfit(A_val = 0/1)` for secondary potential-outcome means.
 - **Internal C++ bindings**: functions ending with `_cpp` are internal implementation/testing interfaces and are **not** part of the package's stable public API contract.
 
 ## Installation
@@ -43,7 +48,7 @@ The framework extends symmetrically to estimate μ⁰ = E_t[Y(0)] by setting `A_
 Ensure you have the following R packages installed:
 
 ```r
-install.packages(c("Rcpp", "RcppEigen", "glmnet", "MASS", "parallel", "doParallel", "foreach"))
+install.packages(c("Rcpp", "RcppEigen", "glmnet", "doParallel"))
 
 # For comparison methods (optional)
 install.packages("RCAL")
@@ -55,8 +60,8 @@ install.packages("testthat")
 ### From Source
 
 ```bash
-git clone https://github.com/sinianzhang/FACE-HD.git
-cd FACE-HD
+git clone https://github.com/sinianzhang/RoCE.git
+cd RoCE
 ```
 
 In R:
@@ -84,32 +89,38 @@ data <- generate_simulation_data(
 # Split data by site
 data_split <- split_data_by_site(data)
 
-# Run two-round cross-fitting algorithm (canonical API)
-# NOTE: This estimates μ¹_t = E_t[Y(1)], NOT ATE
-result_mu1 <- run_crossfit(
+# Run the primary TATE estimator. Both treatment arms use the same fold
+# partition and are contrasted before learning one source-weight vector.
+result_tate <- run_tate_crossfit(
   data_split,
-  communication_mode = "two_round",
-  n_folds = 10,             # Cross-fitting folds
-  lambda_selection = "cv",  # Lambda selection method
+  communication_mode = "one_round",
+  n_folds = 5,
+  lambda_selection = RoCE:::AGG_WALD_LAMBDA, # selected cutoff c = 1
   verbose = TRUE,
-  M_tau = 10.0,             # Truncation parameter
-  n_cores = -1              # Parallel: -1 = all cores minus 1, NULL = sequential
+  M_tau = 5,
+  M_tau_inference = 5,
+  n_cores = 3               # source-site workers per treatment arm
 )
 
-# Access results for μ¹_t = E_t[Y(1)]
-cat("μ¹ Estimate:", result_mu1$estimate, "\n")
-cat("SE:", result_mu1$se, "\n")
-cat("True μ¹:", data$mu1_true, "\n")
-
-# To compute ATE, also estimate μ⁰_t = E_t[Y(0)]
-# (requires running with A_val = 0 in fit_initial_outcome calls)
-# ATE = result_mu1$estimate - result_mu0$estimate
+cat("TATE estimate:", result_tate$estimate, "\n")
+cat("SE:", result_tate$se, "\n")
+cat("95% CI:", result_tate$ci_lower, result_tate$ci_upper, "\n")
+cat("Common source weights:", result_tate$weights, "\n")
+cat("True TATE:", data$mu1_true - data$mu0_true, "\n")
 ```
+
+The manuscript analysis uses aggregation multiplier `1` (Wald activation
+cutoff `c = 1`), selected by the documented coverage-blind rule on disjoint
+pilot seeds. For a pre-specified sensitivity analysis, callers
+can instead set `lambda_selection = "cv"` and pass a positive
+`aggregation_lambda_grid`; candidate weights and the validation criterion are
+then computed entirely within each outer-training sample. The grid must not be
+supplied together with a fixed numeric `lambda_selection`.
 
 ## Project Structure
 
 ```
-FACE-HD/
+RoCE/
 ├── R/                              # Core R functions
 │   ├── constants.R                 # Centralized numerical constants
 │   ├── model_fitting.R             # Unified model fitting (R + C++ accelerated)
@@ -120,6 +131,8 @@ FACE-HD/
 │   ├── data_generation_face.R      # FACE paper DGP
 │   ├── estimators_oracle.R         # Oracle DR estimator (uses true parameters)
 │   ├── simulation.R                # Monte Carlo simulation driver
+│   ├── simulation_diagnostics.R    # Per-setting coverage/RMSE quality control
+│   ├── real_data_rhc.R             # RHC preprocessing and analyses
 │   ├── numerical_utils.R           # Pure numerical/math functions
 │   ├── validation.R                # Input validation functions
 │   └── checkpoint.R                # Checkpoint/restart for SLURM preemption
@@ -128,19 +141,17 @@ FACE-HD/
 │   ├── outcome_model.cpp           # Outcome model fitting, CV, and GLM utilities
 │   ├── variance.cpp                # Variance, covariance, and correction terms
 │   ├── weight_optimization.cpp     # Weight optimization and aggregation
-│   ├── optimization.hpp            # C++ header declarations
-│   ├── cv_utils.hpp                # Cross-validation shared utilities
-│   ├── numerical_constants.hpp     # Numerical constants (C++ side)
-│   └── utils.hpp                   # GLM utilities and numerical helpers
+│   ├── optimization.h              # C++ header declarations
+│   ├── cv_utils.h                  # Cross-validation shared utilities
+│   ├── numerical_constants.h       # Numerical constants (C++ side)
+│   └── utils.h                     # GLM utilities and numerical helpers
 ├── tests/                          # Test suite (testthat)
 │   ├── testthat.R                  # Test runner
 │   └── testthat/                   # Individual test files
-├── main.R                          # Main simulation script (entry point)
-├── main.sh                         # SLURM batch job submission
-├── main.cmd                        # SLURM job configuration with preemption handling
+├── scripts/slurm/                  # Bounded p=100 MSI workflows and diagnostics
 ├── docs/
 │   ├── main.tex                    # Mathematical methodology document
-│   └── proof.tex                   # Appendix proofs and assumption mapping
+│   └── supplemental.tex            # Proofs, assumptions, and supplemental results
 ├── DESCRIPTION                     # R package description
 ├── LICENSE                         # MIT License
 └── README.md                       # This file
@@ -148,50 +159,67 @@ FACE-HD/
 
 ## Algorithms
 
+### One-Round Communication Protocol (default)
+
+The target supplies fold-specific initial outcome fits and calibration summaries;
+each source returns calibrated nuisance and influence summaries in one exchange.
+
 ### Two-Round Communication Protocol
 
-Following the methodology in `docs/main.tex` (Section A.2), the two-round algorithm:
-
-1. **Round 1**: Source sites compute initial outcome models and send to target
-2. **Target Response**: Target computes summary statistics and sends back
-3. **Round 2**: Sources compute calibrated parameters and final estimates
-
-### One-Round Communication Protocol
-
-A more communication-efficient variant:
-
-1. **Single Round**: Target computes all initial models and summaries
-2. **Sources Respond**: Each source computes calibrated parameters and estimates
+The optional two-round variant lets each source initialize its own outcome
+model before target calibration. It relaxes the one-round alignment condition
+at the cost of an additional communication exchange.
 
 ### Two-Level Cross-fitting
 
-Both algorithms use nested sample splitting (K_f folds) to achieve:
+Both protocols use nested sample splitting to provide:
 - Neyman Orthogonality through calibrated loss functions
 - Cross-calibrated plug-in order where calibrated α uses γ_init as the weight plug-in
-- Unbiased estimation even with data-adaptive nuisance estimation
-- Theoretical variance formula: $\text{Var}(\hat{\mu}_{agg}) = \frac{1}{K_f^2} \sum_{k_1=1}^{K_f} \text{Var}(\hat{\mu}_{agg,k_1})$
+- Outer-fold separation between weight learning and evaluation
+- A TATE variance computed from within-site centered, treated-minus-control pseudo-values, which automatically includes cross-arm covariance
+
+## Grouped nuisance CV for resampling
+
+For resampling diagnostics, a site in `data_split` may optionally carry a
+positive integer `cv_group_id` vector identifying original observations.
+Repeated origins are assigned together in target and source nuisance CV.
+Missing (`NULL`) or all-unique IDs retain the ordinary CV path and RNG behavior.
+The supplied outer folds must also keep each origin intact, and their data
+references must contain the same group metadata; stale views or cross-fold
+origins fail explicitly. For copied data, supply group-consistent
+`precomputed_folds` rather than repartitioning copied rows.
+
+This option changes nuisance-validation bookkeeping, not the common TATE
+aggregation objective or its variance formula. It is not a cluster-robust
+variance estimator and does not by itself validate bootstrap confidence
+intervals. Grouped source CV retains the existing equal-fold score criterion;
+groups are balanced by origin count, so row counts per fold can differ.
 
 ## Simulation Configurations
 
-The FACE-HD DGP uses $X^\dagger$ for the true site/treatment and outcome
-mechanisms. Configurations change only the fitted working bases exposed to the
-estimators:
+The reported FACE-style simulation uses quadratic true mechanisms.
+Configurations change the fitted working bases exposed to the estimators:
 
 | Config | Fitted Site Basis | Fitted Outcome Basis | Description |
 |--------|-------------------|----------------------|-------------|
-| C1 | $X^\dagger$ | $X^\dagger$ | Both correctly specified |
-| C2 | $X^\dagger$ | $X$ | Outcome model misspecified |
-| C3 | $X$ | $X^\dagger$ | Propensity score misspecified |
+| C1 | $[X,X^2]$ | $[X-\kappa,X^2]$ | Both working bases include the quadratic terms |
+| C2 | $[X,X^2]$ | $X$ | Outcome model misspecified |
+| C3 | $X$ | $[X-\kappa,X^2]$ | Site/treatment model misspecified |
 | C4 | $X$ | $X$ | Both misspecified |
 
 ## Running Simulations on HPC (SLURM)
 
-```bash
-# Submit jobs for multiple parameter combinations
-./main.sh
-```
-
-The simulation supports checkpointing for long-running jobs with SLURM preemption handling.
+The manuscript rerun is restricted to `p=100`. See
+[`scripts/slurm/README.md`](scripts/slurm/README.md) for the isolated package
+gates, exact same-seed rho-reuse audit, bounded grouped submissions,
+aggregation, and per-setting coverage/RMSE diagnostics. The 27,000 canonical
+result rows are represented by 4,500 seed/configuration/K jobs, each covering
+the six rho values. Production defaults to one job at a time and never submits
+the full grouped manifest in one call. Every setting uses 500 Monte Carlo
+replicates; comparison-method intervals use 5,000 paired multiplier-bootstrap
+draws. Checkpoints diagnose coverage, RMSE, bias, empirical-versus-reported
+standard errors, sparse treatment/outcome cells, density-ratio clipping, and
+nuisance/weight-optimizer health separately for every setting and method.
 
 ## Testing
 
@@ -208,11 +236,11 @@ testthat::test_file("tests/testthat/test-utils.R")
 If you use this package in your research, please cite:
 
 ```bibtex
-@software{facehd2025,
+@software{roce2026,
   author = {Zhang, Sinian},
-  title = {FACE-HD: Federated Adaptive Causal Estimation in High Dimensions},
-  year = {2025},
-  url = {https://github.com/sinianzhang/FACE-HD}
+  title = {RoCE: Federated Adaptive Causal Estimation in High Dimensions},
+  year = {2026},
+  url = {https://github.com/sinianzhang/RoCE}
 }
 ```
 

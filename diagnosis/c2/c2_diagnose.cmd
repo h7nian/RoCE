@@ -97,7 +97,7 @@ fi
 read -r TAG N_TOTAL K P CONFIG ESTIMAND ALLOCATION TRANSFORM HET SHIFT N_FOLDS <<< "${GRID[${TASK_ID}]}"
 
 echo "======================================================"
-echo " FACE-HD C2 Diagnosis | Task ${TASK_ID}"
+echo " RoCE C2 Diagnosis | Task ${TASK_ID}"
 echo "======================================================"
 echo " Tag:        ${TAG}"
 echo " n_total:    ${N_TOTAL}"

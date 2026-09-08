@@ -1,11 +1,11 @@
 test_that("density-ratio CV validation loss uses full-source empirical scaling", {
   skip_if_not(
-    Sys.getenv("FACEHD_C2_CV_SCALE_AUDIT", "0") %in% c("1", "TRUE", "true", "True"),
-    "Set FACEHD_C2_CV_SCALE_AUDIT=1 to run the C2 density-ratio CV scaling audit."
+    Sys.getenv("ROCE_C2_CV_SCALE_AUDIT", "0") %in% c("1", "TRUE", "true", "True"),
+    "Set ROCE_C2_CV_SCALE_AUDIT=1 to run the C2 density-ratio CV scaling audit."
   )
 
   repo_root <- normalizePath(file.path(dirname(test_path()), "..", ".."), mustWork = TRUE)
-  cv_utils_path <- file.path(repo_root, "src", "cv_utils.hpp")
+  cv_utils_path <- file.path(repo_root, "src", "cv_utils.h")
   density_path <- file.path(repo_root, "src", "density_ratio.cpp")
 
   cv_utils <- paste(readLines(cv_utils_path, warn = FALSE), collapse = "\n")
@@ -13,9 +13,23 @@ test_that("density-ratio CV validation loss uses full-source empirical scaling",
 
   expect_match(
     cv_utils,
-    "density_ratio_cd_update[\\s\\S]*int n_total[\\s\\S]*grad_acc\\.add\\([^\\n]+/ n_total\\)",
+    paste0(
+      "density_ratio_cd_update[\\s\\S]*double source_scale[\\s\\S]*",
+      "source_scale \\* X_train\\(i, j\\)[\\s\\S]* / n_train"
+    ),
     perl = TRUE,
-    info = "Training loss should keep the source empirical expectation on the full source-sample scale."
+    info = paste(
+      "An inner-CV training fold must estimate the full-source empirical term as",
+      "the source-arm fraction times a within-arm training-fold mean."
+    )
+  )
+
+  expect_false(
+    grepl("pp_train[fold], n, mean_", density_cpp, fixed = TRUE),
+    info = paste(
+      "Dividing a source inner-CV fold by the complete source n introduces an",
+      "extra training-fold fraction and is inconsistent with validation scaling."
+    )
   )
 
   val_signature <- regmatches(
@@ -46,7 +60,14 @@ test_that("density-ratio CV validation loss uses full-source empirical scaling",
   val_call_text <- regmatches(density_cpp, val_calls)[[1]]
   expect_true(length(val_call_text) >= 3L)
   expect_true(
-    all(grepl("source_scale|arm_fraction|n_treated\\s*/\\s*n|n_treated\\s*/\\s*static_cast", val_call_text, perl = TRUE)),
+    all(grepl(
+      paste0(
+        "source_scale|arm_fraction|n_treated\\s*/\\s*n|",
+        "static_cast<[^>]+>\\(n_treated\\)\\s*/\\s*n"
+      ),
+      val_call_text,
+      perl = TRUE
+    )),
     info = paste(
       "Every density-ratio CV caller should pass the source-arm fraction",
       "to keep validation and training losses on the same empirical scale."

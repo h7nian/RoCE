@@ -75,9 +75,9 @@ test_that("generate_simulation_data routes per-site sizes to the FACE DGP", {
   expect_equal(sum(data$R == "s2"), 400L)
 })
 
-test_that("generate_simulation_data rejects per-site sizes for the facehd DGP", {
+test_that("generate_simulation_data rejects per-site sizes for the roce DGP", {
   expect_error(
-    generate_simulation_data(n_total = 900L, K = 2L, p = 10, dgp_type = "facehd",
+    generate_simulation_data(n_total = 900L, K = 2L, p = 10, dgp_type = "roce",
                              n_source_sizes = c(300L, 300L), warn_ignored = FALSE),
     "only.*face"
   )

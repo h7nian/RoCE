@@ -1,7 +1,7 @@
 // Diagnosis-only density-ratio CV kernels with validation source scaling.
 //
 // This file intentionally lives under diagnosis/ and is loaded with
-// Rcpp::sourceCpp() only by C2 probe jobs. It does not modify FACEHD package
+// Rcpp::sourceCpp() only by C2 probe jobs. It does not modify RoCE package
 // source or exported symbols.
 
 // [[Rcpp::depends(RcppEigen)]]
@@ -12,7 +12,7 @@
 #include <string>
 #include <vector>
 
-#include "../../src/cv_utils.hpp"
+#include "../../src/cv_utils.h"
 
 using namespace Rcpp;
 using namespace Eigen;

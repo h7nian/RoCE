@@ -8,8 +8,8 @@
 //   - calculate_covariance_term_cpp:       Target-source covariance Ĉ_{ot,s_j}
 // ============================================================================
 
-#include "optimization.hpp"
-#include "cv_utils.hpp"
+#include "optimization.h"
+#include "cv_utils.h"
 #include <limits>
 
 // Forward declaration for predict_glm_cpp (defined in outcome_model.cpp)
@@ -20,6 +20,7 @@ namespace {
 
 struct ClipDiagnostics {
     int n_obs = 0;
+    int logit_truncated = 0;
     int weight_min_clipped = 0;
     int weight_max_clipped = 0;
     int ratio_min_clipped = 0;
@@ -29,15 +30,29 @@ struct ClipDiagnostics {
 };
 
 VectorXd inference_density_ratios(const VectorXd& density_logits,
+                                  const VectorXd& treatment,
+                                  int A_val,
                                   double M_tau,
                                   ClipDiagnostics& diag) {
     int n = density_logits.size();
-    diag.n_obs = n;
     VectorXd density_ratios(n);
 
     for (int i = 0; i < n; i++) {
+        // The source weight enters the estimating equation only for the
+        // requested treatment arm.  Ignore the other arm in both computation
+        // and diagnostics so the reported truncation fraction has the correct
+        // denominator and cannot be inflated by unused logits.
+        if (treatment(i) != A_val) {
+            density_ratios(i) = 1.0;
+            continue;
+        }
+        diag.n_obs++;
         double raw_logit = density_logits(i);
         diag.max_abs_logit = std::max(diag.max_abs_logit, std::abs(raw_logit));
+
+        if (std::isfinite(M_tau) && std::abs(raw_logit) > M_tau) {
+            diag.logit_truncated++;
+        }
 
         double clipped_logit = truncation_function(raw_logit, M_tau);
         double raw_weight = std::exp(-clipped_logit);
@@ -74,17 +89,24 @@ double clipped_ratio_term(double ratio_term, ClipDiagnostics& diag) {
 }
 
 List make_clip_diagnostics(const ClipDiagnostics& diag) {
-    bool any_clipped = (diag.weight_min_clipped + diag.weight_max_clipped +
+    bool any_safety_clipped = (diag.weight_min_clipped + diag.weight_max_clipped +
                         diag.ratio_min_clipped + diag.ratio_max_clipped) > 0;
+    bool any_truncated = diag.logit_truncated > 0;
     return List::create(
         Named("n_obs") = diag.n_obs,
+        Named("logit_truncated") = diag.logit_truncated,
+        Named("logit_truncation_fraction") = diag.n_obs > 0
+            ? static_cast<double>(diag.logit_truncated) / diag.n_obs
+            : 0.0,
         Named("weight_min_clipped") = diag.weight_min_clipped,
         Named("weight_max_clipped") = diag.weight_max_clipped,
         Named("ratio_min_clipped") = diag.ratio_min_clipped,
         Named("ratio_max_clipped") = diag.ratio_max_clipped,
         Named("max_abs_logit") = diag.max_abs_logit,
         Named("max_raw_weight") = diag.max_raw_weight,
-        Named("any_clipped") = any_clipped
+        Named("any_truncated") = any_truncated,
+        Named("any_safety_clipped") = any_safety_clipped,
+        Named("any_clipped") = any_truncated || any_safety_clipped
     );
 }
 
@@ -108,6 +130,10 @@ List calculate_correction_term_cpp(const MatrixXd& Z_site, const VectorXd& A_sou
     }
 
     int n = Z_site.rows();
+
+    if (A_source.size() != n || Y_source.size() != n) {
+        throw std::runtime_error("calculate_correction_term_cpp: A_source and Y_source must match Z_site rows.");
+    }
     
     if (W_outcome.rows() != n || W_outcome.cols() <= 0) {
         throw std::runtime_error("calculate_correction_term_cpp: W_outcome must be non-empty and match Z_site rows.");
@@ -120,7 +146,8 @@ List calculate_correction_term_cpp(const MatrixXd& Z_site, const VectorXd& A_sou
     VectorXd density_logits = Z_site_int * gamma_s;
     
     ClipDiagnostics clip_diag;
-    VectorXd density_ratios = inference_density_ratios(density_logits, M_tau, clip_diag);
+    VectorXd density_ratios = inference_density_ratios(
+        density_logits, A_source, A_val, M_tau, clip_diag);
     
     // Calculate outcome predictions using W_outcome
     VectorXd outcome_preds = predict_glm_cpp(W_outcome, alpha_ts, family_int, link_int);
@@ -167,6 +194,10 @@ List calculate_source_variance_cpp(const MatrixXd& Z_site, const VectorXd& A_sou
     }
 
     int n = Z_site.rows();
+
+    if (A_source.size() != n || Y_source.size() != n) {
+        throw std::runtime_error("calculate_source_variance_cpp: A_source and Y_source must match Z_site rows.");
+    }
     
     if (W_outcome.rows() != n || W_outcome.cols() <= 0) {
         throw std::runtime_error("calculate_source_variance_cpp: W_outcome must be non-empty and match Z_site rows.");
@@ -179,7 +210,8 @@ List calculate_source_variance_cpp(const MatrixXd& Z_site, const VectorXd& A_sou
     VectorXd density_logits = Z_site_int * gamma_s;
     
     ClipDiagnostics clip_diag;
-    VectorXd density_ratios = inference_density_ratios(density_logits, M_tau, clip_diag);
+    VectorXd density_ratios = inference_density_ratios(
+        density_logits, A_source, A_val, M_tau, clip_diag);
     
     // Calculate outcome predictions using W_outcome
     VectorXd outcome_preds = predict_glm_cpp(W_outcome, alpha_ts, family_int, link_int);
@@ -199,7 +231,8 @@ List calculate_source_variance_cpp(const MatrixXd& Z_site, const VectorXd& A_sou
         }
     }
     
-    // Calculate variance: V̂_s = (1/N_s) Σ(ξ_{t,s_j,i} - ξ̄)^2 following eq:variance_components in main.tex (V_{s_j} component)
+    // Calculate the V_{s_j} component in main.tex eq:agg_penalized_objective:
+    // V̂_s = (1/N_s) Σ(ξ_{t,s_j,i} - ξ̄)^2.
     double xi_mean = xi_components.mean();
     double V_s = (xi_components.array() - xi_mean).square().mean();
     
@@ -231,7 +264,8 @@ List calculate_target_variance_cpp(const MatrixXd& target_W_outcome, const Vecto
     // Calculate influence function components: ζ_{t,s_j,i} = h(φ(X_i); β̂) - Ẽ_t[h(φ(X); β̂)]
     VectorXd zeta_components = outcome_preds.array() - M_ts;
     
-    // Calculate variance: V̂_{t,s_j} = (1/N_t) Σ(ζ_{t,s_j,i})^2 following eq:variance_components in main.tex (V_{t,s_j} component)
+    // Calculate the V_{t,s_j} component in main.tex eq:agg_penalized_objective:
+    // V̂_{t,s_j} = (1/N_t) Σ(ζ_{t,s_j,i})^2.
     // Note: mean(zeta_components) = 0 by construction, so no need to subtract mean again
     double V_t = zeta_components.array().square().mean();
     

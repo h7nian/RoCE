@@ -1,12 +1,12 @@
 #!/bin/bash
 # ============================================================================
-# FACE-HD C2 oracle-gamma coverage-vs-n submission script
+# RoCE C2 oracle-gamma coverage-vs-n submission script
 # ----------------------------------------------------------------------------
 # Confirmatory: does the ORACLE (true density-ratio gamma) estimator keep
 # ~0.95 coverage at n=20000 while the FITTED-gamma estimator degrades to ~0.84?
 # If yes, the estimand/identification is sound and the C2 under-coverage is a
 # gamma-hat ESTIMATION problem (density-ratio CV validation-loss scale in
-# src/cv_utils.hpp). Reuses unmodified diagnosis/c2/c2_oracle_gamma_probe.R.
+# src/cv_utils.h). Reuses unmodified diagnosis/c2/c2_oracle_gamma_probe.R.
 #
 # Cells (K,n): {(3,5000),(3,20000),(4,5000),(4,20000)}; SEEDS_PER_CELL each.
 # Default 60 seeds/cell x 4 cells = 240 array tasks.
@@ -69,7 +69,7 @@ SBATCH_CMD=(
 )
 
 echo "======================================================"
-echo " FACE-HD C2 Oracle-Gamma Coverage-vs-n Submission"
+echo " RoCE C2 Oracle-Gamma Coverage-vs-n Submission"
 echo "======================================================"
 echo " Repo:           ${REPO_DIR}"
 echo " Tasks:          ${TASKS}"

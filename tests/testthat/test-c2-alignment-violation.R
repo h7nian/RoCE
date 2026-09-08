@@ -17,7 +17,7 @@
 # ---------------------------------------------
 # Layer 1 (Proof scope check)
 #   Compare alpha_init vs alpha_cal under C1/C2.  Only answers: does the
-#   proof's alignment assumption (proof.tex Assumption RSC(c)) hold in
+#   supplemental alignment assumption (supplemental.tex) hold in
 #   population under each config?  alignment failure  =>  the current proof
 #   does not cover this case.  It does NOT prove the estimator is biased,
 #   because the DR identity
@@ -107,7 +107,7 @@ dir.create(ALIGNMENT_OUTPUT_DIR, recursive = TRUE, showWarnings = FALSE)
 }
 
 .alignment_source_env <- function(default) {
-  value <- Sys.getenv("FACEHD_C2_ALIGNMENT_SOURCES", unset = "")
+  value <- Sys.getenv("ROCE_C2_ALIGNMENT_SOURCES", unset = "")
   if (!nzchar(value)) return(default)
   parsed <- trimws(strsplit(value, ",", fixed = TRUE)[[1L]])
   parsed <- parsed[nzchar(parsed)]
@@ -150,12 +150,6 @@ dir.create(ALIGNMENT_OUTPUT_DIR, recursive = TRUE, showWarnings = FALSE)
   eta <- as.numeric(Z_int %*% gamma)
   exp(-eta)
 }
-
-source({
-  helper_path <- file.path("diagnosis", "c2", "c2_true_gamma_utils.R")
-  if (file.exists(helper_path)) helper_path else file.path("..", "..", helper_path)
-})
-
 
 # ---------------------------------------------------------------------------
 # .dr_bias
@@ -445,7 +439,7 @@ source({
           outcome_type    = "binary",
           heterogeneity_type = "none",
           shift_strength  = 0.5,
-          dgp_type        = "facehd",
+          dgp_type        = "roce",
           warn_ignored    = FALSE
         )
       }, error = function(e) {
@@ -526,7 +520,7 @@ source({
 # MAIN PROBE
 # ---------------------------------------------------------------------------
 .c2_alignment_enabled <- function() {
-  env_enabled <- Sys.getenv("FACEHD_RUN_C2_ALIGNMENT", "0") %in%
+  env_enabled <- Sys.getenv("ROCE_RUN_C2_ALIGNMENT", "0") %in%
     c("1", "TRUE", "true", "True")
   filter <- Sys.getenv("TEST_FILTER", "")
   env_enabled || grepl("c2-alignment", filter, fixed = TRUE)
@@ -534,18 +528,18 @@ source({
 
 test_that("three-layer C1/C2 DR-identity probe across (n_total, p)", {
   skip_if_not(.c2_alignment_enabled(),
-              message = "set FACEHD_RUN_C2_ALIGNMENT=1 or run with --filter c2-alignment")
+              message = "set ROCE_RUN_C2_ALIGNMENT=1 or run with --filter c2-alignment")
 
   # Grid: vary p (Sinian's observation: p=10 is fine, p=50 shows bias) and
   # n_total around the production focal points.
-  K_SITES       <- .alignment_int_env("FACEHD_C2_ALIGNMENT_K", 3L)
-  N_REPS        <- .alignment_int_env("FACEHD_C2_ALIGNMENT_REPS", 20L)
+  K_SITES       <- .alignment_int_env("ROCE_C2_ALIGNMENT_K", 3L)
+  N_REPS        <- .alignment_int_env("ROCE_C2_ALIGNMENT_REPS", 20L)
   SOURCE_SUBSET <- .alignment_source_env(c("s1", "s2"))  # 2 of K=3 sources by default
 
   grid <- expand.grid(
-    n_total = .alignment_int_vector_env("FACEHD_C2_ALIGNMENT_N", c(5000L, 10000L)),
-    p       = .alignment_int_vector_env("FACEHD_C2_ALIGNMENT_P", c(10L, 50L)),
-    config  = .alignment_config_env("FACEHD_C2_ALIGNMENT_CONFIGS", c("C1", "C2")),
+    n_total = .alignment_int_vector_env("ROCE_C2_ALIGNMENT_N", c(5000L, 10000L)),
+    p       = .alignment_int_vector_env("ROCE_C2_ALIGNMENT_P", c(10L, 50L)),
+    config  = .alignment_config_env("ROCE_C2_ALIGNMENT_CONFIGS", c("C1", "C2")),
     KEEP.OUT.ATTRS = FALSE,
     stringsAsFactors = FALSE
   )
@@ -624,7 +618,7 @@ test_that("three-layer C1/C2 DR-identity probe across (n_total, p)", {
               info = "B(true, true) produced non-finite values.")
   strict_true_check <- N_REPS >= 5L && min(grid$n_total) >= 5000L
   if (strict_true_check) {
-    true_tol <- .alignment_numeric_env("FACEHD_C2_ALIGNMENT_TRUE_TOL", 0.04)
+    true_tol <- .alignment_numeric_env("ROCE_C2_ALIGNMENT_TRUE_TOL", 0.04)
     expect_true(
       all(abs(bias_true_true) < true_tol),
       info = sprintf("B(true, true) should be near zero across large diagnostic cells; got max |bias|=%.5f with tol=%.5f",

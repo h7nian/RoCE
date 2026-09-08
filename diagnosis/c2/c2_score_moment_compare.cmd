@@ -20,7 +20,7 @@ export C2_SCORE_COMPARE_OUTPUT_ROOT="${C2_SCORE_COMPARE_OUTPUT_ROOT:-diagnosis/c
 mkdir -p "${C2_SCORE_COMPARE_OUTPUT_ROOT}/log" "${C2_SCORE_COMPARE_OUTPUT_ROOT}/summary"
 
 echo "======================================================"
-echo " FACE-HD C2 Score/Moment Compare"
+echo " RoCE C2 Score/Moment Compare"
 echo "======================================================"
 echo " Repo:       $(pwd)"
 echo " Base:       ${C2_SCORE_COMPARE_BASE_ROOT}"

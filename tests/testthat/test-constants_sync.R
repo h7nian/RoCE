@@ -1,27 +1,27 @@
 # test-constants_sync.R - Verify R and C++ constants remain in sync
 #
-# Reads src/numerical_constants.hpp and compares parsed values against
+# Reads src/numerical_constants.h and compares parsed values against
 # the corresponding R constants in R/constants.R.
 # Prevents silent drift between the two files.
 
 test_that("R and C++ numerical constants are in sync", {
   # Read and parse C++ constants from header file
-  hpp_path <- file.path("..", "..", "src", "numerical_constants.hpp")
-  if (!file.exists(hpp_path)) {
-    hpp_path <- file.path(system.file(package = "FACEHD"), "..", "src", "numerical_constants.hpp")
+  header_path <- file.path("..", "..", "src", "numerical_constants.h")
+  if (!file.exists(header_path)) {
+    header_path <- file.path(system.file(package = "RoCE"), "..", "src", "numerical_constants.h")
   }
   # Also try the common testthat working directory
-  if (!file.exists(hpp_path)) {
-    hpp_path <- "src/numerical_constants.hpp"
+  if (!file.exists(header_path)) {
+    header_path <- "src/numerical_constants.h"
   }
-  skip_if_not(file.exists(hpp_path), "Cannot locate numerical_constants.hpp")
+  skip_if_not(file.exists(header_path), "Cannot locate numerical_constants.h")
   
-  hpp_lines <- readLines(hpp_path)
+  header_lines <- readLines(header_path)
   
   # Helper: extract constexpr values from C++ header
   parse_cpp_constant <- function(name) {
     pattern <- sprintf("constexpr\\s+\\w+\\s+%s\\s*=\\s*([^;]+);", name)
-    match <- grep(pattern, hpp_lines, value = TRUE)
+    match <- grep(pattern, header_lines, value = TRUE)
     if (length(match) == 0) return(NULL)
     val_str <- sub(paste0(".*", name, "\\s*=\\s*"), "", match[1])
     val_str <- sub(";.*", "", val_str)
@@ -38,6 +38,7 @@ test_that("R and C++ numerical constants are in sync", {
     list(cpp = "WEIGHT_MIN",          r_val = WEIGHT_MIN),
     list(cpp = "WEIGHT_MAX",          r_val = WEIGHT_MAX),
     list(cpp = "PARAM_MAX",           r_val = PARAM_MAX),
+    list(cpp = "CV_FAILURE_PATIENCE", r_val = NUISANCE_CV_FAILURE_PATIENCE),
     list(cpp = "ACTIVE_SET_THRESHOLD", r_val = ACTIVE_SET_THRESHOLD),
     list(cpp = "HESSIAN_FLOOR",       r_val = HESSIAN_FLOOR)
   )
@@ -60,4 +61,15 @@ test_that("R and C++ numerical constants are in sync", {
                                   pair$cpp, cpp_val, pair$r_val))
     }
   }
+})
+
+test_that("glmnet path iteration budget is explicit and conservative", {
+  expect_identical(GLMNET_MAX_ITER, 1000000L)
+  expect_gt(GLMNET_MAX_ITER, 100000L)
+})
+
+test_that("production aggregation cutoff matches the locked pilot decision", {
+  expect_equal(AGG_WALD_CUTOFF_DEFAULT, 1)
+  expect_equal(AGG_WALD_LAMBDA, 1 / AGG_WALD_CUTOFF_DEFAULT)
+  expect_equal(AGG_WALD_CUTOFF, 1 / AGG_WALD_LAMBDA)
 })

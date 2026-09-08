@@ -1,14 +1,9 @@
 .c2_source_pi_audit_enabled <- function() {
-  env_enabled <- Sys.getenv("FACEHD_C2_SOURCE_PI_AUDIT", "0") %in%
+  env_enabled <- Sys.getenv("ROCE_C2_SOURCE_PI_AUDIT", "0") %in%
     c("1", "TRUE", "true", "True")
   filter <- Sys.getenv("TEST_FILTER", "")
   env_enabled || grepl("c2-source-pi-diagnostic-audit", filter, fixed = TRUE)
 }
-
-source({
-  helper_path <- file.path("diagnosis", "c2", "c2_true_gamma_utils.R")
-  if (file.exists(helper_path)) helper_path else file.path("..", "..", helper_path)
-})
 
 .c2_source_pi_weight <- function(Z, gamma) {
   exp(-as.numeric(cbind(1, as.matrix(Z)) %*% as.numeric(gamma)))
@@ -16,7 +11,7 @@ source({
 
 test_that("c2 source diagnostics use source-conditional treatment propensity", {
   skip_if_not(.c2_source_pi_audit_enabled(),
-              message = "set FACEHD_C2_SOURCE_PI_AUDIT=1 or run with --filter c2-source-pi-diagnostic-audit")
+              message = "set ROCE_C2_SOURCE_PI_AUDIT=1 or run with --filter c2-source-pi-diagnostic-audit")
 
   set.seed(71041)
   data <- generate_simulation_data(
@@ -28,11 +23,11 @@ test_that("c2 source diagnostics use source-conditional treatment propensity", {
     outcome_type = "binary",
     heterogeneity_type = "none",
     shift_strength = 0.5,
-    dgp_type = "facehd",
+    dgp_type = "roce",
     warn_ignored = FALSE
   )
 
-  calculate_site_probabilities <- c2_facehd_function("calculate_site_probabilities")
+  calculate_site_probabilities <- c2_roce_function("calculate_site_probabilities")
   Z_true <- as.matrix(data$Z_site_true)
   probs <- calculate_site_probabilities(Z_true, data$gamma_params, data$K)
 

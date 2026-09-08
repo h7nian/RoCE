@@ -12,7 +12,7 @@
 #   ./data/download_rhc.sh --dry-run      # Show sbatch command without submitting
 #
 # Once this script has been run successfully, inst/extdata/rhc.csv is
-# available to any installation of the FACEHD package (via load_rhc_raw()
+# available to any installation of the RoCE package (via load_rhc_raw()
 # and related helpers in R/real_data_rhc.R).
 # ============================================================================
 
@@ -31,7 +31,7 @@ done
 mkdir -p log
 
 echo "======================================================"
-echo " FACE-HD Real-Data Download: RHC"
+echo " RoCE Real-Data Download: RHC"
 echo "======================================================"
 echo " Source:      https://hbiostat.org/data/repo/rhc.csv"
 echo " Destination: inst/extdata/rhc.csv"
@@ -40,12 +40,12 @@ echo "======================================================"
 
 if [[ "$DRY_RUN" == "true" ]]; then
     echo ""
-    echo "[DRY RUN] Would submit: sbatch --job-name=FACEHD_rhc_dl data/download_rhc.cmd"
+    echo "[DRY RUN] Would submit: sbatch --job-name=ROCE_rhc_dl data/download_rhc.cmd"
     echo ""
     exit 0
 fi
 
-submit_output=$(sbatch --job-name=FACEHD_rhc_dl data/download_rhc.cmd)
+submit_output=$(sbatch --job-name=ROCE_rhc_dl data/download_rhc.cmd)
 echo ""
 echo "Submitted: ${submit_output}"
 echo ""

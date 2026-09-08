@@ -3,7 +3,7 @@
 # tests/testthat/test-namespace_sync.R to prevent drift.
 
 # C++ compiled code
-useDynLib(FACEHD, .registration = TRUE)
+useDynLib(RoCE, .registration = TRUE)
 
 # Rcpp imports
 importFrom(Rcpp, sourceCpp)
@@ -30,7 +30,12 @@ export(resolve_glm_family)
 
 # Core algorithm exports
 export(run_crossfit)
+export(run_tate_crossfit)
+export(reaggregate_tate_crossfit)
+export(reaggregate_tate_sensitivity_grid)
 export(calculate_crossfit_aggregation)
+export(calculate_tate_crossfit_aggregation)
+export(estimate_tate_weight_bootstrap)
 
 # Model fitting exports
 export(fit_initial_outcome)
@@ -60,6 +65,7 @@ export(estimate_federated_dr)
 export(estimate_pooled_dr)
 export(calculate_dl_heterogeneity)
 export(run_all_comparisons)
+export(run_all_comparisons_tate)
 export(estimate_oracle_dr)
 
 # Validation
@@ -84,6 +90,7 @@ export(load_rhc_raw)
 export(build_rhc_cohort)
 export(build_rhc_data_split)
 export(run_rhc_experiment)
+export(run_rhc_tate_experiment)
 export(phi_rhc_bspline)
 
 # Plotting
@@ -93,6 +100,3 @@ export(plot_aggregation_weights)
 export(plot_pairwise_vs_target)
 export(plot_simulation_metric)
 export(save_simulation_plot_grid)
-
-
-

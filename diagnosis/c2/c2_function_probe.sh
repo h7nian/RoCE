@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================================
-# FACE-HD C2 function-level probe submission script
+# RoCE C2 function-level probe submission script
 # ----------------------------------------------------------------------------
 # Submits one-seed, fold-level C2 probes to MSI.  These jobs are diagnostic
 # only: they record target nuisance decompositions, source transport/oracle
@@ -67,7 +67,7 @@ SBATCH_CMD=(
 )
 
 echo "======================================================"
-echo " FACE-HD C2 Function Probe Submission"
+echo " RoCE C2 Function Probe Submission"
 echo "======================================================"
 echo " Repo:           ${REPO_DIR}"
 echo " Tasks:          ${TASKS}"

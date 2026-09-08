@@ -14,7 +14,7 @@ export C2_RBAL_OUTPUT_ROOT="${C2_RBAL_OUTPUT_ROOT:-diagnosis/c2/residual_balance
 mkdir -p "${C2_RBAL_OUTPUT_ROOT}/log" "${C2_RBAL_OUTPUT_ROOT}/summary"
 
 echo "======================================================"
-echo " FACE-HD C2 Residual Balance Summary"
+echo " RoCE C2 Residual Balance Summary"
 echo "======================================================"
 echo " Start: $(date)"
 echo " Host:  $(hostname)"

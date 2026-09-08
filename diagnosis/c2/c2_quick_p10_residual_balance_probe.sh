@@ -65,7 +65,7 @@ SBATCH_CMD=(
 )
 
 echo "======================================================"
-echo " FACE-HD C2 p=10 Quick Residual Balance Submission"
+echo " RoCE C2 p=10 Quick Residual Balance Submission"
 echo "======================================================"
 echo " Repo:           ${REPO_DIR}"
 echo " Tasks:          ${TASKS}"

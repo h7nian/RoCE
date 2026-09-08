@@ -3,7 +3,7 @@
 #
 # Diagnosis-only. For a given config, runs all comparison-method baselines
 # (run_all_comparisons: target_only, sample_size, inverse_variance, federated_dr,
-# pooled_dr, tilted_aipw) plus the FACE-HD aggregated estimator (run_crossfit), and
+# pooled_dr, tilted_aipw) plus the RoCE aggregated estimator (run_crossfit), and
 # records each method's bias, se, and CI coverage vs the superpopulation truth.
 # Used to show which baselines have bias/coverage problems across C1-C4.
 
@@ -19,18 +19,18 @@ stopifnot(n_total > 0L, K_sites > 0L, p > 0L, seed > 0L, n_folds >= 3L)
 if (!(config %in% c("C1", "C2", "C3", "C4"))) stop("config must be C1/C2/C3/C4.", call. = FALSE)
 
 suppressPackageStartupMessages({
-  if (requireNamespace("FACEHD", quietly = FALSE)) library(FACEHD)
+  if (requireNamespace("RoCE", quietly = FALSE)) library(RoCE)
   else if (requireNamespace("devtools", quietly = FALSE)) devtools::load_all(".")
-  else stop("Neither installed FACEHD nor devtools available.", call. = FALSE)
+  else stop("Neither installed RoCE nor devtools available.", call. = FALSE)
 })
-facehd_function <- function(name) {
-  ns <- asNamespace("FACEHD")
+roce_function <- function(name) {
+  ns <- asNamespace("RoCE")
   if (!exists(name, envir = ns, inherits = FALSE)) stop(sprintf("missing '%s'.", name), call. = FALSE)
   get(name, envir = ns, inherits = FALSE)
 }
 for (fn in c("generate_simulation_data", "split_data_by_site", "build_crossfit_folds",
              "run_crossfit", "run_all_comparisons")) {
-  if (!exists(fn, mode = "function")) assign(fn, facehd_function(fn))
+  if (!exists(fn, mode = "function")) assign(fn, roce_function(fn))
 }
 
 out_root <- Sys.getenv("C2_CMP_OUTPUT_ROOT", file.path("diagnosis", "c2", "comparison_coverage"))
@@ -44,7 +44,7 @@ data <- generate_simulation_data(
   estimand_type = "superpopulation", site_allocation = "model",
   transform_type = "mild", outcome_type = "binary",
   heterogeneity_type = "none", shift_strength = 0.5,
-  dgp_type = "facehd", warn_ignored = FALSE
+  dgp_type = "roce", warn_ignored = FALSE
 )
 split <- split_data_by_site(data)
 folds <- build_crossfit_folds(split, n_folds)
@@ -65,9 +65,9 @@ row_for <- function(method, est, se) {
 }
 
 rows <- list()
-# FACE-HD aggregated estimator (the proposed method)
+# RoCE aggregated estimator (the proposed method)
 set.seed(seed + 200000L)
-facehd_ok <- tryCatch({
+roce_ok <- tryCatch({
   res <- run_crossfit(split, n_folds = n_folds, communication_mode = "one_round",
                       lambda_selection = "cv", lambda_rule = "min", verbose = FALSE,
                       n_cores = 1L, family = "binomial", A_val = 1L,
@@ -90,7 +90,7 @@ if (!is.null(cmp)) {
 
 df <- do.call(rbind, rows)
 write.csv(df, paste0(prefix, "_comparison.csv"), row.names = FALSE)
-cat(sprintf("[cmp-cov] %s config=%s n=%d K=%d facehd_ok=%s wrote %d method rows\n",
-            tag, config, n_total, K_sites, facehd_ok, nrow(df)))
+cat(sprintf("[cmp-cov] %s config=%s n=%d K=%d roce_ok=%s wrote %d method rows\n",
+            tag, config, n_total, K_sites, roce_ok, nrow(df)))
 print(df[, c("method", "bias", "se", "covered")], row.names = FALSE)
 cat("[cmp-cov] DONE\n")

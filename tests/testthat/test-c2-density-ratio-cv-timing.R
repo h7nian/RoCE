@@ -1,5 +1,5 @@
 .c2_dr_cv_timing_enabled <- function() {
-  env_enabled <- Sys.getenv("FACEHD_RUN_C2_DR_CV_TIMING", "0") %in%
+  env_enabled <- Sys.getenv("ROCE_RUN_C2_DR_CV_TIMING", "0") %in%
     c("1", "TRUE", "true", "True")
   filter <- Sys.getenv("TEST_FILTER", "")
   env_enabled || grepl("c2-dr-cv-timing", filter, fixed = TRUE)
@@ -28,10 +28,10 @@
 }
 
 .c2_dr_cv_source_env <- function(available) {
-  value <- Sys.getenv("FACEHD_C2_DR_CV_TIMING_SOURCE", unset = "")
+  value <- Sys.getenv("ROCE_C2_DR_CV_TIMING_SOURCE", unset = "")
   if (!nzchar(value)) return(available[1L])
   if (!(value %in% available)) {
-    stop(sprintf("FACEHD_C2_DR_CV_TIMING_SOURCE=%s unavailable; available: %s",
+    stop(sprintf("ROCE_C2_DR_CV_TIMING_SOURCE=%s unavailable; available: %s",
                  value, paste(available, collapse = ", ")), call. = FALSE)
   }
   value
@@ -47,19 +47,19 @@
 
 test_that("c2-dr-cv-timing times initial density-ratio lambda grids", {
   skip_if_not(.c2_dr_cv_timing_enabled(),
-              message = "set FACEHD_RUN_C2_DR_CV_TIMING=1 or run with --filter c2-dr-cv-timing")
+              message = "set ROCE_RUN_C2_DR_CV_TIMING=1 or run with --filter c2-dr-cv-timing")
 
-  n_total <- .c2_dr_cv_int_env("FACEHD_C2_DR_CV_TIMING_N", 5000L)
-  K_sites <- .c2_dr_cv_int_env("FACEHD_C2_DR_CV_TIMING_K", 5L)
-  p <- .c2_dr_cv_int_env("FACEHD_C2_DR_CV_TIMING_P", 50L)
-  n_folds <- .c2_dr_cv_int_env("FACEHD_C2_DR_CV_TIMING_FOLDS", 3L)
-  seed <- .c2_dr_cv_int_env("FACEHD_C2_DR_CV_TIMING_SEED", 270001L)
-  k1 <- .c2_dr_cv_int_env("FACEHD_C2_DR_CV_TIMING_K1", 1L)
-  k2 <- .c2_dr_cv_int_env("FACEHD_C2_DR_CV_TIMING_K2", 2L)
-  max_iter <- .c2_dr_cv_int_env("FACEHD_C2_DR_CV_TIMING_MAX_ITER", MAX_ITER_DEFAULT)
-  tol <- .c2_dr_cv_num_env("FACEHD_C2_DR_CV_TIMING_TOL", TOL_DEFAULT)
-  shift_strength <- .c2_dr_cv_num_env("FACEHD_C2_DR_CV_TIMING_SHIFT", 0.5)
-  grid_sizes <- .c2_dr_cv_int_vector_env("FACEHD_C2_DR_CV_TIMING_GRIDS", c(5L, 10L, 20L))
+  n_total <- .c2_dr_cv_int_env("ROCE_C2_DR_CV_TIMING_N", 5000L)
+  K_sites <- .c2_dr_cv_int_env("ROCE_C2_DR_CV_TIMING_K", 5L)
+  p <- .c2_dr_cv_int_env("ROCE_C2_DR_CV_TIMING_P", 50L)
+  n_folds <- .c2_dr_cv_int_env("ROCE_C2_DR_CV_TIMING_FOLDS", 3L)
+  seed <- .c2_dr_cv_int_env("ROCE_C2_DR_CV_TIMING_SEED", 270001L)
+  k1 <- .c2_dr_cv_int_env("ROCE_C2_DR_CV_TIMING_K1", 1L)
+  k2 <- .c2_dr_cv_int_env("ROCE_C2_DR_CV_TIMING_K2", 2L)
+  max_iter <- .c2_dr_cv_int_env("ROCE_C2_DR_CV_TIMING_MAX_ITER", MAX_ITER_DEFAULT)
+  tol <- .c2_dr_cv_num_env("ROCE_C2_DR_CV_TIMING_TOL", TOL_DEFAULT)
+  shift_strength <- .c2_dr_cv_num_env("ROCE_C2_DR_CV_TIMING_SHIFT", 0.5)
+  grid_sizes <- .c2_dr_cv_int_vector_env("ROCE_C2_DR_CV_TIMING_GRIDS", c(5L, 10L, 20L))
 
   out_dir <- file.path("c2_dr_cv_timing_output")
   dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
@@ -86,7 +86,7 @@ test_that("c2-dr-cv-timing times initial density-ratio lambda grids", {
     outcome_type = "binary",
     heterogeneity_type = "none",
     shift_strength = shift_strength,
-    dgp_type = "facehd",
+    dgp_type = "roce",
     warn_ignored = FALSE
   )
   data_split <- split_data_by_site(data)

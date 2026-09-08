@@ -54,7 +54,7 @@ SBATCH_CMD=(
 )
 
 echo "======================================================"
-echo " FACE-HD C2 Oracle Gamma Probe Submission"
+echo " RoCE C2 Oracle Gamma Probe Submission"
 echo "======================================================"
 echo " Repo:        ${REPO_DIR}"
 echo " Tasks:       ${TASKS}"

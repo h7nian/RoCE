@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================================
-# FACE-HD Simulation Job Submission Script
+# RoCE Simulation Job Submission Script
 # ============================================================================
 #
 # Submits SLURM jobs for each parameter combination in the simulation study.
@@ -8,8 +8,8 @@
 # checkpoint/restart for preemption-resilient execution.
 #
 # Usage:
-#   ./main.sh                          # Submit core experiments (facehd DGP)
-#   ./main.sh --subset minimal         # Single test job (facehd)
+#   ./main.sh                          # Submit core experiments (roce DGP)
+#   ./main.sh --subset minimal         # Single test job (roce)
 #   ./main.sh --subset full            # Full factorial (many jobs!)
 #   ./main.sh --subset face            # FACE DGP (Han et al. JASA 2023)
 #   ./main.sh --dry-run                # Preview without submitting
@@ -28,7 +28,7 @@
 #   --array-concurrency 16             # max concurrent array tasks
 #
 # Subsets:                           jobs   formula
-#   minimal              1           1×1×1×1  (single facehd setting)
+#   minimal              1           1×1×1×1  (single roce setting)
 #   core               108           3n × 3K × 4p × 3cfg
 #   continuous         216           core × 2 outcome types
 #   shift              324           core × 3 shift strengths
@@ -130,8 +130,8 @@ ESTIMATE_ATE="FALSE"
 ARRAY_CONCURRENCY="16"
 N_FOLDS=10  # diagnosis/bias/ recommends 3; override via --n-folds
 
-# DGP selection: "facehd" (default) or "face" (FACE JASA 2023 Section 5.1)
-DGP_TYPE="facehd"
+# DGP selection: "roce" (default) or "face" (FACE JASA 2023 Section 5.1)
+DGP_TYPE="roce"
 ATE_DEVIATION_VALUES=(0.0)
 N_DEVIATED_SITES_VALUES=(0)
 
@@ -301,7 +301,7 @@ build_setting_id() {
     local site_allocation=${9:-model}
     local transform_type=${10:-mild}
     local n_folds=${11:-10}
-    local dgp_type=${12:-facehd}
+    local dgp_type=${12:-roce}
     local ate_deviation=${13:-0.0}
     local n_deviated_sites=${14:-0}
     local estimate_ate=${15:-FALSE}
@@ -339,7 +339,7 @@ TOTAL=${#COMBOS[@]}
 mkdir -p log checkpoints results
 
 echo "======================================================"
-echo " FACE-HD Simulation Job Submission"
+echo " RoCE Simulation Job Submission"
 echo "======================================================"
 echo ""
 echo " Subset:     ${SUBSET}"

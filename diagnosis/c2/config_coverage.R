@@ -3,7 +3,7 @@
 #
 # Diagnosis-only. Runs the production cross-fitting estimator for a given config
 # (C1/C2/C3/C4) and records the final estimate, se, bias, and CI coverage. Used to
-# confirm the cv_utils.hpp density-ratio CV-scale fix does not regress configs other
+# confirm the cv_utils.h density-ratio CV-scale fix does not regress configs other
 # than C2. Mirrors the data-generation + run_crossfit path of c2_score_moment_audit.R;
 # does NOT compute C2-specific moments (so it is config-agnostic).
 
@@ -38,25 +38,25 @@ if (!all(modes %in% c("one_round", "two_round"))) {
 }
 
 suppressPackageStartupMessages({
-  if (requireNamespace("FACEHD", quietly = FALSE)) {
-    library(FACEHD)
+  if (requireNamespace("RoCE", quietly = FALSE)) {
+    library(RoCE)
   } else if (requireNamespace("devtools", quietly = FALSE)) {
     devtools::load_all(".")
   } else {
-    stop("Neither installed FACEHD nor devtools available.", call. = FALSE)
+    stop("Neither installed RoCE nor devtools available.", call. = FALSE)
   }
 })
 
-facehd_function <- function(name) {
-  ns <- asNamespace("FACEHD")
+roce_function <- function(name) {
+  ns <- asNamespace("RoCE")
   if (!exists(name, envir = ns, inherits = FALSE)) {
-    stop(sprintf("FACEHD namespace does not contain '%s'.", name), call. = FALSE)
+    stop(sprintf("RoCE namespace does not contain '%s'.", name), call. = FALSE)
   }
   get(name, envir = ns, inherits = FALSE)
 }
 for (fn in c("generate_simulation_data", "split_data_by_site",
              "build_crossfit_folds", "run_crossfit")) {
-  if (!exists(fn, mode = "function")) assign(fn, facehd_function(fn))
+  if (!exists(fn, mode = "function")) assign(fn, roce_function(fn))
 }
 
 out_root <- Sys.getenv("C2_CFG_OUTPUT_ROOT",
@@ -72,7 +72,7 @@ data <- generate_simulation_data(
   estimand_type = "superpopulation", site_allocation = "model",
   transform_type = "mild", outcome_type = "binary",
   heterogeneity_type = "none", shift_strength = 0.5,
-  dgp_type = "facehd", warn_ignored = FALSE
+  dgp_type = "roce", warn_ignored = FALSE
 )
 split <- split_data_by_site(data)
 folds <- build_crossfit_folds(split, n_folds)

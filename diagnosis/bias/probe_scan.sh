@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================================
-# FACE-HD bias probe scan submission
+# RoCE bias probe scan submission
 # ----------------------------------------------------------------------------
 # Submits a single-task SLURM job that runs diagnosis/bias/probe_scan.R
 # over 6 (n, p) settings × 3 seeds to quantify the relationship between
@@ -59,7 +59,7 @@ SBATCH_CMD=(
 )
 
 echo "======================================================"
-echo " FACE-HD Bias Probe Scan Submission"
+echo " RoCE Bias Probe Scan Submission"
 echo "======================================================"
 echo " Settings:    6 (n, p) combos at K=3, C1, ss=0.5"
 echo "                (1000,10) (1000,20) (1000,50)"

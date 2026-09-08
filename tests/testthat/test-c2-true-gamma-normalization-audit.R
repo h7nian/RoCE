@@ -1,14 +1,9 @@
 .c2_true_gamma_audit_enabled <- function() {
-  env_enabled <- Sys.getenv("FACEHD_C2_TRUE_GAMMA_AUDIT", "0") %in%
+  env_enabled <- Sys.getenv("ROCE_C2_TRUE_GAMMA_AUDIT", "0") %in%
     c("1", "TRUE", "true", "True")
   filter <- Sys.getenv("TEST_FILTER", "")
   env_enabled || grepl("c2-true-gamma-normalization-audit", filter, fixed = TRUE)
 }
-
-source({
-  helper_path <- file.path("diagnosis", "c2", "c2_true_gamma_utils.R")
-  if (file.exists(helper_path)) helper_path else file.path("..", "..", helper_path)
-})
 
 .c2_true_gamma_weight <- function(Z, gamma) {
   exp(-as.numeric(cbind(1, as.matrix(Z)) %*% as.numeric(gamma)))
@@ -17,7 +12,7 @@ source({
 .c2_true_gamma_model_intercept <- function(data, source_name, gamma,
                                            A_val = 1L) {
   source_idx <- c2_source_index(source_name)
-  calculate_site_probabilities <- c2_facehd_function("calculate_site_probabilities")
+  calculate_site_probabilities <- c2_roce_function("calculate_site_probabilities")
   Z_true <- as.matrix(if (is.null(data$Z_site_true)) data$Z_site else data$Z_site_true)
   probs <- calculate_site_probabilities(Z_true, data$gamma_params, data$K)
   source_prob <- probs[[paste0("p_s", source_idx, "_0")]] +
@@ -28,7 +23,7 @@ source({
 
 test_that("c2 true gamma helper converts joint DGP gamma to source-conditional calibration gamma", {
   skip_if_not(.c2_true_gamma_audit_enabled(),
-              message = "set FACEHD_C2_TRUE_GAMMA_AUDIT=1 or run with --filter c2-true-gamma-normalization-audit")
+              message = "set ROCE_C2_TRUE_GAMMA_AUDIT=1 or run with --filter c2-true-gamma-normalization-audit")
 
   set.seed(71031)
   data <- generate_simulation_data(
@@ -40,7 +35,7 @@ test_that("c2 true gamma helper converts joint DGP gamma to source-conditional c
     outcome_type = "binary",
     heterogeneity_type = "none",
     shift_strength = 0.5,
-    dgp_type = "facehd",
+    dgp_type = "roce",
     warn_ignored = FALSE
   )
 

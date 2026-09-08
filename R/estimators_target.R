@@ -7,7 +7,20 @@
 # Contents:
 #   1. estimate_target_only (main entry point)
 #   2. estimate_target_only_crossfit (standalone cross-fitting)
-#   3. estimate_target_only_from_complement (for use inside FACE-HD outer loop)
+#   3. estimate_target_only_from_complement (for use inside RoCE outer loop)
+
+.target_only_cv_seed <- function(k1, k2 = NULL, model, A_val = 0L) {
+  model_index <- match(model, c("propensity", "outcome"))
+  if (is.na(model_index)) {
+    stop(".target_only_cv_seed: model must be propensity or outcome.",
+         call. = FALSE)
+  }
+  inner_fold <- if (is.null(k2)) 0L else as.integer(k2)
+  as.integer(
+    800011L + 10000L * model_index + 1000L * as.integer(A_val) +
+      100L * as.integer(k1) + inner_fold
+  )
+}
 
 #' Target-only estimator using doubly robust AIPW
 #' @param data_split split data by site
@@ -16,6 +29,7 @@
 #' @param use_crossfit Logical. If TRUE (default), use cross-fitted nuisances
 #'   for variance-valid inference (use_rcal is ignored in this mode).
 #' @param n_folds Number of cross-fitting folds (default uses data-driven value).
+#' @param A_val Treatment arm, either 0 or 1.
 #' @return estimate with variance
 #' @export
 estimate_target_only <- function(data_split, family = "binomial", 
@@ -38,7 +52,7 @@ estimate_target_only <- function(data_split, family = "binomial",
 #'
 #' @note This function performs its OWN internal K-fold cross-fitting and is
 #'   intended for **standalone** use (e.g., comparison methods, ATE estimation
-#'   in main.R). When called inside the outer cross-fitting loop of FACE-HD
+#'   in main.R). When called inside the outer cross-fitting loop of RoCE
 #'   algorithms (\code{run_crossfit(..., communication_mode = "one_round"/"two_round")}), use
 #'   \code{\link{estimate_target_only_from_complement}} instead to avoid
 #'   nested cross-fitting that inflates \code{V_ot}.
@@ -47,12 +61,19 @@ estimate_target_only <- function(data_split, family = "binomial",
 #' @param n_folds Number of cross-fitting folds (default 3)
 #' @param family GLM family ("binomial", "gaussian", etc.). Default "binomial".
 #' @param A_val Treatment value to estimate (default 1)
+#' @param nuisance_lambda_rule Cross-validation rule used for both target
+#'   propensity and outcome nuisance fits.
 #' @return List with estimate (= mu_hat_ot), V_ot, variance,
 #'   varphi_ot (CENTERED influence function: hat{varphi}_{ot,i} - hat{mu}^1_{ot}),
 #'   and other components
 #' @export
 estimate_target_only_crossfit <- function(target_data, n_folds = 3, 
-                                          family = "binomial", A_val = 1) {
+                                          family = "binomial", A_val = 1,
+                                          nuisance_lambda_rule = c("min", "1se")) {
+  nuisance_lambda_rule <- .match_nuisance_lambda_rule(
+    nuisance_lambda_rule, "estimate_target_only_crossfit",
+    arg = "nuisance_lambda_rule"
+  )
   
   # resolve_glm_family provides canonical family/link mapping.
   glm_spec <- resolve_glm_family(family)
@@ -123,7 +144,8 @@ estimate_target_only_crossfit <- function(target_data, n_folds = 3,
       x_train = X_ps_train, y_train = as.numeric(tr_train), x_predict = X_ps_val,
       family = "binomial",
       caller_name = "estimate_target_only_crossfit", model_name = "PS",
-      fold_id = k
+      fold_id = k,
+      lambda_rule = nuisance_lambda_rule
     )
     
     prop_scores_oof[val_idx] <- clip_propensity(ps_fit)
@@ -144,7 +166,9 @@ estimate_target_only_crossfit <- function(target_data, n_folds = 3,
       family = glm_spec$glmnet_family,
       clip_fn = function(pred) clip_outcome_pred(pred, family),
       caller_name = "estimate_target_only_crossfit", model_name = "OR",
-      fold_id = k
+      fold_id = k,
+      on_degenerate_response = "constant",
+      lambda_rule = nuisance_lambda_rule
     )
 
     m_pred_oof[val_idx] <- or_fit
@@ -173,7 +197,8 @@ estimate_target_only_crossfit <- function(target_data, n_folds = 3,
     varphi_ot = as.numeric(varphi_ot),
     prop_scores = prop_scores_oof,
     m_pred = m_pred_oof,
-    method = "crossfit"
+    method = "crossfit",
+    nuisance_lambda_rule = nuisance_lambda_rule
   ))
 }
 
@@ -184,7 +209,7 @@ estimate_target_only_crossfit <- function(target_data, n_folds = 3,
 #' This avoids the nested cross-fitting that inflates V_ot when called on
 #' small per-fold data.
 #'
-#' Intended to be used **inside** the main cross-fitting loop of FACE-HD
+#' Intended to be used **inside** the main cross-fitting loop of RoCE
 #' algorithms (\code{run_crossfit(..., communication_mode = "one_round"/"two_round")}) where the
 #' outer loop already provides cross-fitting structure. For standalone use
 #' (no outer loop), use \code{\link{estimate_target_only_crossfit}} instead.
@@ -200,13 +225,20 @@ estimate_target_only_crossfit <- function(target_data, n_folds = 3,
 #' @param A_val Treatment value to estimate (default 1)
 #' @param propensity_cache Optional environment used to cache complement-fold
 #'   propensity predictions keyed by excluded/evaluation folds.
+#' @param nuisance_lambda_rule Cross-validation rule used for both target
+#'   propensity and outcome nuisance fits.
 #' @return List with estimate, V_ot, variance, varphi_ot (same interface as
 #'   \code{\link{estimate_target_only_crossfit}})
 #' @export
 estimate_target_only_from_complement <- function(target_folds, k1, n_folds,
                                                   k2 = NULL,
                                                   family = "binomial", A_val = 1L,
-                                                  propensity_cache = NULL) {
+                                                  propensity_cache = NULL,
+                                                  nuisance_lambda_rule = c("min", "1se")) {
+  nuisance_lambda_rule <- .match_nuisance_lambda_rule(
+    nuisance_lambda_rule, "estimate_target_only_from_complement",
+    arg = "nuisance_lambda_rule"
+  )
   glm_spec <- resolve_glm_family(family)
   link <- glm_spec$link
 
@@ -227,6 +259,7 @@ estimate_target_only_from_complement <- function(target_folds, k1, n_folds,
   }
   y_train <- train_data$Y
   tr_train <- train_data$A
+  train_cv_group_id <- train_data$cv_group_id %||% NULL
   x_or_eval <- as.matrix(eval_data$W_outcome)
   x_ps_eval <- if (!is.null(eval_data$Z_site)) {
     as.matrix(eval_data$Z_site)
@@ -248,8 +281,21 @@ estimate_target_only_from_complement <- function(target_folds, k1, n_folds,
     ";k2=", if (is.null(k2)) "NA" else as.character(k2),
     ";eval=", eval_fold,
     ";exclude=", paste(sort(exclude_folds), collapse = ","),
-    ";ps_basis=Z_site"
+    ";ps_basis=Z_site",
+    ";lambda_rule=", nuisance_lambda_rule
   )
+  if (!is.null(train_cv_group_id)) {
+    validated_cache_groups <- .validate_nuisance_cv_group_id(
+      train_cv_group_id, nrow(x_ps_train),
+      "estimate_target_only_from_complement propensity cache"
+    )
+    # Exact IDs are included only for the opt-in grouped path. The legacy
+    # NULL cache key above remains byte-for-byte unchanged.
+    cache_key <- paste0(
+      cache_key, ";cv_group_id=",
+      paste(validated_cache_groups, collapse = ",")
+    )
+  }
 
   # --- Propensity score model: train on complement, predict on eval fold ---
   if (!is.null(propensity_cache) && exists(cache_key, envir = propensity_cache, inherits = FALSE)) {
@@ -261,11 +307,17 @@ estimate_target_only_from_complement <- function(target_folds, k1, n_folds,
         paste(exclude_folds, collapse = ",")
       ), call. = FALSE)
     }
-    prop_scores_eval <- fit_glmnet_cv(
-      x_train = x_ps_train, y_train = as.numeric(tr_train), x_predict = x_ps_eval,
-      family = "binomial",
-      clip_fn = clip_propensity,
-      caller_name = "estimate_complement_fold_aipw", model_name = "PS"
+    prop_scores_eval <- with_seed(
+      .target_only_cv_seed(k1, k2, "propensity"),
+      fit_glmnet_cv(
+        x_train = x_ps_train, y_train = as.numeric(tr_train),
+        x_predict = x_ps_eval,
+        family = "binomial",
+        clip_fn = clip_propensity,
+        caller_name = "estimate_complement_fold_aipw", model_name = "PS",
+        lambda_rule = nuisance_lambda_rule,
+        cv_group_id = train_cv_group_id
+      )
     )
     if (!is.null(propensity_cache)) {
       assign(cache_key, prop_scores_eval, envir = propensity_cache)
@@ -284,11 +336,25 @@ estimate_target_only_from_complement <- function(target_folds, k1, n_folds,
       MIN_TREATED_FOR_MODEL
     ), call. = FALSE)
   }
-  m_pred_eval <- fit_glmnet_cv(
-    x_train = X_treated_train, y_train = y_treated_train, x_predict = x_or_eval,
-    family = glm_spec$glmnet_family,
-    clip_fn = function(pred) clip_outcome_pred(pred, family),
-    caller_name = "estimate_complement_fold_aipw", model_name = "OR"
+  m_pred_eval <- with_seed(
+    .target_only_cv_seed(k1, k2, "outcome", A_val),
+    fit_glmnet_cv(
+      x_train = X_treated_train, y_train = y_treated_train,
+      x_predict = x_or_eval,
+      family = glm_spec$glmnet_family,
+      clip_fn = function(pred) clip_outcome_pred(pred, family),
+      caller_name = "estimate_complement_fold_aipw", model_name = "OR",
+      on_degenerate_response = "constant",
+      lambda_rule = nuisance_lambda_rule,
+      cv_group_id = if (is.null(train_cv_group_id)) {
+        NULL
+      } else {
+        train_cv_group_id[treated_train_idx]
+      }
+    )
+  )
+  outcome_degenerate <- as.integer(
+    attr(m_pred_eval, "outcome_degenerate") %||% 0L
   )
   m_pred_eval <- clip_outcome_pred(m_pred_eval, family)
 
@@ -314,6 +380,8 @@ estimate_target_only_from_complement <- function(target_folds, k1, n_folds,
     varphi_ot = as.numeric(varphi_ot),
     prop_scores = prop_scores_eval,
     m_pred = m_pred_eval,
-    method = "complement"
+    outcome_degenerate = outcome_degenerate,
+    method = "complement",
+    nuisance_lambda_rule = nuisance_lambda_rule
   ))
 }

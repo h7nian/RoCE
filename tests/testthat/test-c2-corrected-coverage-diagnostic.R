@@ -1,5 +1,5 @@
 .c2_corrected_coverage_enabled <- function() {
-  env_enabled <- Sys.getenv("FACEHD_RUN_C2_CORRECTED_COVERAGE", "0") %in%
+  env_enabled <- Sys.getenv("ROCE_RUN_C2_CORRECTED_COVERAGE", "0") %in%
     c("1", "TRUE", "true", "True")
   filter <- Sys.getenv("TEST_FILTER", "")
   env_enabled || grepl("c2-corrected-coverage", filter, fixed = TRUE)
@@ -75,7 +75,7 @@
 .c2_corrected_row <- function(sim_id, method, res, truth, job,
                               estimand_type = "superpopulation",
                               heterogeneity_type = "none",
-                              dgp_type = "facehd") {
+                              dgp_type = "roce") {
   estimate <- as.numeric(res$estimate)
   se <- as.numeric(res$se)
   ci_lower <- as.numeric(res$ci_lower %||% (estimate - Z_ALPHA_05 * se))
@@ -100,7 +100,7 @@
 }
 
 .c2_corrected_run_one_direct <- function(job, progress_line) {
-  crossfit_verbose <- Sys.getenv("FACEHD_C2_CORRECTED_COVERAGE_CROSSFIT_VERBOSE", "0") %in%
+  crossfit_verbose <- Sys.getenv("ROCE_C2_CORRECTED_COVERAGE_CROSSFIT_VERBOSE", "0") %in%
     c("1", "TRUE", "true", "True")
   set.seed(job$seed)
   data <- generate_simulation_data(
@@ -114,7 +114,7 @@
     outcome_type = "binary",
     heterogeneity_type = "none",
     shift_strength = job$shift_strength,
-    dgp_type = "facehd",
+    dgp_type = "roce",
     warn_ignored = FALSE
   )
   data_split <- split_data_by_site(data)
@@ -276,7 +276,7 @@
 
   progress_line("start")
   start_time <- Sys.time()
-  runner <- Sys.getenv("FACEHD_C2_CORRECTED_COVERAGE_RUNNER", "single")
+  runner <- Sys.getenv("ROCE_C2_CORRECTED_COVERAGE_RUNNER", "single")
   out <- if (identical(runner, "direct")) {
     .c2_corrected_run_one_direct(job, progress_line = progress_line)
   } else {
@@ -299,7 +299,7 @@
       n_folds = job$n_folds,
       use_lambda_cache = TRUE,
       estimate_ate = FALSE,
-      dgp_type = "facehd"
+      dgp_type = "roce"
     )
   }
   elapsed <- as.numeric(difftime(Sys.time(), start_time, units = "secs"))
@@ -310,19 +310,19 @@
 
 test_that("c2-corrected-coverage rechecks coverage after source-label correction", {
   skip_if_not(.c2_corrected_coverage_enabled(),
-              message = "set FACEHD_RUN_C2_CORRECTED_COVERAGE=1 or run with --filter c2-corrected-coverage")
+              message = "set ROCE_RUN_C2_CORRECTED_COVERAGE=1 or run with --filter c2-corrected-coverage")
 
-  n_reps <- .c2_corrected_int_env("FACEHD_C2_CORRECTED_COVERAGE_REPS", 3L)
-  n_total <- .c2_corrected_int_env("FACEHD_C2_CORRECTED_COVERAGE_N", 2000L)
-  K_sites <- .c2_corrected_int_env("FACEHD_C2_CORRECTED_COVERAGE_K", 3L)
-  n_folds <- .c2_corrected_int_env("FACEHD_C2_CORRECTED_COVERAGE_FOLDS", 3L)
-  nlambda_init <- .c2_corrected_int_env("FACEHD_C2_CORRECTED_COVERAGE_NLAMBDA_INIT", 20L)
-  n_cores <- .c2_corrected_int_env("FACEHD_C2_CORRECTED_COVERAGE_CORES", 1L)
-  base_seed <- .c2_corrected_int_env("FACEHD_C2_CORRECTED_COVERAGE_SEED", 88000L)
-  shift_strength <- .c2_corrected_num_env("FACEHD_C2_CORRECTED_COVERAGE_SHIFT", 0.5)
+  n_reps <- .c2_corrected_int_env("ROCE_C2_CORRECTED_COVERAGE_REPS", 3L)
+  n_total <- .c2_corrected_int_env("ROCE_C2_CORRECTED_COVERAGE_N", 2000L)
+  K_sites <- .c2_corrected_int_env("ROCE_C2_CORRECTED_COVERAGE_K", 3L)
+  n_folds <- .c2_corrected_int_env("ROCE_C2_CORRECTED_COVERAGE_FOLDS", 3L)
+  nlambda_init <- .c2_corrected_int_env("ROCE_C2_CORRECTED_COVERAGE_NLAMBDA_INIT", 20L)
+  n_cores <- .c2_corrected_int_env("ROCE_C2_CORRECTED_COVERAGE_CORES", 1L)
+  base_seed <- .c2_corrected_int_env("ROCE_C2_CORRECTED_COVERAGE_SEED", 88000L)
+  shift_strength <- .c2_corrected_num_env("ROCE_C2_CORRECTED_COVERAGE_SHIFT", 0.5)
 
   p_values <- as.integer(strsplit(
-    Sys.getenv("FACEHD_C2_CORRECTED_COVERAGE_P", "10,50"),
+    Sys.getenv("ROCE_C2_CORRECTED_COVERAGE_P", "10,50"),
     ",", fixed = TRUE
   )[[1L]])
   p_values <- p_values[is.finite(p_values) & p_values > 0L]
@@ -334,7 +334,7 @@ test_that("c2-corrected-coverage rechecks coverage after source-label correction
     "tilted_aipw", "oracle_dr"
   )
   methods <- .c2_corrected_char_env(
-    "FACEHD_C2_CORRECTED_COVERAGE_METHODS",
+    "ROCE_C2_CORRECTED_COVERAGE_METHODS",
     c("one_round_crossfit", "two_round_crossfit", "federated_dr",
       "pooled_dr", "tilted_aipw", "oracle_dr"),
     valid_methods

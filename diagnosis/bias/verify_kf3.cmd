@@ -56,7 +56,7 @@ handle_preemption() {
 trap 'handle_preemption' USR1
 
 echo "======================================================"
-echo " FACE-HD K_f Verification Run"
+echo " RoCE K_f Verification Run"
 echo "======================================================"
 echo " Config:     ${CONFIG}"
 echo " K_f:        ${N_FOLDS}"

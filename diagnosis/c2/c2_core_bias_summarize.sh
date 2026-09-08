@@ -47,7 +47,7 @@ SBATCH_CMD=(
 )
 
 echo "======================================================"
-echo " FACE-HD C2 Core Bias Summary Submission"
+echo " RoCE C2 Core Bias Summary Submission"
 echo "======================================================"
 echo " Repo:        ${REPO_DIR}"
 echo " Output root: ${OUTPUT_ROOT}"

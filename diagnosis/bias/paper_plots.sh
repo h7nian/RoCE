@@ -1,6 +1,6 @@
 #!/bin/bash
 # Submits a short SLURM job rendering paper-quality PDF figures from the
-# FACE-HD summaries via diagnosis/bias/paper_plots.R. Output: results/figures/.
+# RoCE summaries via diagnosis/bias/paper_plots.R. Output: results/figures/.
 set -euo pipefail
 
 DRY_RUN=false

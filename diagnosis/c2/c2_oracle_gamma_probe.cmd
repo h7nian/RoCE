@@ -43,7 +43,7 @@ fi
 read -r TAG N_TOTAL K P SEED <<< "${GRID[${TASK_ID}]}"
 
 echo "======================================================"
-echo " FACE-HD C2 Oracle Gamma Probe | Task ${TASK_ID}"
+echo " RoCE C2 Oracle Gamma Probe | Task ${TASK_ID}"
 echo "======================================================"
 echo " Tag:        ${TAG}"
 echo " n_total:    ${N_TOTAL}"

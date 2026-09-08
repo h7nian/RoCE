@@ -57,12 +57,12 @@ cat(sprintf("[diag/bias] tag=%s  n=%d  K=%d  p=%d  shift=%g  sims=%d\n",
             tag, n_total, K, p, shift, n_sims))
 
 # ---- Load package -----------------------------------------------------------
-if (requireNamespace("FACEHD", quietly = FALSE)) {
-  library(FACEHD)
+if (requireNamespace("RoCE", quietly = FALSE)) {
+  library(RoCE)
 } else if (requireNamespace("devtools", quietly = FALSE)) {
   devtools::load_all(".")
 } else {
-  stop("Neither installed FACEHD nor devtools available.")
+  stop("Neither installed RoCE nor devtools available.")
 }
 
 # ---- Output dirs ------------------------------------------------------------
@@ -125,7 +125,7 @@ results <- run_simulation_study(
   verbose_every   = 25L,
   parallel_strategy = "outer_priority",
   estimate_ate    = FALSE,
-  dgp_type        = "facehd"
+  dgp_type        = "roce"
 )
 elapsed <- as.numeric(difftime(Sys.time(), t0, units = "mins"))
 cat(sprintf("[diag/bias] simulation elapsed = %.2f min\n", elapsed))

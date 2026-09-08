@@ -4,14 +4,14 @@
 # Diagnosis-only. On the IDENTICAL out-of-fold calibrated-gamma CV folds produced during a
 # REAL C2 run_crossfit run, this probe compares TWO lambda-selection objectives evaluated on
 # the SAME captured lambda_grid:
-#   (A) lambda_entropy   = current FACE-HD pick = lambda.min of the out-of-fold density-ratio
+#   (A) lambda_entropy   = current RoCE pick = lambda.min of the out-of-fold density-ratio
 #                          ENTROPY curve (res$lambda_min) -- what the estimator actually uses.
 #   (B) lambda_balancing = argmin over the grid of the out-of-fold BALANCING-MOMENT MSE
 #                          ( mean over our OWN CV folds of ||U_gamma||^2 ), where U_gamma is the
 #                          first-order bias driver (target_mean - source_mean) authoritatively
 #                          defined by fold_gamma_score() in c2_score_moment_audit.R:129-147.
 #
-# GATE LOGIC: if lambda_balancing ~= lambda_entropy (as FACE-HD-vs-RCAL turned out), a targeted
+# GATE LOGIC: if lambda_balancing ~= lambda_entropy (as RoCE-vs-RCAL turned out), a targeted
 # lambda cannot move coverage and we stop here. If they differ materially (|log2 ratio| >= one
 # full grid octave on a non-trivial fraction of calls), a separate end-to-end coverage run
 # follows. This probe does NOT change the estimator's lambda; it only COMPUTES and COMPARES the
@@ -49,27 +49,27 @@ stopifnot(n_total > 0L, K_sites > 0L, p > 0L, seed > 0L,
           n_folds >= 3L, nlambda_init > 0L)
 
 suppressPackageStartupMessages({
-  if (requireNamespace("FACEHD", quietly = FALSE)) {
-    library(FACEHD)
+  if (requireNamespace("RoCE", quietly = FALSE)) {
+    library(RoCE)
   } else if (requireNamespace("devtools", quietly = FALSE)) {
     devtools::load_all(".")
   } else {
-    stop("Neither installed FACEHD nor devtools available.", call. = FALSE)
+    stop("Neither installed RoCE nor devtools available.", call. = FALSE)
   }
 })
 
-facehd_constant <- function(name, default) {
-  ns <- asNamespace("FACEHD")
+roce_constant <- function(name, default) {
+  ns <- asNamespace("RoCE")
   if (exists(name, envir = ns, inherits = FALSE)) {
     return(get(name, envir = ns, inherits = FALSE))
   }
   default
 }
 
-facehd_function <- function(name) {
-  ns <- asNamespace("FACEHD")
+roce_function <- function(name) {
+  ns <- asNamespace("RoCE")
   if (!exists(name, envir = ns, inherits = FALSE)) {
-    stop(sprintf("FACEHD namespace does not contain required function '%s'.", name),
+    stop(sprintf("RoCE namespace does not contain required function '%s'.", name),
          call. = FALSE)
   }
   get(name, envir = ns, inherits = FALSE)
@@ -82,15 +82,15 @@ needed_functions <- c(
 )
 for (fn_name in needed_functions) {
   if (!exists(fn_name, mode = "function")) {
-    assign(fn_name, facehd_function(fn_name))
+    assign(fn_name, roce_function(fn_name))
   }
 }
 
-MAX_ITER_DEFAULT <- facehd_constant("MAX_ITER_DEFAULT", 1000L)
-TOL_DEFAULT <- facehd_constant("TOL_DEFAULT", 1e-7)
-LOGISTIC_CLIP <- facehd_constant("LOGISTIC_CLIP", 50)
-FAMILY_BINOMIAL <- facehd_constant("FAMILY_BINOMIAL", 1L)
-LINK_LOGIT <- facehd_constant("LINK_LOGIT", 1L)
+MAX_ITER_DEFAULT <- roce_constant("MAX_ITER_DEFAULT", 1000L)
+TOL_DEFAULT <- roce_constant("TOL_DEFAULT", 1e-7)
+LOGISTIC_CLIP <- roce_constant("LOGISTIC_CLIP", 50)
+FAMILY_BINOMIAL <- roce_constant("FAMILY_BINOMIAL", 1L)
+LINK_LOGIT <- roce_constant("LINK_LOGIT", 1L)
 `%||%` <- function(x, y) if (is.null(x)) y else x
 
 # Number of OWN balancing CV folds (stratified by A). Kept small (3) so the warm-started path
@@ -135,7 +135,7 @@ CAP$n_calls <- 0L
 CAP$t_cv <- 0     # cumulative seconds inside the original CV
 CAP$t_post <- 0   # cumulative seconds inside capture post-processing (balancing CV)
 
-ns <- asNamespace("FACEHD")
+ns <- asNamespace("RoCE")
 orig_cv <- get("select_lambda_cv_calibrated_density_ratio_cpp", envir = ns)
 
 # Formal order MUST match R/RcppExports.R exactly.
@@ -296,7 +296,7 @@ data <- generate_simulation_data(
   outcome_type = "binary",
   heterogeneity_type = "none",
   shift_strength = 0.5,
-  dgp_type = "facehd",
+  dgp_type = "roce",
   warn_ignored = FALSE
 )
 split <- split_data_by_site(data)

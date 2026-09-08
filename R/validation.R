@@ -1,4 +1,4 @@
-# validation.R - Input validation functions for FACE-HD algorithms
+# validation.R - Input validation functions for RoCE algorithms
 #
 # This file contains functions to validate inputs before algorithm execution.
 # Proper validation helps catch errors early and provides informative messages.
@@ -62,6 +62,7 @@ check_finite <- function(x, field_name, site_label) {
 #'        checks without passing a placeholder.
 #' @param family GLM family: "gaussian" or "binomial".
 #'        Y values are validated based on the family: binomial requires Y in \{0,1\}.
+#' @param A_val Treatment arm, either 0 or 1.
 #' @return TRUE if valid; throws informative error otherwise.
 #'
 #' @details
@@ -223,6 +224,7 @@ validate_algorithm_inputs <- function(data_split, lambda_selection = NULL,
 #' @param data_split List of site data, split by site identifier.
 #' @param n_folds Number of cross-fitting folds (K_f).
 #' @param min_fold_size Minimum observations per fold (default 5).
+#' @param A_val Treatment arm whose within-fold support is validated.
 #' @return TRUE if valid; throws informative error or warning otherwise.
 #'
 #' @details
@@ -312,7 +314,7 @@ validate_crossfit_sample_sizes <- function(data_split, n_folds, min_fold_size = 
   return(TRUE)
 }
 
-#' Validate truncation parameters used in FACE-HD
+#' Validate truncation parameters used in RoCE
 #'
 #' @param M_tau Truncation bound for calibrated nuisance optimization.
 #' @param M_tau_inference Truncation bound for inference-stage DR terms.
@@ -360,7 +362,7 @@ validate_truncation_parameters <- function(M_tau, M_tau_inference) {
 #' @param K Positive integer number of source sites (NULL to skip this check)
 #' @param p Positive integer number of covariates (NULL to skip this check)
 #' @param config Configuration string (NULL to skip, else must be "C1"-"C4")
-#' @param dgp_type "face" (FACE negative-transfer DGP, default) or "facehd"
+#' @param dgp_type "face" (FACE negative-transfer DGP, default) or "roce"
 #' @param ate_deviation Numeric ATE deviation for FACE paper non-informative sites (>= 0)
 #' @param n_deviated_sites Non-negative integer: how many source sites deviate (FACE paper only)
 #' @param warn_ignored Logical. If TRUE, warn when parameters are accepted for
@@ -372,7 +374,7 @@ validate_simulation_params <- function(estimand_type = "superpopulation",
                                         transform_type = "mild",
                                         outcome_type = "binary",
                                         heterogeneity_type = "none",
-                                        shift_strength = FACEHD_SHIFT_STRENGTH_DEFAULT,
+                                        shift_strength = ROCE_SHIFT_STRENGTH_DEFAULT,
                                         n_folds = N_FOLDS_DEFAULT,
                                         n_sims = NULL,
                                         n_total = NULL,
@@ -394,10 +396,10 @@ validate_simulation_params <- function(estimand_type = "superpopulation",
   }
 
   # site_allocation, transform_type, outcome_type, heterogeneity_type, and
-  # shift_strength are specific to the FACE-HD DGP.  For the FACE paper DGP
+  # shift_strength are specific to the RoCE DGP.  For the FACE paper DGP
   # these parameters are not used, so we skip their validation (they keep
   # their defaults and generate a warning when non-default values are passed).
-  if (dgp_type == "facehd") {
+  if (dgp_type == "roce") {
     if (!(site_allocation %in% VALID_SITE_ALLOCATIONS)) {
       stop(sprintf("Invalid site_allocation: '%s'. Must be one of: %s",
                    site_allocation, paste(VALID_SITE_ALLOCATIONS, collapse = ", ")))
@@ -459,7 +461,7 @@ validate_simulation_params <- function(estimand_type = "superpopulation",
         .warn_ignored_param("heterogeneity_type", heterogeneity_type, dgp_type,
                             "FACE paper DGP uses ate_deviation/n_deviated_sites instead.")
       }
-      if (.is_non_default_numeric(shift_strength, FACEHD_SHIFT_STRENGTH_DEFAULT)) {
+      if (.is_non_default_numeric(shift_strength, ROCE_SHIFT_STRENGTH_DEFAULT)) {
         .warn_ignored_param("shift_strength", shift_strength, dgp_type,
                             "FACE paper DGP uses fixed skewed-normal covariate shifts.")
       }

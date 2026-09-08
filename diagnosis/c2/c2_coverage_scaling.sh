@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================================
-# FACE-HD C2 coverage-scaling submission script
+# RoCE C2 coverage-scaling submission script
 # ----------------------------------------------------------------------------
 # Estimates actual CI coverage for the C2 p=10 settings across many seeds at
 # small (n=5000) vs large (n=20000) sample size, to confirm whether the
@@ -76,7 +76,7 @@ SBATCH_CMD=(
 )
 
 echo "======================================================"
-echo " FACE-HD C2 Coverage-Scaling Submission"
+echo " RoCE C2 Coverage-Scaling Submission"
 echo "======================================================"
 echo " Repo:           ${REPO_DIR}"
 echo " Tasks:          ${TASKS}"

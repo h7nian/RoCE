@@ -12,7 +12,7 @@
 library(testthat)
 
 .c2_gamma_norm_enabled <- function() {
-  env_enabled <- Sys.getenv("FACEHD_RUN_C2_GAMMA_NORMALIZATION", "0") %in%
+  env_enabled <- Sys.getenv("ROCE_RUN_C2_GAMMA_NORMALIZATION", "0") %in%
     c("1", "TRUE", "true", "True")
   filter <- Sys.getenv("TEST_FILTER", "")
   env_enabled || grepl("c2-gamma-normalization", filter, fixed = TRUE)
@@ -34,7 +34,7 @@ library(testthat)
 }
 
 .c2_gamma_norm_source_env <- function(default) {
-  value <- Sys.getenv("FACEHD_C2_GAMMA_NORM_SOURCES", unset = "")
+  value <- Sys.getenv("ROCE_C2_GAMMA_NORM_SOURCES", unset = "")
   if (!nzchar(value)) return(default)
   parsed <- trimws(strsplit(value, ",", fixed = TRUE)[[1L]])
   parsed <- parsed[nzchar(parsed)]
@@ -266,14 +266,14 @@ library(testthat)
 
 test_that("c2-gamma-normalization diagnostic compares true-gamma intercept conventions", {
   skip_if_not(.c2_gamma_norm_enabled(),
-              message = "run with --filter c2-gamma-normalization or set FACEHD_RUN_C2_GAMMA_NORMALIZATION=1")
+              message = "run with --filter c2-gamma-normalization or set ROCE_RUN_C2_GAMMA_NORMALIZATION=1")
 
-  n_total <- .c2_gamma_norm_int_env("FACEHD_C2_GAMMA_NORM_N", 5000L)
-  K_sites <- .c2_gamma_norm_int_env("FACEHD_C2_GAMMA_NORM_K", 3L)
-  p_values <- .c2_gamma_norm_int_vector_env("FACEHD_C2_GAMMA_NORM_P", c(10L, 50L))
-  reps <- .c2_gamma_norm_int_env("FACEHD_C2_GAMMA_NORM_REPS", 3L)
-  nlambda <- .c2_gamma_norm_int_env("FACEHD_C2_GAMMA_NORM_NLAMBDA", 6L)
-  base_seed <- .c2_gamma_norm_int_env("FACEHD_C2_GAMMA_NORM_SEED", 52050L)
+  n_total <- .c2_gamma_norm_int_env("ROCE_C2_GAMMA_NORM_N", 5000L)
+  K_sites <- .c2_gamma_norm_int_env("ROCE_C2_GAMMA_NORM_K", 3L)
+  p_values <- .c2_gamma_norm_int_vector_env("ROCE_C2_GAMMA_NORM_P", c(10L, 50L))
+  reps <- .c2_gamma_norm_int_env("ROCE_C2_GAMMA_NORM_REPS", 3L)
+  nlambda <- .c2_gamma_norm_int_env("ROCE_C2_GAMMA_NORM_NLAMBDA", 6L)
+  base_seed <- .c2_gamma_norm_int_env("ROCE_C2_GAMMA_NORM_SEED", 52050L)
   source_names <- .c2_gamma_norm_source_env(c("s1", "s2"))
 
   rows <- list()
@@ -290,7 +290,7 @@ test_that("c2-gamma-normalization diagnostic compares true-gamma intercept conve
         outcome_type = "binary",
         heterogeneity_type = "none",
         shift_strength = 0.5,
-        dgp_type = "facehd",
+        dgp_type = "roce",
         warn_ignored = FALSE
       )
       available <- setdiff(names(split_data_by_site(data)), "t")

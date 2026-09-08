@@ -31,34 +31,34 @@ if (!all(modes %in% c("one_round", "two_round"))) {
 }
 
 suppressPackageStartupMessages({
-  if (requireNamespace("FACEHD", quietly = FALSE)) {
-    library(FACEHD)
+  if (requireNamespace("RoCE", quietly = FALSE)) {
+    library(RoCE)
   } else if (requireNamespace("devtools", quietly = FALSE)) {
     devtools::load_all(".")
   } else {
-    stop("Neither installed FACEHD nor devtools available.", call. = FALSE)
+    stop("Neither installed RoCE nor devtools available.", call. = FALSE)
   }
 })
 
-facehd_constant <- function(name, default) {
-  ns <- asNamespace("FACEHD")
+roce_constant <- function(name, default) {
+  ns <- asNamespace("RoCE")
   if (exists(name, envir = ns, inherits = FALSE)) {
     return(get(name, envir = ns, inherits = FALSE))
   }
   default
 }
 
-facehd_function <- function(name) {
-  ns <- asNamespace("FACEHD")
+roce_function <- function(name) {
+  ns <- asNamespace("RoCE")
   if (!exists(name, envir = ns, inherits = FALSE)) {
-    stop(sprintf("FACEHD namespace does not contain required function '%s'.", name),
+    stop(sprintf("RoCE namespace does not contain required function '%s'.", name),
          call. = FALSE)
   }
   get(name, envir = ns, inherits = FALSE)
 }
 
-LOGISTIC_CLIP <- facehd_constant("LOGISTIC_CLIP", 50)
-DIVISION_FLOOR <- facehd_constant("DIVISION_FLOOR", 1e-10)
+LOGISTIC_CLIP <- roce_constant("LOGISTIC_CLIP", 50)
+DIVISION_FLOOR <- roce_constant("DIVISION_FLOOR", 1e-10)
 `%||%` <- function(x, y) if (is.null(x)) y else x
 source(file.path("diagnosis", "c2", "c2_true_gamma_utils.R"))
 
@@ -66,7 +66,7 @@ for (fn_name in c("generate_simulation_data", "split_data_by_site",
                   "estimate_target_only_crossfit", "build_crossfit_folds",
                   "run_crossfit", "materialize_fold")) {
   if (!exists(fn_name, mode = "function")) {
-    assign(fn_name, facehd_function(fn_name))
+    assign(fn_name, roce_function(fn_name))
   }
 }
 
@@ -172,7 +172,7 @@ data <- generate_simulation_data(
   outcome_type = "binary",
   heterogeneity_type = "none",
   shift_strength = 0.5,
-  dgp_type = "facehd",
+  dgp_type = "roce",
   warn_ignored = FALSE
 )
 split <- split_data_by_site(data)

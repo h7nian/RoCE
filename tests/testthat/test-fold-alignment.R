@@ -1,3 +1,12 @@
+.read_source_for_static_test <- function(filename) {
+  path <- test_path("../../R", filename)
+  skip_if_not(
+    file.exists(path),
+    message = "source-tree-only static regression check"
+  )
+  paste(readLines(path, warn = FALSE), collapse = "\n")
+}
+
 test_that("plugin block design reproduces fold-specific linear predictors", {
   skip_if_not(exists(".make_plugin_block_design"), message = "internal helper not loaded")
 
@@ -16,8 +25,7 @@ test_that("plugin block design reproduces fold-specific linear predictors", {
 })
 
 test_that("cross-fitting code uses fold-summed calibration, not parameter averaging", {
-  path <- test_path("../../R/cross_fitting_algorithms.R")
-  txt <- paste(readLines(path, warn = FALSE), collapse = "\n")
+  txt <- .read_source_for_static_test("cross_fitting_algorithms.R")
 
   expect_true(grepl("Fold-summed SMMAL-style calibrated optimization", txt, fixed = TRUE))
   expect_false(grepl("gamma_final_k1 <- colMeans(do.call(rbind, gamma_cal_list))", txt, fixed = TRUE))
@@ -83,7 +91,7 @@ test_that("aggregation lambda grid validates user input", {
   expect_equal(clipped, c(LAMBDA_MIN, LAMBDA_MAX))
 })
 
-test_that("aggregation default lambda grid starts at KKT lambda_max", {
+test_that("aggregation default lambda grid uses the manuscript Wald cutoff", {
   skip_if_not(exists(".aggregation_lambda_grid"), message = "aggregation grid helper not loaded")
   skip_if_not(exists(".aggregation_lambda_max"), message = "aggregation lambda_max helper not loaded")
 
@@ -101,9 +109,10 @@ test_that("aggregation default lambda grid starts at KKT lambda_max", {
   grid <- .aggregation_lambda_grid(component)
 
   expect_equal(lambda_max, expected_lambda_max)
-  expect_equal(unname(grid[1]), expected_lambda_max)
-  expect_equal(attr(grid, "lambda_max"), expected_lambda_max)
-  expect_true(all(diff(grid) < 0))
+  expect_equal(as.numeric(grid), AGG_WALD_LAMBDA)
+  expect_equal(attr(grid, "lambda_max"), AGG_WALD_LAMBDA)
+  expect_equal(attr(grid, "lambda_min"), AGG_WALD_LAMBDA)
+  expect_equal(1 / as.numeric(grid), AGG_WALD_CUTOFF)
 })
 
 test_that("aggregation lambda_max warns for unpenalized active coordinates", {
@@ -140,8 +149,7 @@ test_that("fold partitioning fails when stratified assignment is impossible", {
 })
 
 test_that("cross-fit aggregation calls the inner validation selector", {
-  path <- test_path("../../R/cross_fitting_aggregation.R")
-  txt <- paste(readLines(path, warn = FALSE), collapse = "\n")
+  txt <- .read_source_for_static_test("cross_fitting_aggregation.R")
 
   expect_true(grepl("select_aggregation_lambda_inner_cv", txt, fixed = TRUE))
   expect_true(grepl(".validation_aggregation_objective", txt, fixed = TRUE))

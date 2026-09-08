@@ -11,7 +11,7 @@
 #   https://hbiostat.org/data/repo/rhc.csv  (vendored as inst/extdata/rhc.csv).
 #
 # The dataset is fully public (no DUA / no credentialing); the CSV ships with
-# the FACEHD package so downstream users do not need to download anything.
+# the RoCE package so downstream users do not need to download anything.
 # ============================================================================
 
 # ----------------------------------------------------------------------------
@@ -59,7 +59,7 @@
 #'   file has not yet been downloaded via \code{data/download_rhc.sh}).
 #' @export
 rhc_csv_path <- function() {
-  system.file("extdata", "rhc.csv", package = "FACEHD")
+  system.file("extdata", "rhc.csv", package = "RoCE")
 }
 
 
@@ -297,13 +297,14 @@ build_rhc_cohort <- function(raw = NULL,
       categorical_vars
     )
     cat_frame <- as.data.frame(cat_frame, stringsAsFactors = TRUE)
-    # Use stats::model.matrix with a contrast that drops the reference level,
-    # giving clean one-hot encodings without the implicit intercept column.
-    cat_mm <- stats::model.matrix(
-      ~ . - 1,
-      data = cat_frame,
-      contrasts.arg = lapply(cat_frame, stats::contrasts, contrasts = TRUE)
-    )
+    # Build a full-rank treatment-coded design.  Using `~ . - 1` here is not
+    # equivalent: model.matrix() keeps all levels of the first factor when the
+    # formula has no intercept.  The nuisance solvers add their own intercept,
+    # so that construction made (for example) sexFemale + sexMale exactly
+    # collinear with the fitted intercept.  Build the ordinary intercept model
+    # and then remove only its intercept column instead.
+    cat_mm <- stats::model.matrix(~ ., data = cat_frame)
+    cat_mm <- cat_mm[, colnames(cat_mm) != "(Intercept)", drop = FALSE]
     X_cat <- as.data.frame(cat_mm, stringsAsFactors = FALSE, check.names = TRUE)
   } else {
     X_cat <- data.frame(row.names = seq_along(A))
@@ -332,21 +333,38 @@ build_rhc_cohort <- function(raw = NULL,
 # Consolidate the 9 cat1 categories into the top K by count, merging the
 # remainder into an "Other" bucket. Returns a factor with K levels.
 .rhc_site_factor <- function(site_var, K) {
-  if (K < 2L) stop("K must be >= 2; FACE-HD requires at least 1 target and 1 source site.")
+  if (K < 2L) stop("K must be >= 2; RoCE requires at least 1 target and 1 source site.")
   counts <- sort(table(site_var), decreasing = TRUE)
   top    <- names(counts)[seq_len(min(K, length(counts)))]
   if (length(top) < K) {
-    stop(sprintf("cat1 has only %d distinct categories; cannot build K = %d sites.",
+    stop(sprintf("site_var has only %d distinct categories; cannot build K = %d sites.",
                  length(top), K))
   }
-  # If more than K categories, fold the tail into the smallest retained site
-  # rather than introducing a synthetic "Other" that breaks interpretability.
+  # If more than K categories, fold the tail into the smallest retained site.
+  # Record the raw composition explicitly so a retained display label can
+  # never be mistaken for an unmodified raw stratum downstream.
   collapsed <- ifelse(site_var %in% top, site_var, top[length(top)])
-  factor(collapsed, levels = top)
+  site_factor <- factor(collapsed, levels = top)
+  raw_to_retained <- stats::setNames(
+    ifelse(names(counts) %in% top, names(counts), top[length(top)]),
+    names(counts)
+  )
+  site_components <- stats::setNames(
+    vapply(
+      top,
+      function(label) {
+        paste(names(raw_to_retained)[raw_to_retained == label], collapse = ";")
+      },
+      character(1L)
+    ),
+    top
+  )
+  attr(site_factor, "site_components") <- site_components
+  site_factor
 }
 
 
-#' Assemble an RHC \code{data_split} for FACE-HD
+#' Assemble an RHC \code{data_split} for RoCE
 #'
 #' Partitions the cohort into a target site and \code{K - 1} source sites
 #' using the primary disease category (\code{cat1}) as the site variable.
@@ -364,13 +382,17 @@ build_rhc_cohort <- function(raw = NULL,
 #'   as many columns. Defaults to \code{\link[base]{identity}} so that no
 #'   dimension inflation occurs; a reference B-spline implementation is
 #'   available in \code{\link{phi_rhc_bspline}} for opt-in use.
+#' @param standardize_features Logical. If \code{TRUE} (default), center and
+#'   scale every working-feature column after applying \code{phi}.  The pooled
+#'   first and second moments used here are federated-computable summaries; raw
+#'   covariates retained in \code{X} and \code{X_dagger} are not modified.
 #' @param seed Integer. Random seed passed to R's RNG for any tie-breaking
 #'   steps; retained for reproducibility (currently unused). Default 42.
 #' @return A \code{data_split} list with elements named \code{"t"} (target)
 #'   and \code{"s1"}, ..., \code{"s<K-1>"} (source sites). Each element is a
 #'   list with fields \code{n}, \code{X}, \code{X_dagger}, \code{A},
 #'   \code{Y}, \code{Z_site}, and \code{W_outcome}, matching the output of
-#'   \code{\link{split_data_by_site}} used elsewhere in FACEHD.
+#'   \code{\link{split_data_by_site}} used elsewhere in RoCE.
 #' @seealso \code{\link{run_crossfit}}, \code{\link{split_data_by_site}},
 #'   \code{\link{phi_rhc_bspline}}.
 #' @export
@@ -378,16 +400,22 @@ build_rhc_data_split <- function(cohort      = NULL,
                                  K           = 5L,
                                  target_site = NULL,
                                  phi         = base::identity,
+                                 standardize_features = TRUE,
                                  seed        = 42L) {
   if (is.null(cohort)) cohort <- build_rhc_cohort()
   if (!is.function(phi)) {
     stop("phi must be a function mapping a numeric matrix to a numeric matrix.")
+  }
+  if (length(standardize_features) != 1L || is.na(standardize_features) ||
+      !is.logical(standardize_features)) {
+    stop("standardize_features must be TRUE or FALSE.")
   }
   K <- as.integer(K)
   set.seed(seed)
 
   site_factor <- .rhc_site_factor(cohort$site_var, K = K)
   retained <- levels(site_factor)
+  retained_components <- attr(site_factor, "site_components")
 
   if (is.null(target_site)) {
     target_site <- retained[1L]  # largest
@@ -400,13 +428,36 @@ build_rhc_data_split <- function(cohort      = NULL,
   X_full <- as.matrix(cohort[, covariate_cols, drop = FALSE])
   storage.mode(X_full) <- "double"
 
-  X_phi <- phi(X_full)
-  if (!is.matrix(X_phi) || nrow(X_phi) != nrow(X_full)) {
+  X_phi_raw <- phi(X_full)
+  if (!is.matrix(X_phi_raw) || nrow(X_phi_raw) != nrow(X_full)) {
     stop("phi must return a numeric matrix with the same number of rows as its input.")
   }
-  storage.mode(X_phi) <- "double"
+  storage.mode(X_phi_raw) <- "double"
+  if (any(!is.finite(X_phi_raw))) {
+    stop("phi must return only finite numeric working features.")
+  }
 
-  # Map target/source labels to the FACE-HD convention ("t", "s1", ...).
+  feature_center <- if (isTRUE(standardize_features)) {
+    colMeans(X_phi_raw)
+  } else {
+    rep(0, ncol(X_phi_raw))
+  }
+  centered_features <- sweep(X_phi_raw, 2L, feature_center, FUN = "-")
+  feature_scale <- if (isTRUE(standardize_features)) {
+    sqrt(colMeans(centered_features^2))
+  } else {
+    rep(1, ncol(X_phi_raw))
+  }
+  # A constant feature carries no scale information.  Keeping it unchanged
+  # preserves a user-supplied phi() interface while avoiding division by zero;
+  # the default RHC design is full rank and has no constant working columns.
+  invalid_scale <- !is.finite(feature_scale) |
+    feature_scale <= sqrt(.Machine$double.eps)
+  feature_scale[invalid_scale] <- 1
+  X_phi <- sweep(centered_features, 2L, feature_scale, FUN = "/")
+  colnames(X_phi) <- colnames(X_phi_raw)
+
+  # Map target/source labels to the RoCE convention ("t", "s1", ...).
   source_sites <- setdiff(retained, target_site)
   site_labels  <- character(length(site_factor))
   site_labels[site_factor == target_site] <- "t"
@@ -438,15 +489,47 @@ build_rhc_data_split <- function(cohort      = NULL,
   attr(data_split, "site_mapping")    <- c(target = target_site,
                                            stats::setNames(source_sites,
                                                            paste0("s", seq_along(source_sites))))
+  attr(data_split, "site_components") <- c(
+    target = unname(retained_components[target_site]),
+    stats::setNames(
+      unname(retained_components[source_sites]),
+      paste0("s", seq_along(source_sites))
+    )
+  )
   attr(data_split, "phi_applied")     <- !identical(phi, base::identity)
+  attr(data_split, "features_standardized") <- isTRUE(standardize_features)
+  attr(data_split, "feature_center")  <- feature_center
+  attr(data_split, "feature_scale")   <- feature_scale
   attr(data_split, "covariate_cols")  <- covariate_cols
   data_split
+}
+
+.rhc_method_row <- function(method_label, estimate, se) {
+  if (is.null(estimate) || !is.finite(estimate) || !is.finite(se)) {
+    return(data.frame(
+      method = method_label,
+      estimate = NA_real_,
+      se = NA_real_,
+      ci_lower = NA_real_,
+      ci_upper = NA_real_,
+      stringsAsFactors = FALSE
+    ))
+  }
+  data.frame(
+    method = method_label,
+    estimate = estimate,
+    se = se,
+    ci_lower = estimate - Z_ALPHA_05 * se,
+    ci_upper = estimate + Z_ALPHA_05 * se,
+    stringsAsFactors = FALSE
+  )
 }
 
 
 #' Run the Full RHC Real-Data Experiment
 #'
-#' Builds the RHC \code{data_split}, runs FACE-HD (two-round cross-fitting)
+#' Builds the RHC \code{data_split}, runs arm-specific RoCE (one-round
+#' cross-fitting)
 #' together with the comparison methods implemented in
 #' \code{\link{run_all_comparisons}}, and returns a uniform result list
 #' ready for downstream tabulation / plotting. This is the single entry
@@ -489,29 +572,30 @@ build_rhc_data_split <- function(cohort      = NULL,
 #'   \eqn{\phi(\boldsymbol{X})^\top\boldsymbol{\gamma}} inside the
 #'   inference-time IF, which in turn bounds the calibration weight
 #'   \eqn{\exp(-\phi^\top\boldsymbol{\gamma})} to \eqn{[e^{-M}, e^M]}. The
-#'   default of \code{3} bounds the weight by \eqn{\approx 20}, which comfortably
+#'   default \code{M_TAU_INFERENCE_RHC = 3} bounds the weight by
+#'   \eqn{\approx 20}, which comfortably
 #'   covers realistic RHC density ratios while preventing the catastrophic
 #'   pairwise estimates (e.g. \eqn{\widehat{\mu}^a_{t,s}} at order
 #'   \eqn{10^2} or beyond) that arise in small sources with limited
-#'   covariate overlap. Increase toward \code{M_TAU_DEFAULT}
-#'   (\eqn{M=10}) for looser clipping, or set to \code{Inf} to reproduce the
-#'   main manuscript's asymptotically-inactive truncation convention.
+#'   covariate overlap. The TATE manuscript analysis explicitly uses
+#'   \code{M_TAU_DEFAULT = 5} for both fitting and inference.
 #' @return A list with elements:
 #' \describe{
 #'   \item{methods}{Data frame with one row per method, columns
 #'     \code{method}, \code{estimate}, \code{se}, \code{ci_lower},
-#'     \code{ci_upper}. FACE-HD two-round is labelled \code{"facehd"} (the
-#'     canonical paper variant); the one-round variant is labelled
-#'     \code{"facehd_one_round"}.}
-#'   \item{pairwise}{Data frame of two-round source-assisted pairwise
+#'     \code{ci_upper}. Methods and labels are unified with the simulation
+#'     figure: \code{"Target-only"}, \code{"SS"}, \code{"IVW"},
+#'     \code{"Federated-DR"}, \code{"Pooled-DR"}, and the one-round
+#'     \code{"RoCE"} estimator.}
+#'   \item{pairwise}{Data frame of one-round source-assisted pairwise
 #'     estimates with columns \code{source}, \code{estimate}, \code{se}.}
-#'   \item{weights}{Named numeric vector of FACE-HD aggregation weights
+#'   \item{weights}{Named numeric vector of RoCE aggregation weights
 #'     \eqn{\widehat{\boldsymbol{\eta}}} (length K-1; names match the
 #'     \code{s1, s2, ...} source labels of \code{pairwise}).}
 #'   \item{target_only}{Target-only cross-fitted point estimate.}
 #'   \item{metadata}{Named list with run configuration
 #'     (\code{K}, \code{target_site}, \code{outcome}, \code{family},
-#'     \code{n_folds}, site sample sizes, and FACE-HD pairwise gap
+#'     \code{n_folds}, site sample sizes, and RoCE pairwise gap
 #'     penalties \eqn{d_j^2}).}
 #' }
 #' @seealso \code{\link{build_rhc_data_split}},
@@ -554,7 +638,7 @@ run_rhc_experiment <- function(K               = 5L,
     ))
   }
 
-  # ---- FACE-HD: two-round and one-round cross-fitted variants -------------
+  # ---- RoCE: two-round and one-round cross-fitted variants -------------
   # Both communication modes share the same penalized aggregation but differ
   # in how source-site initial nuisance estimators are obtained (two-round:
   # source-specific; one-round: target-only plug-in). The main manuscript
@@ -563,17 +647,7 @@ run_rhc_experiment <- function(K               = 5L,
   # preserves the reproducible sequential path, while -1 on compute nodes
   # unlocks the K-1 parallel source-site fits that otherwise serialise the
   # cross-fitting loop.
-  facehd_two_round <- run_crossfit(
-    data_split         = data_split,
-    n_folds            = n_folds,
-    communication_mode = "two_round",
-    family             = family,
-    A_val              = A_val,
-    n_cores            = n_cores,
-    M_tau_inference    = M_tau_inference,
-    verbose            = verbose
-  )
-  facehd_one_round <- run_crossfit(
+  roce_one_round <- run_crossfit(
     data_split         = data_split,
     n_folds            = n_folds,
     communication_mode = "one_round",
@@ -583,10 +657,10 @@ run_rhc_experiment <- function(K               = 5L,
     M_tau_inference    = M_tau_inference,
     verbose            = verbose
   )
-  # The two-round variant supplies the canonical FACE-HD report (pairwise
-  # estimates, aggregation weights, target-only reference); the one-round
-  # variant contributes an additional method row.
-  facehd_res <- facehd_two_round
+  # The one-round variant is the reported RoCE estimator (matching the
+  # simulation figure); it also supplies the pairwise source-assisted estimates,
+  # aggregation weights, and target-only reference used below.
+  roce_res <- roce_one_round
 
   # ---- Baselines --------------------------------------------------------
   comparison_res <- run_all_comparisons(
@@ -594,56 +668,48 @@ run_rhc_experiment <- function(K               = 5L,
     family       = family,
     A_val        = A_val,
     use_crossfit = TRUE,
-    n_folds      = n_folds
+    n_folds      = n_folds,
+    include_tilted = FALSE,
+    n_cores      = n_cores
   )
 
   # Assemble uniform "methods" data frame expected by plot_forest_methods().
-  method_row <- function(method_label, est, se) {
-    if (is.null(est) || !is.finite(est) || !is.finite(se)) {
-      return(data.frame(method = method_label,
-                        estimate = NA_real_, se = NA_real_,
-                        ci_lower = NA_real_, ci_upper = NA_real_,
-                        stringsAsFactors = FALSE))
-    }
-    data.frame(
-      method    = method_label,
-      estimate  = est,
-      se        = se,
-      ci_lower  = est - Z_ALPHA_05 * se,
-      ci_upper  = est + Z_ALPHA_05 * se,
-      stringsAsFactors = FALSE
+  pull <- function(method_name, label = method_name) {
+    res <- comparison_res[[method_name]]
+    if (is.null(res)) return(.rhc_method_row(label, NA_real_, NA_real_))
+    .rhc_method_row(
+      label,
+      estimate = res$estimate,
+      se = if (!is.null(res$se)) res$se else sqrt(res$variance)
     )
   }
 
-  pull <- function(method_name) {
-    res <- comparison_res[[method_name]]
-    if (is.null(res)) return(method_row(method_name, NA_real_, NA_real_))
-    method_row(method_name,
-               est = res$estimate,
-               se  = if (!is.null(res$se)) res$se else sqrt(res$variance))
-  }
-
+  # Method set and display labels are unified with the simulation figure: the
+  # one-round RoCE plus the penalized baselines, with publication labels. The
+  # unregularized tilted-AIPW baseline and the two-round variant are omitted so
+  # the comparison forest plot reports a single, consistent set of estimators.
   methods_df <- rbind(
-    pull("target_only"),
-    pull("sample_size"),
-    pull("inverse_variance"),
-    pull("tilted_aipw"),
-    pull("pooled_dr"),
-    pull("federated_dr"),
-    method_row("facehd",
-               est = facehd_two_round$estimate,
-               se  = facehd_two_round$se),
-    method_row("facehd_one_round",
-               est = facehd_one_round$estimate,
-               se  = facehd_one_round$se)
+    pull("target_only",      "Target-only"),
+    pull("sample_size",      "SS"),
+    pull("inverse_variance", "IVW"),
+    pull("federated_dr",     "Federated-DR"),
+    pull("pooled_dr",        "Pooled-DR"),
+    .rhc_method_row(
+      "RoCE",
+      estimate = roce_one_round$estimate,
+      se = roce_one_round$se
+    )
   )
+  methods_df$method <- factor(
+    methods_df$method,
+    levels = c("Target-only", "SS", "IVW", "Federated-DR", "Pooled-DR", "RoCE"))
 
   # ---- Pairwise source-assisted estimates ------------------------------
-  # Pairwise estimates come from the canonical (two-round) FACE-HD run.
-  source_labels <- names(facehd_res$source_estimates)
+  # Pairwise estimates come from the reported one-round RoCE run.
+  source_labels <- names(roce_res$source_estimates)
   pairwise_df <- data.frame(
     source   = source_labels,
-    estimate = as.numeric(facehd_res$source_estimates),
+    estimate = as.numeric(roce_res$source_estimates),
     se       = NA_real_,
     stringsAsFactors = FALSE
   )
@@ -651,16 +717,18 @@ run_rhc_experiment <- function(K               = 5L,
   # Attach source labels to the aggregation-weight vector so downstream
   # callers (realdata.R, plot_aggregation_weights) can rely on names()
   # without hard-coding the label convention.
-  weights_named <- stats::setNames(as.numeric(facehd_res$weights), source_labels)
+  weights_named <- stats::setNames(as.numeric(roce_res$weights), source_labels)
 
   # Squared target-source gaps (penalty scale) for optional plot annotation.
-  d_sq <- (facehd_res$target_only$estimate - pairwise_df$estimate)^2
+  d_sq <- (roce_res$target_only$estimate - pairwise_df$estimate)^2
 
   metadata <- list(
-    K              = K,
+    K              = length(source_labels),
+    n_sites        = length(data_split),
     site_var       = site_var,
     target_site    = attr(data_split, "site_mapping")["target"],
     source_sites   = attr(data_split, "site_mapping")[paste0("s", seq_along(source_labels))],
+    site_components = attr(data_split, "site_components"),
     outcome        = outcome,
     family         = family,
     n_folds        = n_folds,
@@ -673,8 +741,236 @@ run_rhc_experiment <- function(K               = 5L,
     methods     = methods_df,
     pairwise    = pairwise_df,
     weights     = weights_named,
-    target_only = facehd_res$target_only$estimate,
+    target_only = roce_res$target_only$estimate,
     metadata    = metadata
+  )
+}
+
+#' RoCE TATE analysis of the RHC data
+#'
+#' Runs the treated and control nuisance fits on a shared fold partition and
+#' applies the TATE aggregation rule with one common source-weight
+#' vector. The existing arm-specific \code{run_rhc_experiment()} interface is
+#' unchanged and remains available for secondary potential-outcome summaries.
+#'
+#' @inheritParams run_rhc_experiment
+#' @param K Integer. Total number of retained insurance strata, including the
+#'   target. The support-screened manuscript driver passes \code{K = 4}, which
+#'   produces three source sites; the returned metadata therefore records
+#'   \code{K = 3} and \code{n_sites = 4}. The function default remains five
+#'   strata so earlier all-site sensitivity analyses stay reproducible.
+#' @param aggregation_lambda Positive truncated-Wald multiplier. Its reciprocal
+#'   is the source penalty-activation cutoff. The locked manuscript analysis
+#'   uses \code{1} (cutoff \code{1}), matching the simulation implementation.
+#' @param comparison_methods Character vector of TATE comparison methods.
+#'   Defaults to the four baselines reported in the manuscript. Supply
+#'   \code{character(0)} to run only target-only and RoCE.
+#' @param variance_method Comparison-method variance estimator, passed to
+#'   \code{\link{run_all_comparisons_tate}}.
+#' @param n_bootstrap Number of multiplier-bootstrap draws for comparison-method
+#'   standard errors when \code{variance_method = "bootstrap"}.
+#' @param parallel_arms Logical. Fit the two RoCE treatment-arm nuisance
+#'   pipelines concurrently. When enabled, \code{n_cores} is interpreted per
+#'   arm and the caller should allocate approximately \code{2 * n_cores} CPUs.
+#' @param nlambda_init Number of candidate penalties in each initial nuisance
+#'   path. The manuscript uses \code{LAMBDA_GRID_SIZE_STANDARD = 100}.
+#' @param nuisance_lambda_rule Nuisance-model CV selection rule passed to
+#'   \code{\link{run_tate_crossfit}}. The primary analysis uses \code{"min"};
+#'   \code{"1se"} is available as a more strongly regularized stability
+#'   sensitivity analysis.
+#' @param M_tau Numeric fitting-stage truncation radius. The manuscript uses
+#'   \code{M_TAU_DEFAULT = 5}.
+#' @return A list containing the TATE method comparison, pairwise
+#'   source-assisted TATE estimates and Wald diagnostics, common aggregation
+#'   weights, the full TATE fit, and run metadata.
+#' @export
+run_rhc_tate_experiment <- function(
+    K = 5L,
+    target_site = NULL,
+    outcome = c("death30", "death180", "los"),
+    family = NULL,
+    n_folds = N_FOLDS_DEFAULT,
+    phi = base::identity,
+    seed = 42L,
+    verbose = TRUE,
+    n_cores = NULL,
+    M_tau_inference = M_TAU_INFERENCE_DEFAULT,
+    M_tau = M_TAU_DEFAULT,
+    site_var = .RHC_SITE_VAR,
+    site_recode = NULL,
+    aggregation_lambda = AGG_WALD_LAMBDA,
+    comparison_methods = c(
+      "sample_size", "inverse_variance", "federated_dr", "pooled_dr"
+    ),
+    variance_method = c("bootstrap", "analytic"),
+    n_bootstrap = BOOTSTRAP_REPLICATES_DEFAULT,
+    parallel_arms = FALSE,
+    nlambda_init = LAMBDA_GRID_SIZE_STANDARD,
+    nuisance_lambda_rule = c("min", "1se")) {
+  outcome <- match.arg(outcome)
+  variance_method <- match.arg(variance_method)
+  n_bootstrap <- .validate_bootstrap_replicates(
+    n_bootstrap, "run_rhc_tate_experiment"
+  )
+  nuisance_lambda_rule <- .match_nuisance_lambda_rule(
+    nuisance_lambda_rule, "run_rhc_tate_experiment"
+  )
+  if (is.null(family)) {
+    family <- if (outcome %in% c("death30", "death180")) "binomial" else "gaussian"
+  }
+  family <- match.arg(family, choices = c("binomial", "gaussian"))
+  K <- as.integer(K)
+  n_folds <- as.integer(n_folds)
+
+  cohort <- build_rhc_cohort(
+    outcome = outcome, site_var = site_var, site_recode = site_recode
+  )
+  data_split <- build_rhc_data_split(
+    cohort = cohort, K = K, target_site = target_site, phi = phi, seed = seed
+  )
+  folds <- build_crossfit_folds(data_split, n_folds)
+  propensity_cache <- new.env(hash = TRUE, parent = emptyenv())
+
+  tate_fit <- run_tate_crossfit(
+    data_split = data_split,
+    n_folds = n_folds,
+    communication_mode = "one_round",
+    family = family,
+    n_cores = n_cores,
+    M_tau = M_tau,
+    M_tau_inference = M_tau_inference,
+    lambda_selection = aggregation_lambda,
+    nlambda_init = nlambda_init,
+    nuisance_lambda_rule = nuisance_lambda_rule,
+    precomputed_folds = folds,
+    target_only_ps_cache = propensity_cache,
+    parallel_arms = parallel_arms,
+    verbose = verbose
+  )
+
+  comparison_labels <- c(
+    sample_size = "SS",
+    inverse_variance = "IVW",
+    federated_dr = "Federated-DR",
+    pooled_dr = "Pooled-DR"
+  )
+  comparison_methods <- unique(as.character(comparison_methods))
+  unknown_comparisons <- setdiff(
+    comparison_methods, names(comparison_labels)
+  )
+  if (length(unknown_comparisons) > 0L) {
+    stop(sprintf(
+      "run_rhc_tate_experiment: unknown comparison method(s): %s.",
+      paste(unknown_comparisons, collapse = ", ")
+    ), call. = FALSE)
+  }
+
+  comparison_results <- if (length(comparison_methods) > 0L) {
+    run_all_comparisons_tate(
+      data_split = data_split,
+      family = family,
+      n_folds = n_folds,
+      variance_method = variance_method,
+      n_bootstrap = n_bootstrap,
+      include_tilted = FALSE,
+      methods = comparison_methods,
+      n_cores = n_cores
+    )
+  } else {
+    list()
+  }
+  comparison_rows <- lapply(comparison_methods, function(method_name) {
+    method_result <- comparison_results[[method_name]]
+    .rhc_method_row(
+      comparison_labels[[method_name]],
+      method_result$estimate,
+      method_result$se
+    )
+  })
+  methods <- do.call(
+    rbind,
+    c(
+      list(.rhc_method_row(
+        "Target-only", tate_fit$target_only$estimate, tate_fit$target_only$se
+      )),
+      comparison_rows,
+      list(.rhc_method_row("RoCE", tate_fit$estimate, tate_fit$se))
+    )
+  )
+  method_levels <- c(
+    "Target-only",
+    unname(comparison_labels[comparison_methods]),
+    "RoCE"
+  )
+  methods$method <- factor(methods$method, levels = method_levels)
+
+  source_labels <- names(tate_fit$source_estimates)
+  fold_wald <- tate_fit$fold_wald_statistics
+  fold_penalty <- tate_fit$fold_penalty_coefficients
+  pairwise <- data.frame(
+    source = source_labels,
+    estimate = as.numeric(tate_fit$source_estimates),
+    weight = as.numeric(tate_fit$weights),
+    mean_wald_statistic = colMeans(fold_wald),
+    max_wald_statistic = apply(fold_wald, 2L, max),
+    penalty_activation_fraction = colMeans(fold_penalty > 0),
+    stringsAsFactors = FALSE
+  )
+  pairwise_gap <- pairwise$estimate - tate_fit$target_only$estimate
+  recode_specification <- if (is.null(site_recode)) {
+    "none"
+  } else {
+    paste(
+      paste0(
+        names(site_recode), "->",
+        ifelse(is.na(site_recode), "<excluded>", unname(site_recode))
+      ),
+      collapse = ";"
+    )
+  }
+
+  list(
+    methods = methods,
+    pairwise = pairwise,
+    weights = stats::setNames(as.numeric(tate_fit$weights), source_labels),
+    target_only = tate_fit$target_only,
+    tate_fit = tate_fit,
+    comparison_results = comparison_results,
+    metadata = list(
+      estimand = "TATE",
+      K = length(source_labels),
+      n_sites = length(data_split),
+      site_var = site_var,
+      site_recode_specification = recode_specification,
+      excluded_site_levels = if (is.null(site_recode)) {
+        "none"
+      } else {
+        paste(names(site_recode)[is.na(site_recode)], collapse = ";")
+      },
+      target_site = attr(data_split, "site_mapping")["target"],
+      source_sites = attr(data_split, "site_mapping")[
+        paste0("s", seq_along(source_labels))
+      ],
+      site_components = attr(data_split, "site_components"),
+      outcome = outcome,
+      family = family,
+      n_folds = n_folds,
+      nlambda_init = nlambda_init,
+      nuisance_lambda_rule = nuisance_lambda_rule,
+      M_tau = M_tau,
+      M_tau_inference = M_tau_inference,
+      aggregation_lambda = aggregation_lambda,
+      aggregation_cutoff = 1 / aggregation_lambda,
+      target_anchor_weight = 1 - sum(tate_fit$weights),
+      comparison_methods = comparison_methods,
+      variance_method = variance_method,
+      n_bootstrap = n_bootstrap,
+      parallel_arms = parallel_arms,
+      source_cores_per_arm = n_cores,
+      site_n = vapply(data_split, function(site) site$n, integer(1L)),
+      pairwise_gap = pairwise_gap,
+      pairwise_gap_sq = pairwise_gap^2
+    )
   )
 }
 
@@ -684,7 +980,7 @@ run_rhc_experiment <- function(K               = 5L,
 #' Applies a cubic B-spline basis (with \code{knots_per_var} internal knots)
 #' to each continuous column of \code{X} and leaves binary / one-hot columns
 #' unchanged. Provided as a reference \code{phi} for
-#' \code{\link{build_rhc_data_split}} when the user wishes to test FACE-HD
+#' \code{\link{build_rhc_data_split}} when the user wishes to test RoCE
 #' in the high-dimensional regime; \emph{not} applied by default.
 #'
 #' @param X Numeric matrix of raw covariates.

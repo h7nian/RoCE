@@ -13,7 +13,7 @@
 # bias_diagnose.sh via the sbatch CLI.
 
 # ============================================================================
-# FACE-HD bias-diagnosis array script
+# RoCE bias-diagnosis array script
 # ----------------------------------------------------------------------------
 # Each array task executes ONE setting from the table below by calling
 # diagnosis/bias/run_setting.R. All tasks are independent; results are
@@ -96,7 +96,7 @@ TASK_ID="${SLURM_ARRAY_TASK_ID:?SLURM_ARRAY_TASK_ID is required}"
 # one axis at a time. Keep in sync with the comment block in bias_diagnose.sh.
 #
 # Revision after the first run (job 9276320):
-#   * Dropped K_2: the FACE-HD two-layer crossfit is degenerate at K=2 (see
+#   * Dropped K_2: the RoCE two-layer crossfit is degenerate at K=2 (see
 #     diagnosis/bias/results/K_2_n1000_K2_p20_ss0.5_summary.csv; the
 #     one/two-round estimators diverge with bias ~±100).
 #   * Replaced shift_0 (shift=0.0, rejected by validate_simulation_params)
@@ -127,7 +127,7 @@ P="${GRID_P[${TASK_ID}]}"
 SHIFT="${GRID_SHIFT[${TASK_ID}]}"
 
 echo "======================================================"
-echo " FACE-HD Bias Diagnosis | Task ${TASK_ID}"
+echo " RoCE Bias Diagnosis | Task ${TASK_ID}"
 echo "======================================================"
 echo " Tag:        ${TAG}"
 echo " n_total:    ${N_TOTAL}"

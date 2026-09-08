@@ -7,7 +7,7 @@
 #SBATCH --nice=5
 
 # ============================================================================
-# FACE-HD bias probe scan SLURM batch
+# RoCE bias probe scan SLURM batch
 # ----------------------------------------------------------------------------
 # Runs diagnosis/bias/probe_scan.R, scanning (n, p) at K=3 to quantify
 # how mu_pred_ts spread depends on p / n_calib_arm.
@@ -32,7 +32,7 @@ N_SEEDS="${PROBE_SCAN_SEEDS:-3}"
 JOB_TAG="${SLURM_JOB_ID:-manual}"
 
 echo "======================================================"
-echo " FACE-HD Bias Probe Scan"
+echo " RoCE Bias Probe Scan"
 echo "======================================================"
 echo " Seeds/cell: ${N_SEEDS}"
 echo " Job:        ${SLURM_JOB_ID}"

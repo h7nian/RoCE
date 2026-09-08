@@ -3,8 +3,11 @@
 # =============================================================================
 # TARGET ESTIMAND
 # =============================================================================
-# All methods estimate the POTENTIAL OUTCOME MEAN:
-#   μ¹_t = E_t[Y(1)]  (expected outcome under treatment at target site)
+# The helpers in this file are arm-specific: for A_val = a they estimate
+#   mu^a_t = E_t[Y(a)].
+# TATE entry points pair the A_val = 1 and A_val = 0 influence blocks before
+# calculating the contrast variance, so within-site cross-arm covariance is
+# retained.
 # =============================================================================
 #
 # Contents:
@@ -66,7 +69,7 @@ fit_glm_mle <- function(X, y, family = "binomial") {
     y = y,
     family = switch(glm_spec$family,
       "binomial" = binomial(),
-      "gaussian" = gaussian()
+      "gaussian" = stats::gaussian()
     )
   )
   if (any(is.na(fit$coefficients))) {
@@ -78,7 +81,7 @@ fit_glm_mle <- function(X, y, family = "binomial") {
   }
   eta <- as.numeric(X_int %*% fit$coefficients)
   fitted <- switch(glm_spec$link,
-    "logit" = 1 / (1 + exp(-eta)),
+    "logit" = logistic(eta),
     "identity" = eta,
     fit$fitted.values
   )
@@ -124,12 +127,12 @@ calculate_aipw_influence <- function(y, a, x, m_hat, pi_hat, w = NULL, A_val = 1
   d <- mean(w)
   mu_hat <- mean(w * phi) / d
 
-  # Response derivative h'(η) = dμ/dη — depends on GLM family/link.
-  # For canonical links, h'(η) = V(μ) (GLM variance function).
+  # Response derivative h'(eta) = d mu / d eta depends on GLM family/link.
+  # For canonical links, h'(eta) = V(mu) (GLM variance function).
   # Used for outcome model adjustment (influence function correction).
   m_prime <- switch(family,
-    "binomial" = m_hat * (1 - m_hat),      # V(μ) = μ(1-μ) for binomial
-    "gaussian" = rep(1, length(m_hat)),     # V(μ) = 1 for gaussian
+    "binomial" = m_hat * (1 - m_hat),      # V(mu) = mu(1-mu) for binomial
+    "gaussian" = rep(1, length(m_hat)),     # V(mu) = 1 for gaussian
     m_hat * (1 - m_hat)                     # default: binomial
   )
 
@@ -142,7 +145,7 @@ calculate_aipw_influence <- function(y, a, x, m_hat, pi_hat, w = NULL, A_val = 1
 
   # Propensity model adjustment
   # NOTE: s_gamma_ps / adj_gamma_ps refer to the PROPENSITY SCORE model
-  # coefficients, NOT the density ratio γ_{s_j,a} used in FACE-HD.
+  # coefficients, NOT the density ratio gamma_{s_j,a} used in RoCE.
   # This function is for standard AIPW (target-only / comparison methods).
   # Score function for propensity: s_gamma_ps = X * (a - pi)
   s_gamma_ps <- X_int * (as.numeric(a) - pi_hat)
@@ -178,6 +181,43 @@ calculate_aipw_influence <- function(y, a, x, m_hat, pi_hat, w = NULL, A_val = 1
 }
 
 # =============================================================================
+# GRACEFUL-DEGRADATION DIAGNOSTICS (process-local)
+# =============================================================================
+# When a nuisance model cannot be fit on a fold (e.g. a single-class binomial
+# outcome at high dimension, where every treated outcome is 1), the outcome
+# model falls back to a well-defined degenerate value (the constant empirical
+# mean) instead of aborting the whole Monte Carlo run. Following the convention
+# of mature resampling frameworks -- tidymodels/caret record per-fold model
+# failures and report them; base glm warns on separation rather than failing --
+# the event must be VISIBLE, not silently swallowed. run_single_simulation()
+# resets this counter and reads it back to surface a per-setting "degenerate
+# fold" rate via summarize_results().
+.roce_fit_diag <- new.env(parent = emptyenv())
+.roce_fit_diag$or_degenerate_folds <- 0L
+
+#' Reset the per-simulation fit-diagnostics counters.
+#' @keywords internal
+.reset_fit_diagnostics <- function() {
+  .roce_fit_diag$or_degenerate_folds <- 0L
+  invisible(NULL)
+}
+
+#' Record one outcome-model fold that fell back to the constant degenerate
+#' nuisance because its binomial response was single-class.
+#' @keywords internal
+.record_or_degenerate_fold <- function() {
+  .roce_fit_diag$or_degenerate_folds <- .roce_fit_diag$or_degenerate_folds + 1L
+  invisible(NULL)
+}
+
+#' Read the current fit-diagnostics counters.
+#' @return Named list with \code{or_degenerate_folds}.
+#' @keywords internal
+.get_fit_diagnostics <- function() {
+  list(or_degenerate_folds = .roce_fit_diag$or_degenerate_folds)
+}
+
+# =============================================================================
 # SHARED GLMNET CV HELPER
 # =============================================================================
 
@@ -201,7 +241,20 @@ calculate_aipw_influence <- function(y, a, x, m_hat, pi_hat, w = NULL, A_val = 1
 #' @param model_name Short model label for warning messages
 #'   (e.g., \code{"PS"}, \code{"OR"}).
 #' @param fold_id Optional integer fold index included in the warning.
-#' @return Numeric vector of predictions (length \code{nrow(x_predict)}).
+#' @param on_degenerate_response How to handle a single-class binomial response
+#'   (a class with fewer than 2 observations), which \code{glmnet} cannot fit.
+#'   \code{"error"} (default) fails loudly -- appropriate for the propensity
+#'   model, where it signals a positivity failure. \code{"constant"} returns the
+#'   constant empirical mean -- the correct degenerate nuisance for the outcome
+#'   model when, e.g., a saturated high-dimensional fold has all-1 outcomes.
+#' @param lambda_rule Cross-validation rule: \code{"min"} uses
+#'   \code{lambda.min}; \code{"1se"} uses \code{lambda.1se}.
+#' @param cv_group_id Optional positive integer origin/group identifier aligned
+#'   with the training rows. Repeated IDs are kept intact within nuisance-CV
+#'   folds. \code{NULL}, or an all-unique vector, preserves the legacy path.
+#' @return Numeric vector of predictions (length \code{nrow(x_predict)}). The
+#'   integer attribute \code{outcome_degenerate} is set to 1 when the
+#'   constant-outcome fallback was used and is otherwise absent.
 #' @keywords internal
 fit_glmnet_cv <- function(x_train, y_train, x_predict,
                           family = "binomial",
@@ -209,8 +262,37 @@ fit_glmnet_cv <- function(x_train, y_train, x_predict,
                           nlambda = LAMBDA_GRID_SIZE_STANDARD,
                           min_per_fold = 10L,
                           caller_name = "", model_name = "",
-                          fold_id = NULL) {
+                          fold_id = NULL,
+                          on_degenerate_response = c("error", "constant"),
+                          lambda_rule = c("min", "1se"),
+                          cv_group_id = NULL) {
+  on_degenerate_response <- match.arg(on_degenerate_response)
+  lambda_rule <- .match_nuisance_lambda_rule(
+    lambda_rule, "fit_glmnet_cv"
+  )
   n_predict <- nrow(x_predict)
+  cv_group_caller <- paste0(
+    if (nzchar(caller_name)) caller_name else "fit_glmnet_cv",
+    if (nzchar(model_name)) paste0(" ", model_name) else ""
+  )
+  cv_group_id <- .validate_nuisance_cv_group_id(
+    cv_group_id, nrow(x_train), cv_group_caller
+  )
+
+  # Saturated/near-separable binomial outcome folds: below glmnet's own
+  # <8-per-class threshold the penalized logistic CV is unstable (single-class
+  # sub-folds, or a non-conformable failure from inconsistent per-fold lambda
+  # paths on near-separable data). For the outcome model the constant empirical
+  # mean is the correct degenerate nuisance. The propensity model keeps its
+  # strict behaviour -- treatment is ~balanced, so this never triggers there.
+  if (family == "binomial" && on_degenerate_response == "constant" &&
+      min(table(factor(y_train, levels = c(0, 1)))) < 8L) {
+    .record_or_degenerate_fold()
+    pred <- rep(mean(y_train), n_predict)
+    if (!is.null(clip_fn)) pred <- clip_fn(pred)
+    attr(pred, "outcome_degenerate") <- 1L
+    return(pred)
+  }
 
   pred <- tryCatch({
     n_cv_folds <- get_cv_fold_count(nrow(x_train), min_per_fold = min_per_fold)
@@ -218,20 +300,57 @@ fit_glmnet_cv <- function(x_train, y_train, x_predict,
       stop(sprintf("insufficient sample size for cv.glmnet: n_train=%d yields nfolds=%d (<4 minimum valid folds)",
                    nrow(x_train), n_cv_folds))
     }
-    cv_fit <- glmnet::cv.glmnet(
-      x = x_train, y = y_train, family = family,
-      alpha = 1, nfolds = n_cv_folds, nlambda = nlambda
+    nuisance_fold_id <- .make_nuisance_cv_fold_id(
+      cv_group_id, n_cv_folds, cv_group_caller
     )
-    as.numeric(predict(cv_fit, newx = x_predict,
-                       s = "lambda.min", type = "response"))
+    cv_fit <- if (is.null(nuisance_fold_id)) {
+      glmnet::cv.glmnet(
+        x = x_train, y = y_train, family = family,
+        alpha = 1, nfolds = n_cv_folds, nlambda = nlambda,
+        maxit = GLMNET_MAX_ITER
+      )
+    } else {
+      glmnet::cv.glmnet(
+        x = x_train, y = y_train, family = family,
+        alpha = 1, foldid = nuisance_fold_id, nlambda = nlambda,
+        maxit = GLMNET_MAX_ITER
+      )
+    }
+    selected_lambda <- if (identical(lambda_rule, "1se")) {
+      "lambda.1se"
+    } else {
+      "lambda.min"
+    }
+    as.numeric(predict(
+      cv_fit, newx = x_predict, s = selected_lambda, type = "response"
+    ))
   }, error = function(e) {
+    msg <- conditionMessage(e)
+    # A (sub-)fold can carry a single-class binomial response -- e.g. a saturated
+    # high-dimensional outcome where all treated outcomes are 1 -- which glmnet
+    # refuses to fit ("one ... class has 1 or 0 observations"). For the outcome
+    # model the correct degenerate nuisance is the constant empirical mean; the
+    # propensity model keeps the default "error" (a positivity failure).
+    if (on_degenerate_response == "constant" &&
+        grepl("1 or 0 observations|0 or 1 observations|non-conformable", msg)) {
+      .record_or_degenerate_fold()
+      fallback <- rep(mean(y_train), n_predict)
+      attr(fallback, "outcome_degenerate") <- 1L
+      return(fallback)
+    }
     fold_msg <- if (!is.null(fold_id)) sprintf(" on fold %d", fold_id) else ""
     stop(sprintf("%s: %s model failed%s: %s",
-                 caller_name, model_name, fold_msg, conditionMessage(e)),
+                 caller_name, model_name, fold_msg, msg),
          call. = FALSE)
   })
 
+  used_degenerate_fallback <- identical(
+    attr(pred, "outcome_degenerate"), 1L
+  )
   if (!is.null(clip_fn)) pred <- clip_fn(pred)
+  if (used_degenerate_fallback) {
+    attr(pred, "outcome_degenerate") <- 1L
+  }
   if (length(pred) != n_predict || any(!is.finite(pred))) {
     stop(sprintf("%s: %s model produced invalid predictions (expected length %d, got %d; non-finite=%d).",
                  caller_name, model_name, n_predict, length(pred),
@@ -307,7 +426,7 @@ fit_site_aipw <- function(site_data, family = "binomial", use_rcal = FALSE,
     X_ps_matrix <- as.matrix(x_ps)
     if (any(is.na(X_or_matrix)) || any(is.na(X_ps_matrix)) ||
         any(is.na(tr)) || any(is.na(y))) {
-      stop(sprintf("fit_site_aipw: Missing values detected — W_outcome has %d NA(s), Z_site has %d NA(s), A has %d NA(s), Y has %d NA(s). Remove or impute before calling.",
+      stop(sprintf("fit_site_aipw: Missing values detected: W_outcome has %d NA(s), Z_site has %d NA(s), A has %d NA(s), Y has %d NA(s). Remove or impute before calling.",
                    sum(is.na(X_or_matrix)), sum(is.na(X_ps_matrix)),
                    sum(is.na(tr)), sum(is.na(y))))
     }
@@ -338,7 +457,9 @@ fit_site_aipw <- function(site_data, family = "binomial", use_rcal = FALSE,
     if (is.null(prop_scores)) {
       cv_fit <- glmnet::cv.glmnet(
         x = X_ps_matrix, y = as.numeric(tr), family = "binomial",
-        alpha = 1, nfolds = n_cv_folds, nlambda = LAMBDA_GRID_SIZE_STANDARD
+        alpha = 1, nfolds = n_cv_folds,
+        nlambda = LAMBDA_GRID_SIZE_STANDARD,
+        maxit = GLMNET_MAX_ITER
       )
       prop_scores <- as.numeric(predict(cv_fit, newx = X_ps_matrix,
                                         s = "lambda.min", type = "response"))
@@ -388,21 +509,23 @@ fit_site_aipw <- function(site_data, family = "binomial", use_rcal = FALSE,
       family_type <- glm_spec$glmnet_family
       cv_fit_or <- glmnet::cv.glmnet(
         x = X_treated, y = y_treated, family = family_type,
-        alpha = 1, nfolds = n_cv_folds, nlambda = LAMBDA_GRID_SIZE_STANDARD
+        alpha = 1, nfolds = n_cv_folds,
+        nlambda = LAMBDA_GRID_SIZE_STANDARD,
+        maxit = GLMNET_MAX_ITER
       )
       beta_coef <- as.vector(coef(cv_fit_or, s = "lambda.min"))
       X_design <- cbind(1, X_or_matrix)
       m1_pred <- as.numeric(X_design %*% beta_coef)
     }
-    # Apply response function: linear predictor → response scale
-    # RCAL and manual coef() extraction return linear predictors (η = X^T β),
-    # but AIPW needs predictions on the response scale (μ = h(η)).
+    # Apply response function: linear predictor to response scale.
+    # RCAL and manual coef() extraction return linear predictors
+    # (eta = X^T beta), but AIPW needs response-scale predictions.
     # Note: glmnet predict(..., type="response") already applies this transform,
     # but the manual extraction path above does not.
     if (family == "binomial") {
-      m1_pred <- 1 / (1 + exp(-m1_pred))         # logistic: μ = 1/(1+e^{-η})
+      m1_pred <- logistic(m1_pred)
     }
-    # gaussian/identity: no transform needed (μ = η)
+    # gaussian/identity: no transform needed (mu = eta)
     m1_pred <- clip_outcome_pred(m1_pred, family)
     
     # Step 3: Compute doubly robust AIPW pseudo-outcomes
@@ -437,14 +560,14 @@ fit_site_aipw <- function(site_data, family = "binomial", use_rcal = FALSE,
 
 #' DerSimonian-Laird heterogeneity estimator
 #'
-#' Computes Cochran's Q statistic, between-site variance τ² via DerSimonian-Laird,
-#' and I² heterogeneity proportion. Used by both sample-size and inverse-variance
+#' Computes Cochran's Q statistic and the DerSimonian-Laird between-site
+#' variance and heterogeneity proportion. Used by both sample-size and inverse-variance
 #' weighted estimators.
 #'
-#' @param site_estimates Named numeric vector of site-specific point estimates μ̂_j.
+#' @param site_estimates Named numeric vector of site-specific point estimates.
 #' @param site_variances Named numeric vector of within-site variances Var_j.
 #' @return List with Q (Cochran's Q), tau_sq (between-site variance),
-#'   I_squared (% heterogeneity), precisions (1/Var_j), fe_estimate (fixed-effects estimate).
+#'   I_squared (\% heterogeneity), precisions (1/Var_j), fe_estimate (fixed-effects estimate).
 #' @export
 calculate_dl_heterogeneity <- function(site_estimates, site_variances) {
   K <- length(site_estimates)
@@ -454,17 +577,17 @@ calculate_dl_heterogeneity <- function(site_estimates, site_variances) {
   # Fixed-effects weighted estimate (using inverse-variance weights)
   fe_estimate <- sum(precisions * site_estimates) / total_precision
   
-  # Cochran's Q statistic: Q = Σ_j w_j (μ̂_j - μ̂_FE)²
+  # Cochran's Q statistic.
   Q <- sum(precisions * (site_estimates - fe_estimate)^2)
   
-  # DerSimonian-Laird estimator: τ² = max(0, (Q - (K-1)) / C)
+  # DerSimonian-Laird estimator: tau2 = max(0, (Q - (K-1)) / C)
   C <- total_precision - sum(precisions^2) / total_precision
   tau_sq <- 0
   if (K > 1 && C > 0) {
     tau_sq <- max(0, (Q - (K - 1)) / C)
   }
   
-  # I² statistic (proportion of variance due to heterogeneity)
+  # I-squared statistic (proportion of variance due to heterogeneity)
   I_squared <- if (Q > K - 1) (Q - (K - 1)) / Q * 100 else 0
   
   return(list(
@@ -506,7 +629,22 @@ calculate_dl_heterogeneity <- function(site_estimates, site_variances) {
 #' @return Bootstrap standard error (numeric scalar), or \code{NA_real_} if no block has
 #'   any observation.
 #' @keywords internal
+.validate_bootstrap_replicates <- function(n_bootstrap, caller) {
+  if (length(n_bootstrap) != 1L || is.na(n_bootstrap) ||
+      !is.finite(n_bootstrap) || n_bootstrap < 2 ||
+      n_bootstrap %% 1 != 0 || n_bootstrap > .Machine$integer.max) {
+    stop(
+      sprintf("%s: n_bootstrap must be one integer >= 2.", caller),
+      call. = FALSE
+    )
+  }
+  as.integer(n_bootstrap)
+}
+
 .multiplier_bootstrap_se <- function(blocks, n_bootstrap = BOOTSTRAP_REPLICATES_DEFAULT) {
+  n_bootstrap <- .validate_bootstrap_replicates(
+    n_bootstrap, ".multiplier_bootstrap_se"
+  )
   blocks <- Filter(function(b) length(b$influence) > 0L, blocks)
   if (length(blocks) == 0L) {
     return(NA_real_)
@@ -549,22 +687,26 @@ calculate_dl_heterogeneity <- function(site_estimates, site_variances) {
 #'
 #' Centralises the bootstrap-versus-analytic choice so every comparison method reports
 #' variance consistently. When \code{variance_method = "bootstrap"} (the default), the
-#' reported variance is the wild-bootstrap SE squared (see \code{\link{.multiplier_bootstrap_se}});
+#' reported variance is the wild-bootstrap SE squared (see
+#' \code{.multiplier_bootstrap_se});
 #' the analytic variance is always retained alongside for reference. Falls back to the
 #' analytic variance if the bootstrap cannot be computed (no usable blocks).
 #'
 #' @param analytic_variance Method-specific analytic variance estimate.
 #' @param blocks Influence-function blocks for the bootstrap (see
-#'   \code{\link{.multiplier_bootstrap_se}}).
+#'   \code{.multiplier_bootstrap_se}).
 #' @param variance_method Either \code{"bootstrap"} (default) or \code{"analytic"}.
 #' @param n_bootstrap Number of bootstrap replicates.
 #' @return List with `variance`, `se`, `variance_method` (the method actually used),
-#'   `variance_analytic`, `se_analytic`, and `se_bootstrap`.
+#'   `variance_analytic`, `se_analytic`, `se_bootstrap`, and `n_bootstrap`.
 #' @keywords internal
 .resolve_comparison_variance <- function(analytic_variance, blocks,
                                          variance_method = c("bootstrap", "analytic"),
                                          n_bootstrap = BOOTSTRAP_REPLICATES_DEFAULT) {
   variance_method <- match.arg(variance_method)
+  n_bootstrap <- .validate_bootstrap_replicates(
+    n_bootstrap, ".resolve_comparison_variance"
+  )
   analytic_variance <- max(as.numeric(analytic_variance), VARIANCE_MIN)
 
   se_bootstrap <- if (identical(variance_method, "bootstrap")) {
@@ -586,7 +728,8 @@ calculate_dl_heterogeneity <- function(site_estimates, site_variances) {
     variance_method = if (use_bootstrap) "bootstrap" else "analytic",
     variance_analytic = analytic_variance,
     se_analytic = sqrt(analytic_variance),
-    se_bootstrap = se_bootstrap
+    se_bootstrap = se_bootstrap,
+    n_bootstrap = n_bootstrap
   )
 }
 
@@ -661,7 +804,7 @@ select_dr_lambda_cv <- function(Z_source, Z_target,
 }
 
 #' Compute density ratio weights for source site relative to target
-#' Uses exponential tilting: w(X) = exp(-Z'α)
+#' Uses exponential tilting: w(X) = exp(-Z' alpha)
 #' @param Z_source Site assignment covariates for source site
 #' @param Z_target Site assignment covariates for target site
 #' @param lambda Regularization parameter. \code{NULL} (default) selects
@@ -669,7 +812,9 @@ select_dr_lambda_cv <- function(Z_source, Z_target,
 #' @param lambda_rule CV selection rule when \code{lambda = NULL}:
 #'   \code{"min"} selects \code{lambda.min}; \code{"1se"} selects
 #'   \code{lambda.1se}.
-#' @return Vector of normalized density ratio weights
+#' @return Vector of normalized and bounded density-ratio weights. Attributes
+#'   retain the selected penalty and pre-clipping diagnostics for downstream
+#'   overlap audits.
 calculate_dr_weights <- function(Z_source, Z_target, lambda = NULL,
                                  lambda_rule = c("min", "1se")) {
   lambda_rule <- .match_nuisance_lambda_rule(lambda_rule, "calculate_dr_weights")
@@ -705,10 +850,11 @@ calculate_dr_weights <- function(Z_source, Z_target, lambda = NULL,
   
   Z_int <- cbind(1, Z_source)
   eta <- as.numeric(Z_int %*% alpha)
-  w <- exp(-eta)
-  w <- w / mean(w)
+  w <- .normalize_log_weights(-eta, "calculate_dr_weights")
   n_below <- sum(w < DR_WEIGHT_LOWER)
   n_above <- sum(w > DR_WEIGHT_UPPER)
+  preclip_min <- min(w)
+  preclip_max <- max(w)
   w <- pmax(pmin(w, DR_WEIGHT_UPPER), DR_WEIGHT_LOWER)
   if (n_below + n_above > 0L) {
     warning(sprintf(
@@ -719,6 +865,15 @@ calculate_dr_weights <- function(Z_source, Z_target, lambda = NULL,
   }
   attr(w, "lambda_used") <- attr(alpha, "lambda_used") %||% as.numeric(lambda)
   attr(w, "lambda_rule") <- attr(alpha, "lambda_rule") %||% "fixed"
+  attr(w, "clipping_diagnostics") <- list(
+    n = length(w),
+    n_below = n_below,
+    n_above = n_above,
+    n_clipped = n_below + n_above,
+    fraction_clipped = (n_below + n_above) / length(w),
+    preclip_min = preclip_min,
+    preclip_max = preclip_max
+  )
 
   return(w)
 }
@@ -772,7 +927,8 @@ calculate_weighted_site_aipw <- function(y, a, X, weights = NULL, family = "bino
     x_train = X_treated, y_train = y_treated, x_predict = X,
     family = glm_spec$glmnet_family,
     clip_fn = function(pred) clip_outcome_pred(pred, family),
-    caller_name = "calculate_weighted_site_aipw", model_name = "OR"
+    caller_name = "calculate_weighted_site_aipw", model_name = "OR",
+    on_degenerate_response = "constant"
   )
   
   # Nuisance-adjusted IF-based weighted AIPW (theory-aligned with helpers used

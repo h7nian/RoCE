@@ -22,7 +22,7 @@ SEEDS_PER_CELL="${C2P50_SEEDS_PER_CELL:-20}"
 SEED_BASE="${C2P50_SEED_BASE:-20000}"
 
 # Evidence that the C2 p=50 under-coverage is NUISANCE ESTIMATION error: if so, the
-# FACE-HD bias should SHRINK as n grows (nuisances converge) at fixed p=50.
+# RoCE bias should SHRINK as n grows (nuisances converge) at fixed p=50.
 # Reuses the proven, UNMODIFIED diagnosis/c2/c2_score_moment_audit.R (config=C2 inside).
 NS=(5000 10000 20000)
 cell=$(( (TASK_ID-1)/SEEDS_PER_CELL ))

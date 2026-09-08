@@ -7,10 +7,11 @@
 //   - calculate_aggregated_variance_cpp: Aggregated variance V̂
 // ============================================================================
 
-#include "optimization.hpp"
-#include "cv_utils.hpp"
+#include "optimization.h"
+#include "cv_utils.h"
 #include <Eigen/Eigenvalues>
 #include <cstdlib>
+#include <stdexcept>
 #include <string>
 
 namespace {
@@ -20,7 +21,7 @@ inline MatrixXd symmetrize_matrix(const MatrixXd& M) {
 }
 
 inline bool is_weight_debug_enabled() {
-    const char* debug_env = std::getenv("FACEHD_DEBUG_WEIGHTS");
+    const char* debug_env = std::getenv("ROCE_DEBUG_WEIGHTS");
     return (debug_env != nullptr) && (std::string(debug_env) == "1");
 }
 
@@ -88,8 +89,9 @@ inline double compute_offdiagonal_hessian_entry(
 }
 
 // Detect whether the smooth Hessian is (numerically) diagonal.
-// When true, the penalized QP in eq:final_opt separates into K univariate
-// soft-thresholding problems (Corollary cor:soft_threshold_face in proof.tex),
+// When true, the penalized QP in eq:agg_penalized_objective separates into K
+// univariate soft-thresholding problems (supplemental.tex, soft-thresholding
+// interpretation),
 // avoiding coordinate descent altogether.
 inline bool is_smooth_hessian_diagonal(int K, const WeightSmoothContext& ctx) {
     if (K <= 1) return true;
@@ -112,7 +114,8 @@ inline bool is_smooth_hessian_diagonal(int K, const WeightSmoothContext& ctx) {
     return true;
 }
 
-// Finite-sample safeguard: the plug-in quadratic form in eq:final_opt can be
+// Finite-sample safeguard: the plug-in quadratic form in
+// eq:agg_penalized_objective can be
 // slightly indefinite due to estimation noise (and because we pass only the
 // off-diagonal cross-site covariances via C_cross with diag set to 0).
 //
@@ -153,13 +156,27 @@ inline double compute_psd_ridge_for_weight_hessian(
 
     Eigen::SelfAdjointEigenSolver<MatrixXd> solver(H);
     if (solver.info() != Eigen::Success) {
-        return 0.0;
+        throw std::runtime_error(
+            "optimize_weights_cpp: eigen-decomposition failed while checking "
+            "the aggregation Hessian."
+        );
     }
 
-    double min_eig = solver.eigenvalues().minCoeff();
-    constexpr double psd_eps = 1e-10;
-    if (min_eig < psd_eps) {
-        return psd_eps - min_eig;
+    const VectorXd eigenvalues = solver.eigenvalues();
+    double min_eig = eigenvalues.minCoeff();
+    double spectral_scale = eigenvalues.cwiseAbs().maxCoeff();
+
+    // Use a relative, homogeneous margin.  A fixed absolute floor on this
+    // unscaled-variance Hessian would eventually dominate its natural O(1/N)
+    // scale and contradict the asymptotically inactive numerical-ridge
+    // convention used in the theory.  Under positive population curvature the
+    // relative margin is inactive with probability tending to one; when a
+    // noisy plug-in Hessian is singular or indefinite, it supplies only the
+    // scale-proportional correction needed for a stable finite-sample solve.
+    constexpr double relative_psd_margin = 1e-10;
+    double psd_margin = relative_psd_margin * spectral_scale;
+    if (min_eig < psd_margin) {
+        return psd_margin - min_eig;
     }
     return 0.0;
 }
@@ -176,12 +193,69 @@ List optimize_weights_cpp(const VectorXd& estimates, const VectorXd& V_t,
                          const VectorXd& warm_start) {
     
     int K = estimates.size();
+    if (K <= 0 || V_t.size() != K || V_s.size() != K || n_s.size() != K ||
+        C_ot.size() != K) {
+        throw std::invalid_argument(
+            "optimize_weights_cpp: source vectors must have the same positive length."
+        );
+    }
+    if (!estimates.allFinite() || !V_t.allFinite() || !V_s.allFinite() ||
+        !n_s.allFinite() || !C_ot.allFinite() || !std::isfinite(V_ot) ||
+        !std::isfinite(n_t) || !std::isfinite(lambda) || !std::isfinite(mu_ot)) {
+        throw std::invalid_argument(
+            "optimize_weights_cpp: all estimates, variance components, sample sizes, and tuning inputs must be finite."
+        );
+    }
+    if (n_t <= 0.0 || (n_s.array() <= 0.0).any()) {
+        throw std::invalid_argument(
+            "optimize_weights_cpp: target and source sample sizes must be positive."
+        );
+    }
+    if (C_cross.size() > 0 && !C_cross.allFinite()) {
+        throw std::invalid_argument(
+            "optimize_weights_cpp: cross-source covariance entries must be finite."
+        );
+    }
     // Warm-start from a previous solution if provided (consistent with
     // fit_unified_density_ratio_cpp and fit_unified_outcome_cpp).
     VectorXd eta = (warm_start.size() == K) ? warm_start : VectorXd::Zero(K);
     
-    // Pre-calculate penalty terms
-    VectorXd penalties = lambda * (mu_ot - estimates.array()).square();
+    // Pre-calculate the per-coordinate L1 penalty weights. main.tex defines
+    // the objective on the asymptotic-variance scale
+    //
+    //     N_all * Var_hat(eta) + sum_j p_j |eta_j|.
+    //
+    // The smooth calculations below use Var_hat(eta), so the equivalent
+    // coefficient passed to the proximal updates is p_j / N_all. Keeping this
+    // conversion here makes every optimizer path (closed form and iterative)
+    // use the same scale without duplicating N_all multipliers in the Hessian.
+    // FACE finite-sample remedy (Han et al. 2023, Remark 9): replace the raw
+    // squared-discrepancy factor (mu_ot - mu_ts_j)^2 with a TRUNCATED WALD
+    // statistic. The L1 coefficient on |eta_j| is
+    //     penalties(j) = ( lambda * t_j - 1 )_+ ,
+    // where t_j = |mu_ot - mu_ts_j| / SE(disc_j) is the discrepancy
+    // t-statistic and
+    //     SE(disc_j)^2 = V_ot/n_t + V_t_j/n_t + V_s_j/n_s_j - 2*C_ot_j/n_t
+    //                  = Var( mu_ts_j - mu_ot )   ( = hess_diag_j / 2 ).
+    // This acts as a self-normalizing WALD TEST on source j: the factor is 0
+    // (the coordinate is unpenalized) when t_j <= 1/lambda, and positive when
+    // t_j > 1/lambda. The active lambda therefore sets the Wald
+    // penalty-activation threshold 1/lambda (see
+    // AGG_WALD_LAMBDA / .aggregation_lambda_grid). The N_all rescaling below
+    // does not change whether the penalty is active; it only makes its strength
+    // match the objective stated in main.tex.
+    double N_all = std::max(n_t + n_s.sum(), 1.0);
+    VectorXd penalties(K);
+    for (int j = 0; j < K; j++) {
+        double n_s_j = std::max(n_s(j), 1.0);
+        double var_disc_j = V_ot / n_t + V_t(j) / n_t + V_s(j) / n_s_j
+                            - 2.0 * C_ot(j) / n_t;
+        double se_disc_j = std::sqrt(std::max(var_disc_j, NumericalConstants::VAR_MIN));
+        double t_j = std::abs(mu_ot - estimates(j)) / se_disc_j;
+        double c_j = lambda * t_j - 1.0;
+        double penalty_main_scale = (c_j > 0.0) ? c_j : 0.0;
+        penalties(j) = penalty_main_scale / N_all;
+    }
     
     // Pre-check cross-site matrix validity once outside the iteration loop
     bool has_cross = (C_cross.rows() == K && C_cross.cols() == K);
@@ -203,16 +277,16 @@ List optimize_weights_cpp(const VectorXd& estimates, const VectorXd& V_t,
     }
 
     // ------------------------------------------------------------------
-    // Diagonal-Hessian fast path (Corollary cor:soft_threshold_face in
-    // proof.tex). When the cross-source coupling through the shared target
-    // sample vanishes, the penalized QP in eq:final_opt separates into K
+    // Diagonal-Hessian fast path (supplemental.tex, soft-thresholding
+    // interpretation). When the cross-source coupling through the shared target
+    // sample vanishes, the penalized QP in eq:agg_penalized_objective separates into K
     // univariate soft-thresholding problems; we solve them in one sweep and
     // skip the iterative coordinate descent below.
     // ------------------------------------------------------------------
     if (is_smooth_hessian_diagonal(K, smooth_ctx)) {
         if (is_weight_debug_enabled()) {
             Rcpp::Rcout << "[optimize_weights_cpp] Diagonal H detected; "
-                        << "using closed-form soft-thresholding (cor:soft_threshold_face)\n";
+                        << "using closed-form soft-thresholding\n";
         }
         for (int j = 0; j < K; j++) {
             double hess_diag_j = compute_diagonal_curvature_coordinate(j, smooth_ctx);
@@ -220,16 +294,20 @@ List optimize_weights_cpp(const VectorXd& estimates, const VectorXd& V_t,
             // Unpenalized coordinate minimiser is therefore
             //   eta_j^OLS = -b_j / H_jj = 2*(V_ot - C_ot(j)) / (n_t * H_jj).
             double eta_ols_j     = 2.0 * (V_ot - C_ot(j)) / (n_t * hess_diag_j);
-            double threshold_j   = penalties(j) / hess_diag_j;  // penalties(j) = lambda * d_j^2
+            // penalties(j) = (lambda*t_j-1)_+ / N_all because the smooth
+            // Hessian is on the unscaled Var_hat scale.
+            double threshold_j   = penalties(j) / hess_diag_j;
             eta(j) = soft_threshold_cpp(eta_ols_j, threshold_j);
-            if (std::isnan(eta(j)) || std::isinf(eta(j)) ||
-                std::abs(eta(j)) > NumericalConstants::WEIGHT_MAX_ABS) {
-                eta(j) = 0.0;
+            if (!std::isfinite(eta(j))) {
+                throw std::runtime_error(
+                    "optimize_weights_cpp: non-finite closed-form weight update."
+                );
             }
         }
         return List::create(Named("weights")    = eta,
                             Named("converged")  = true,
-                            Named("iterations") = 1);
+                            Named("iterations") = 1,
+                            Named("psd_ridge")  = psd_ridge);
     }
 
     for (int iter = 0; iter < max_iter; iter++) {
@@ -269,9 +347,13 @@ List optimize_weights_cpp(const VectorXd& estimates, const VectorXd& V_t,
             double update_val = old_eta_j - step_size * grad_smooth;
             eta(j) = soft_threshold_cpp(update_val, step_size * penalties(j));
             
-            // Enhanced numerical stability for weight optimization
-            if (std::isnan(eta(j)) || std::isinf(eta(j)) || std::abs(eta(j)) > NumericalConstants::WEIGHT_MAX_ABS) {
-                eta(j) = 0.0;
+            // A finite coefficient is retained even when its magnitude is
+            // large: the paper's optimization domain is R^K. Callers that
+            // explicitly want [0,1] truncation can request clip_weights=TRUE.
+            if (!std::isfinite(eta(j))) {
+                throw std::runtime_error(
+                    "optimize_weights_cpp: non-finite coordinate update."
+                );
             }
 
             // Incremental aggregate updates — O(1) for S/DotC, O(K) for Cv
@@ -288,13 +370,15 @@ List optimize_weights_cpp(const VectorXd& estimates, const VectorXd& V_t,
         if (check_convergence_cpp(eta_old, eta, tol)) {
             return List::create(Named("weights") = eta, 
                                Named("converged") = true, 
-                               Named("iterations") = iter + 1);
+                               Named("iterations") = iter + 1,
+                               Named("psd_ridge") = psd_ridge);
         }
     }
     
     return List::create(Named("weights") = eta, 
                        Named("converged") = false, 
-                       Named("iterations") = max_iter);
+                       Named("iterations") = max_iter,
+                       Named("psd_ridge") = psd_ridge);
 }
 
 // C++ version of aggregated estimate calculation
@@ -335,7 +419,7 @@ double calculate_aggregated_variance_cpp(const VectorXd& eta, const VectorXd& V_
     var_acc.add(std::pow(1.0 - sum_eta, 2) * V_ot / n_t);
     
     // Add source variance and target-source covariance components  
-    // Following eq:final_opt in main.tex: eta^2 * V_hat / N for each variance component
+    // Following eq:agg_penalized_objective in main.tex: eta^2 * V_hat / N for each variance component
     for (int j = 0; j < K; j++) {
         // Source variance component (guard against division by zero)
         double n_s_j = std::max(n_s(j), 1.0);  // Prevent division by zero
@@ -372,7 +456,7 @@ double calculate_aggregated_variance_cpp(const VectorXd& eta, const VectorXd& V_
 // (most-regularized → least-regularized).  The solution at a large lambda
 // (η ≈ 0) is a good initialiser for the next smaller lambda, so the
 // optimizer converges in far fewer iterations — same trick used by all four
-// CV functions in cv_utils.hpp.
+// CV functions in cv_utils.h.
 //
 // Results are stored in original-grid order so the R caller's lambda → index
 // mapping is preserved.

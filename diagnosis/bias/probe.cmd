@@ -7,7 +7,7 @@
 #SBATCH --nice=5
 
 # ============================================================================
-# FACE-HD bias probe SLURM batch
+# RoCE bias probe SLURM batch
 # ----------------------------------------------------------------------------
 # Runs diagnosis/bias/probe.R for ONE phase (A / B / C / ALL) at the
 # setting supplied by probe.sh via PROBE_PHASE/N/K/P/SEEDS env vars.
@@ -37,7 +37,7 @@ P="${PROBE_P:-20}"
 N_SEEDS="${PROBE_SEEDS:-10}"
 
 echo "======================================================"
-echo " FACE-HD Bias Probe | phase=${PHASE}"
+echo " RoCE Bias Probe | phase=${PHASE}"
 echo "======================================================"
 echo " Setting:    n=${N_TOTAL}  K=${K}  p=${P}  seeds=${N_SEEDS}"
 echo " Job:        ${SLURM_JOB_ID}"

@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================================
-# FACE-HD K_f probe scan submission
+# RoCE K_f probe scan submission
 # ----------------------------------------------------------------------------
 # Submits a single-task SLURM job that runs diagnosis/bias/probe_kf.R,
 # sweeping K_f ∈ {3, 5, 7, 10} at two settings (catastrophic / production).
@@ -45,7 +45,7 @@ SBATCH_CMD=(
 )
 
 echo "======================================================"
-echo " FACE-HD K_f Probe Scan"
+echo " RoCE K_f Probe Scan"
 echo "======================================================"
 echo " K_f values:  3, 5, 7, 10"
 echo " Settings:    catastrophic (n=1000,p=20), production (n=5000,p=10)"

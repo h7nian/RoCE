@@ -1,53 +1,59 @@
 # helper-load.R - Auto-loaded by testthat before any test files
 #
-# Loads the FACEHD code so all exported functions, constants, and compiled C++
+# Loads the RoCE code so all exported functions, constants, and compiled C++
 # code are available in the test environment. Internal (non-exported) objects
 # are attached for convenience. Shared synthetic-data factories used across
 # multiple test files are defined here as well, so they live on the same
-# search path as the FACEHD internals they call.
+# search path as the RoCE internals they call.
 #
 # By default, prefer the *local* source tree via devtools::load_all() when the
-# repo is present, even if an installed FACEHD package exists. This avoids the
+# repo is present, even if an installed RoCE package exists. This avoids the
 # common pitfall of running tests against an outdated installed version.
-# To force testing the installed package, set FACEHD_TEST_INSTALLED=1.
+# To force testing the installed package, set ROCE_TEST_INSTALLED=1.
 
-force_installed <- Sys.getenv("FACEHD_TEST_INSTALLED", "0") %in% c("1", "TRUE", "true", "True")
+force_installed <- Sys.getenv("ROCE_TEST_INSTALLED", "0") %in% c("1", "TRUE", "true", "True")
 
-is_facehd_repo <- function(path) {
+is_roce_repo <- function(path) {
   desc <- file.path(path, "DESCRIPTION")
   if (!file.exists(desc)) return(FALSE)
   hdr <- readLines(desc, n = 20L)
-  any(grepl("^Package:\\s*FACEHD\\s*$", hdr))
+  any(grepl("^Package:\\s*RoCE\\s*$", hdr))
 }
 
-repo_root <- if (is_facehd_repo(getwd())) {
+repo_root <- if (is_roce_repo(getwd())) {
   normalizePath(getwd(), mustWork = FALSE)
 } else {
   normalizePath(file.path(dirname(getwd()), ".."), mustWork = FALSE)
 }
 
-if (!force_installed && is_facehd_repo(repo_root) && requireNamespace("devtools", quietly = TRUE)) {
+if (!force_installed && is_roce_repo(repo_root) && requireNamespace("devtools", quietly = TRUE)) {
   # IMPORTANT: helpers=FALSE prevents devtools from sourcing testthat helper
   # files (including this one), which would otherwise recurse indefinitely.
   devtools::load_all(repo_root, helpers = FALSE)
-} else if (requireNamespace("FACEHD", quietly = TRUE)) {
-  library(FACEHD)
-} else if (requireNamespace("devtools", quietly = TRUE) && is_facehd_repo(repo_root)) {
+} else if (requireNamespace("RoCE", quietly = TRUE)) {
+  library(RoCE)
+} else if (requireNamespace("devtools", quietly = TRUE) && is_roce_repo(repo_root)) {
   devtools::load_all(repo_root, helpers = FALSE)
 } else {
-  stop("Tests require either the FACEHD source tree + devtools, or an installed FACEHD package.")
+  stop("Tests require either the RoCE source tree + devtools, or an installed RoCE package.")
 }
 
 # Attach non-exported package internals in an isolated search-path environment.
 # This keeps test convenience (unqualified access to internal helpers/C++ bindings)
 # while avoiding .GlobalEnv pollution and mask/conflict noise.
-pkg_env <- asNamespace("FACEHD")
-exported <- getNamespaceExports("FACEHD")
-all_public_names <- ls(pkg_env, all.names = FALSE)
-internal_names <- setdiff(all_public_names, exported)
+pkg_env <- asNamespace("RoCE")
+exported <- getNamespaceExports("RoCE")
+all_namespace_names <- ls(pkg_env, all.names = TRUE)
+reserved_namespace_names <- c(
+  ".__NAMESPACE__.", ".__S3MethodsTable__.", ".packageName"
+)
+internal_names <- setdiff(
+  all_namespace_names,
+  c(exported, reserved_namespace_names)
+)
 
-if ("FACEHD_test_internals" %in% search()) {
-  detach("FACEHD_test_internals", character.only = TRUE)
+if ("ROCE_test_internals" %in% search()) {
+  detach("ROCE_test_internals", character.only = TRUE)
 }
 
 test_internal_env <- new.env(parent = emptyenv())
@@ -62,7 +68,7 @@ for (nm in internal_names) {
 # testthat's helper-file discovery order and target environment vary by
 # version; defining them in the same file that drives the package load and
 # the internals attach guarantees they end up on the same search path as
-# FACEHD internals like MIN_TREATED_FOR_MODEL.
+# RoCE internals like MIN_TREATED_FOR_MODEL.
 #
 # IMPORTANT: do not call generate_simulation_data with p < 4. The function
 # transform_covariates() in R/data_generation.R indexes X[, 4] unconditionally
@@ -86,7 +92,7 @@ assign("make_small_data_split", function(n_per_site = 40L, K = 1L, p = 4L,
       n_total, K, p,
       config       = "C1",
       outcome_type = outcome_type,
-      dgp_type     = "facehd",   # estimator smoke factory: pin to the FACE-HD DGP
+      dgp_type     = "roce",   # estimator smoke factory: pin to the RoCE DGP
       warn_ignored = FALSE
     )
     data_split <- split_data_by_site(data)
@@ -114,8 +120,13 @@ assign(".shared_smoke_cache", new.env(parent = emptyenv()),
 assign("get_smoke_data_split", function() {
   cache <- get(".shared_smoke_cache", envir = test_internal_env)
   if (!exists("data_split", envir = cache, inherits = FALSE)) {
+    # Two-level cross-fitting excludes two outer folds when constructing an
+    # initial nuisance fit. With only 40 observations per site, the remaining
+    # treatment-arm inner-CV training samples can have fewer rows than the
+    # intercept-augmented five-parameter model. Use a still-small but properly
+    # identified integration fixture; production simulations use 1000/site.
     cache$data_split <- get("make_small_data_split", envir = test_internal_env)(
-      n_per_site = 40L, K = 1L, p = 4L, seed = 2026L, n_folds = 3L,
+      n_per_site = 120L, K = 1L, p = 4L, seed = 2026L, n_folds = 3L,
       outcome_type = "continuous"
     )
   }
@@ -142,4 +153,4 @@ assign("get_smoke_result", function(mode = c("two_round", "one_round")) {
   cache[[key]]
 }, envir = test_internal_env)
 
-attach(test_internal_env, name = "FACEHD_test_internals", warn.conflicts = FALSE)
+attach(test_internal_env, name = "ROCE_test_internals", warn.conflicts = FALSE)

@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================================
-# FACE-HD C2 residual-balance probe submission script
+# RoCE C2 residual-balance probe submission script
 # ----------------------------------------------------------------------------
 # Submits diagnosis-only jobs that decompose source correction into required,
 # observed, true-outcome-residual, and true-propensity residual balance terms.
@@ -71,7 +71,7 @@ SBATCH_CMD=(
 )
 
 echo "======================================================"
-echo " FACE-HD C2 Residual Balance Probe Submission"
+echo " RoCE C2 Residual Balance Probe Submission"
 echo "======================================================"
 echo " Repo:           ${REPO_DIR}"
 echo " Tasks:          ${TASKS}"

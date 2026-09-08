@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================================
-# FACE-HD C2 score/moment n-SCALING submission script
+# RoCE C2 score/moment n-SCALING submission script
 # ----------------------------------------------------------------------------
 # Reuses the (proven, unmodified) diagnosis/c2/c2_score_moment_audit.R on the
 # failing C2 p=10 settings across n_total in {5000, 10000, 20000}. Diagnosis
@@ -73,7 +73,7 @@ SBATCH_CMD=(
 )
 
 echo "======================================================"
-echo " FACE-HD C2 Score/Moment n-Scaling Submission"
+echo " RoCE C2 Score/Moment n-Scaling Submission"
 echo "======================================================"
 echo " Repo:           ${REPO_DIR}"
 echo " Tasks:          ${TASKS}"

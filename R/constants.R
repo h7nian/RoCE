@@ -1,4 +1,4 @@
-# constants.R - Centralized numerical constants for FACE-HD algorithms
+# constants.R - Centralized numerical constants for RoCE algorithms
 #
 # This file provides a single source of truth for all numerical constants
 # used across the codebase. All other files should reference these constants
@@ -9,7 +9,7 @@
 # =============================================================================
 # This project follows snake_case for functions and variables. However,
 # variables that directly correspond to mathematical notation in the
-# accompanying paper (main.tex / proof.tex) preserve their capitalization
+# accompanying paper (main.tex / supplemental.tex) preserve their capitalization
 # for traceability:
 #
 #   mu_hat_ot -> target-only estimate hat{mu}^1_{ot} in paper (was Delta_ot)
@@ -30,22 +30,39 @@
 # OPTIMIZATION DEFAULTS
 # =============================================================================
 
-#' Default truncation parameter M_tau for calibrated loss functions.
-#' Applied during model fitting (eq:gamma_calibrated_loss, eq:alpha_calibrated_loss
-#' in main.tex). See Remark 2 in proof.tex for the choice of M_tau.
-M_TAU_DEFAULT <- 10.0
+#' Default truncation radius M_tau for the calibrated estimation. Applied as a
+#' SINGLE radius to BOTH the calibrated fitting losses (eq:gamma_calibrated_loss,
+#' eq:alpha_calibrated_loss in main.tex) AND the inference weight (see
+#' M_TAU_INFERENCE_DEFAULT), mirroring SMMAL (hou2025efficient), which truncates
+#' the linear predictor at 2M with M the logit-scale positivity bound (M = 2.2 for
+#' probabilities in [0.1, 0.9], i.e. radius 2M ~= 4.4). We use 5 as a
+#' finite-sample safeguard on the FACE DGP: observed fitted logits are usually
+#' well inside this radius, while rare excursions on the high-dimensional
+#' [X, X^2] design are capped (weight cap e^5 ~= 148, versus e^10 ~= 22000).
+#' A fixed radius is not, by itself, an asymptotic-inactivity guarantee;
+#' production summaries therefore report clipping frequencies and include an
+#' M_tau sensitivity analysis. The theory instead permits a radius sequence
+#' whose clipping effect is o_p(N^{-1/2}). See the truncation discussion in
+#' main.tex and supplemental.tex.
+M_TAU_DEFAULT <- 5.0
 
-#' Default truncation parameter for inference (correction term and variance).
-#' Set to Inf (no truncation) per the paper: truncation T(.) appears only in
-#' calibrated losses (training), NOT in the final DR estimator (inference).
-#' Users can set a finite value for numerical stability if needed.
-M_TAU_INFERENCE_DEFAULT <- Inf
+#' Truncation radius for inference (correction term and source variance). Set
+#' equal to M_TAU_DEFAULT so ONE radius governs fitting and inference, as in SMMAL
+#' (hou2025efficient): the truncated weight w_T = exp(-T(phi^T gamma)) feeds the
+#' final estimator AND its variance (SMMAL eq. 13 -> eq. 6/7). On the high-dim
+#' [X, X^2] density-ratio design a few source units can otherwise receive an
+#' extreme untruncated weight exp(-phi^T gamma), producing heavy-tailed estimates
+#' (the per-sim SE co-moves, so coverage holds, but the marginal empirical SE is
+#' inflated ~2x). Truncating the inference linear predictor at |g| <= 5 collapses
+#' the empirical SE onto the model SE (verified) while leaving the bulk -- and
+#' hence the estimand -- unchanged.
+M_TAU_INFERENCE_DEFAULT <- 5.0
 
-#' Truncation parameter for inference on the RHC real-data application.
-#' The RHC cohort produces a small number of extreme density-ratio logits, so
-#' \code{run_rhc_experiment()} truncates the correction-term linear predictor
-#' at \eqn{|g| \le M_{\tau,\text{inf}}} for numerical stability. This is a
-#' real-data-specific override; simulations use \code{M_TAU_INFERENCE_DEFAULT}.
+#' Legacy arm-wise truncation parameter for the RHC application.
+#' \code{run_rhc_experiment()} retains this historical radius for reproducible
+#' secondary arm-specific summaries. The primary TATE manuscript call
+#' uses \code{M_tau_inference = 5}, matching \code{M_TAU_INFERENCE_DEFAULT} and
+#' the value stated in \code{main.tex}.
 M_TAU_INFERENCE_RHC <- 3.0
 
 #' Maximum iterations for coordinate descent optimization
@@ -56,6 +73,20 @@ TOL_DEFAULT <- 1e-6
 
 #' Lambda grid size for standard CV selection
 LAMBDA_GRID_SIZE_STANDARD <- 100
+
+#' Maximum iterations for glmnet paths used by comparison and initial-outcome
+#' nuisances. High-dimensional binomial folds can require more than glmnet's
+#' default 100,000 iterations at the least-regularized tail even when the
+#' selected lambda is well behaved. Warnings are intentionally not suppressed;
+#' the larger cap reduces avoidable tail failures while preserving an explicit
+#' signal if a path still does not converge.
+GLMNET_MAX_ITER <- 1000000L
+
+#' Number of consecutive nonconverged candidates tolerated within one fold of
+#' a descending nuisance-parameter lambda path before the remaining, less
+#' regularized tail is marked ineligible. Keep synchronized with the C++
+#' `NumericalConstants::CV_FAILURE_PATIENCE` value.
+NUISANCE_CV_FAILURE_PATIENCE <- 3L
 
 #' Ratio of \code{lambda_min} to \code{lambda_max} in the CV grid when the
 #' design is low-dimensional (n > p). Matches glmnet's default in that regime.
@@ -79,9 +110,49 @@ ESTIMATE_MAX <- 1e6
 LAMBDA_MIN <- 1e-6
 
 #' Maximum lambda for weight optimization.
-#' This is a numerical sanity cap, not the default path endpoint; aggregation
-#' CV starts from its KKT lambda_max unless that value exceeds this cap.
+#' This is a numerical sanity cap for user-supplied sensitivity grids; the
+#' production aggregation path uses the fixed \code{AGG_WALD_LAMBDA}.
 LAMBDA_MAX <- 1e6
+
+#' Aggregation Wald cutoff constants
+#'
+#' The FACE truncated-Wald penalty factor uses lambda as the reciprocal of the
+#' penalty-activation cutoff: a source is unpenalized when its discrepancy
+#' statistic is no larger than \eqn{1/\lambda}. Crossing the cutoff initiates
+#' soft shrinkage and does not guarantee an exactly zero finite-sample weight.
+#' The coverage-blind disjoint pilot documented in the manuscript selected
+#' cutoff \eqn{c=1}, hence multiplier \eqn{\lambda=1}.
+#'
+#' \code{AGG_WALD_CUTOFF_DEFAULT} records that locked production cutoff.
+#' \code{AGG_WALD_LAMBDA} reads the optional build-time environment override
+#' \code{ROCE_AGG_WALD_LAMBDA}, while \code{AGG_WALD_CUTOFF} always records
+#' its exact reciprocal for the installed build. A near-zero positive override
+#' approximately disables adaptive source penalization and is intended only for
+#' explicit sensitivity analysis.
+#'
+#' @name aggregation_wald_defaults
+#' @aliases AGG_WALD_CUTOFF_DEFAULT AGG_WALD_LAMBDA AGG_WALD_CUTOFF
+#' @return A positive numeric scalar.
+NULL
+
+#' @rdname aggregation_wald_defaults
+AGG_WALD_CUTOFF_DEFAULT <- 1.0
+
+#' @rdname aggregation_wald_defaults
+AGG_WALD_LAMBDA <- local({
+  .val <- suppressWarnings(as.numeric(Sys.getenv(
+    "ROCE_AGG_WALD_LAMBDA",
+    format(1 / AGG_WALD_CUTOFF_DEFAULT, scientific = FALSE)
+  )))
+  if (length(.val) != 1L || is.na(.val) || !is.finite(.val) || .val <= 0) {
+    stop("AGG_WALD_LAMBDA: ROCE_AGG_WALD_LAMBDA must be a single positive finite number.",
+         call. = FALSE)
+  }
+  .val
+})
+
+#' @rdname aggregation_wald_defaults
+AGG_WALD_CUTOFF <- 1 / AGG_WALD_LAMBDA
 
 #' Maximum iterations for weight optimization (optimize_weights)
 WEIGHT_OPT_MAX_ITER <- 10000L
@@ -92,7 +163,7 @@ WEIGHT_OPT_TOL <- 1e-8
 #' Default number of multiplier (wild) bootstrap replicates for comparison-method
 #' standard errors (\code{.multiplier_bootstrap_se}). Large enough to keep the
 #' Monte-Carlo error of the bootstrap SE small relative to its sampling variability.
-BOOTSTRAP_REPLICATES_DEFAULT <- 1000L
+BOOTSTRAP_REPLICATES_DEFAULT <- 5000L
 
 # =============================================================================
 # SITE BALANCE
@@ -110,13 +181,13 @@ BOOTSTRAP_REPLICATES_DEFAULT <- 1000L
 #' normalization in data generation.
 #'
 #' Derived analytically (unit-norm + Gaussian covariates) and calibrated
-#' empirically; gives ≈25% target for K=3, ≈20% for K=4, etc.
+#' empirically; gives approximately 25\% target for K=3, 20\% for K=4, etc.
 GAMMA_BALANCE_INTERCEPT <- -0.15
 
-#' Default covariate-shift strength for the FACE-HD DGP.
+#' Default covariate-shift strength for the RoCE DGP.
 #' A moderate default keeps the main simulation away from the strong-transport
 #' stress-test regime while preserving nontrivial source/target covariate shift.
-FACEHD_SHIFT_STRENGTH_DEFAULT <- 0.5
+ROCE_SHIFT_STRENGTH_DEFAULT <- 0.5
 
 # =============================================================================
 # NUMERICAL STABILITY
@@ -132,30 +203,43 @@ DIVISION_FLOOR <- 1e-10
 #' Clipping bounds for logistic/eta.
 #' Alias for C++ NumericalConstants::ETA_CLIP_MIN/MAX (== 50).
 #' Used in R-side logistic/GLM functions. The C++ side uses the same value
-#' via NumericalConstants::ETA_CLIP_MIN/MAX in numerical_constants.hpp.
+#' via NumericalConstants::ETA_CLIP_MIN/MAX in numerical_constants.h.
 LOGISTIC_CLIP <- 50
 
 # =============================================================================
 # GLM FAMILY/LINK INTEGER CODES
 # =============================================================================
-# Named constants for GLM integer codes, matching C++ enums in utils.hpp.
+# Named constants for GLM integer codes, matching C++ enums in utils.h.
 # Use these instead of raw integers for type safety and readability.
 # See resolve_glm_family() for string ↔ integer mapping.
 
+#' Integer codes for supported GLM families and links
+#'
+#' These constants mirror the enumerations used by the compiled nuisance-model
+#' kernels.
+#' @name glm_integer_codes
+#' @aliases FAMILY_GAUSSIAN FAMILY_BINOMIAL LINK_IDENTITY LINK_LOGIT
+#' @return Integer scalar.
+NULL
+
+#' @rdname glm_integer_codes
 #' @export
 FAMILY_GAUSSIAN <- 0L
+#' @rdname glm_integer_codes
 #' @export
 FAMILY_BINOMIAL <- 1L
 
+#' @rdname glm_integer_codes
 #' @export
 LINK_IDENTITY <- 0L
+#' @rdname glm_integer_codes
 #' @export
 LINK_LOGIT    <- 1L
 
 # =============================================================================
 # C++ MATCHING CONSTANTS
 # =============================================================================
-# These constants mirror C++ NumericalConstants in numerical_constants.hpp.
+# These constants mirror C++ NumericalConstants in numerical_constants.h.
 # Keep both files in sync when changing values.
 
 #' Default number of folds for the outer cross-fitting loop (K_f in paper)
@@ -201,7 +285,7 @@ DR_WEIGHT_UPPER <- 10.0
 # CONFIDENCE INTERVAL
 # =============================================================================
 
-#' Z-score for 95% confidence intervals
+#' Z-score for 95\% confidence intervals
 #' @export
 Z_ALPHA_05 <- qnorm(0.975)  # 1.959964...
 
@@ -215,8 +299,8 @@ POSITIVITY_LOWER <- 0.1
 #' Positivity upper bound for propensity score clipping in data generation
 POSITIVITY_UPPER <- 0.9
 
-#' Default noise standard deviation for continuous outcomes in FACEHD DGP
-FACEHD_NOISE_SD_DEFAULT <- 0.1
+#' Default noise standard deviation for continuous outcomes in RoCE DGP
+ROCE_NOISE_SD_DEFAULT <- 0.1
 
 #' Shift SD multiplier for independent site allocation covariate shifts
 #' Controls magnitude of site-specific mean shifts: delta ~ N(0, INDEPENDENT_SHIFT_SD * shift_strength)
@@ -294,19 +378,36 @@ VALID_HETEROGENEITY_TYPES <- c("none", "mild", "strong", "partial")
 
 #' Valid data generating process (DGP) types
 #'
-#' "facehd"      – current FACE-HD DGP (multinomial logistic site model,
+#' "roce"      – current RoCE DGP (multinomial logistic site model,
 #'                nonlinear covariate transforms, binary or continuous outcome)
-#' "face" – DGP from Han et al. (JASA 2023, Section 5.1):
-#'                site-specific skewed-normal covariates, linear + squared
-#'                outcome model, site-specific constant ATEs, continuous outcome
-VALID_DGP_TYPES <- c("facehd", "face")
+#' "face" – DGP adapted from Han et al. (JASA 2023, Section 5.1):
+#'                site-specific skew-normal covariates, linear + squared
+#'                outcome predictors, and site-specific constant treatment
+#'                shifts for either continuous or binary outcomes
+VALID_DGP_TYPES <- c("roce", "face")
 
 # =============================================================================
 # FACE PAPER DGP CONSTANTS (Han et al., JASA 2023, Section 5.1)
 # =============================================================================
 
-#' True ATE for the target population in FACE paper DGP (Δ_T = 3.0)
+#' True ATE for the target population in FACE paper DGP, continuous outcome
+#' (Δ_T = 3.0, the conditional mean shift between arms).
 FACE_ATE_TARGET <- 3.0
+
+#' True ATE for the target population in FACE paper DGP, binary outcome
+#' (Δ_bin = 1.0, the conditional log-odds shift between arms). The continuous
+#' Δ_T = 3.0 is a mean shift and saturates expit(); the binary outcome instead
+#' uses a moderate log-odds shift so neither arm is pushed against 0/1. The
+#' resulting target-population risk difference is ≈ 0.21 (not 1.0).
+FACE_BINARY_ATE_TARGET <- 1.0
+
+#' Target logit-scale standard deviation of the covariate signal for the binary
+#' FACE paper DGP. The raw linear predictor (X−κ)ᵀβ_lin + (X²)ᵀβ_sq has a
+#' target-law sd of ≈ 3.2, which saturates expit() (treated-arm prevalence
+#' ≈ 0.98 → near-degenerate outcome regression). For the binary outcome the
+#' signal is standardized to this controlled spread; see
+#' \code{get_face_binary_calibration()}.
+FACE_BINARY_SIGNAL_SD <- 1.0
 
 #' Noise standard deviation for FACE paper outcomes: 2√5 ≈ 4.47
 FACE_NOISE_SD <- 2 * sqrt(5)

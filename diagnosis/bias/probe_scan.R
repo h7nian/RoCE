@@ -26,10 +26,10 @@ cat(sprintf("[probe_scan] job_tag=%s  n_seeds=%d\n", job_tag, n_seeds))
 suppressPackageStartupMessages({
   if (requireNamespace("devtools", quietly = TRUE)) {
     devtools::load_all(".", quiet = TRUE)
-  } else if (requireNamespace("FACEHD", quietly = TRUE)) {
-    library(FACEHD)
+  } else if (requireNamespace("RoCE", quietly = TRUE)) {
+    library(RoCE)
   } else {
-    stop("Neither devtools nor FACEHD available.")
+    stop("Neither devtools nor RoCE available.")
   }
 })
 
@@ -59,7 +59,7 @@ probe_one <- function(setting, seed) {
     estimand_type = "superpopulation", site_allocation = "model",
     transform_type = "mild", outcome_type = "binary",
     heterogeneity_type = "none", shift_strength = 0.5,
-    dgp_type = "facehd"
+    dgp_type = "roce"
   )
   data_split <- split_data_by_site(data)
   source_sites <- setdiff(names(data_split), "t")

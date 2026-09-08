@@ -49,7 +49,7 @@ fi
 SBATCH_CMD+=(diagnosis/c2/c2_nuisance_refit_summarize.cmd)
 
 echo "======================================================"
-echo " FACE-HD C2 Nuisance Refit Summary Submission"
+echo " RoCE C2 Nuisance Refit Summary Submission"
 echo "======================================================"
 echo " Repo:       ${REPO_DIR}"
 echo " Dependency: ${DEPENDENCY:-none}"

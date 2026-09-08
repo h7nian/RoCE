@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================================
-# FACE-HD K_f=3 production-scale verification submission
+# RoCE K_f=3 production-scale verification submission
 # ----------------------------------------------------------------------------
 # Submits a single-task SLURM job that re-runs the exact production setting
 #   n=5000, K=3, p=10, C1, superpopulation, mild, ss=0.5
@@ -59,7 +59,7 @@ SBATCH_CMD=(
 )
 
 echo "======================================================"
-echo " FACE-HD ${CONFIG} K_f=${N_FOLDS} Production Verification"
+echo " RoCE ${CONFIG} K_f=${N_FOLDS} Production Verification"
 echo "======================================================"
 echo " Pinned setting: n=5000 K=3 p=10 ${CONFIG} ss=0.5"
 echo " K_f:            ${N_FOLDS}      (production was 10)"

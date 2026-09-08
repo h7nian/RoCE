@@ -1,5 +1,5 @@
 #!/bin/bash
-# Submit the FACE-HD method/reference alignment audit to Slurm.
+# Submit the RoCE method/reference alignment audit to Slurm.
 
 set -euo pipefail
 
@@ -38,7 +38,7 @@ SBATCH_CMD=(
 )
 
 echo "======================================================"
-echo " FACE-HD Method Alignment Audit Submission"
+echo " RoCE Method Alignment Audit Submission"
 echo "======================================================"
 echo " Repo:        ${REPO_DIR}"
 echo " Output root: ${OUTPUT_ROOT}"

@@ -1,5 +1,12 @@
 \begin{thebibliography}{xx}
 
+\harvarditem[Athey et~al.]{Athey, Imbens \harvardand\
+  Wager}{2018}{athey2018approximate}
+Athey, S., Imbens, G.~W. \harvardand\ Wager, S.  \harvardyearleft
+  2018\harvardyearright , `Approximate residual balancing: Debiased inference
+  of average treatment effects in high dimensions', {\em Journal of the Royal
+  Statistical Society Series B: Statistical Methodology} {\bf 80}(4),~597--623.
+
 \harvarditem{Bang \harvardand\ Robins}{2005}{bang2005doubly}
 Bang, H. \harvardand\ Robins, J.~M.  \harvardyearleft 2005\harvardyearright ,
   `Doubly robust estimation in missing data and causal inference models', {\em
@@ -18,6 +25,12 @@ B{\"u}hlmann, P. \harvardand\ Van De~Geer, S.  \harvardyearleft
   2011\harvardyearright , {\em Statistics for high-dimensional data: methods,
   theory and applications}, Springer Science \& Business Media.
 
+\harvarditem[Cai et~al.]{Cai, Liu \harvardand\ Xia}{2022}{cai2019individual}
+Cai, T., Liu, M. \harvardand\ Xia, Y.  \harvardyearleft 2022\harvardyearright ,
+  `Individual data protected integrative regression analysis of
+  high-dimensional heterogeneous data', {\em Journal of the American
+  Statistical Association} {\bf 117}(540),~2105--2119.
+
 \harvarditem[Chernozhukov et~al.]{Chernozhukov, Chetverikov, Demirer, Duflo,
   Hansen, Newey \harvardand\ Robins}{2018}{chernozhukov2018double}
 Chernozhukov, V., Chetverikov, D., Demirer, M., Duflo, E., Hansen, C., Newey,
@@ -31,12 +44,25 @@ Cole, S.~R. \harvardand\ Stuart, E.~A.  \harvardyearleft 2010\harvardyearright
   populations: The actg 320 trial', {\em American Journal of Epidemiology} {\bf
   172}(1),~107--115.
 
+\harvarditem[Connors et~al.]{Connors, Speroff, Dawson, Thomas, Harrell, Wagner,
+  Desbiens, Goldman, Wu, Califf et~al.}{1996}{connors1996effectiveness}
+Connors, A.~F., Speroff, T., Dawson, N.~V., Thomas, C., Harrell, F.~E., Wagner,
+  D., Desbiens, N., Goldman, L., Wu, A.~W., Califf, R.~M. et~al.
+  \harvardyearleft 1996\harvardyearright , `The effectiveness of right heart
+  catheterization in the initial care of critically ill patients', {\em JAMA}
+  {\bf 276}(11),~889--897.
+
 \harvarditem[Dahabreh et~al.]{Dahabreh, Robertson, Tchetgen~Tchetgen, Stuart
   \harvardand\ Hern{\'a}n}{2019}{dahabreh2019generalizing}
 Dahabreh, I.~J., Robertson, S.~E., Tchetgen~Tchetgen, E.~J., Stuart, E.~A.
   \harvardand\ Hern{\'a}n, M.~A.  \harvardyearleft 2019\harvardyearright ,
   `Generalizing causal inferences from individuals in randomized trials to all
   trial-eligible individuals', {\em Biometrics} {\bf 75}(2),~685--694.
+
+\harvarditem[Guo et~al.]{Guo, Li, Han \harvardand\ Cai}{2025}{guo2023robust}
+Guo, Z., Li, X., Han, L. \harvardand\ Cai, T.  \harvardyearleft
+  2025\harvardyearright , `Robust inference for federated meta-learning', {\em
+  Journal of the American Statistical Association} {\bf 120}(551),~1695--1710.
 
 \harvarditem[Han et~al.]{Han, Hou, Cho, Duan \harvardand\
   Cai}{2025}{han2025federated}
@@ -45,25 +71,31 @@ Han, L., Hou, J., Cho, K., Duan, R. \harvardand\ Cai, T.  \harvardyearleft
   target treatment effects', {\em Journal of the American Statistical
   Association} {\bf 120}(551),~1503--1516.
 
+\harvarditem[Han et~al.]{Han, Li, Niknam \harvardand\
+  Zubizarreta}{2024}{han2024privacy}
+Han, L., Li, Y., Niknam, B. \harvardand\ Zubizarreta, J.~R.  \harvardyearleft
+  2024\harvardyearright , `Privacy-preserving, communication-efficient, and
+  target-flexible hospital quality measurement', {\em The Annals of Applied
+  Statistics} {\bf 18}(2).
+
 \harvarditem[Han et~al.]{Han, Shen \harvardand\
   Zubizarreta}{2023}{Han2023multiply}
 Han, L., Shen, Z. \harvardand\ Zubizarreta, J.  \harvardyearleft
   2023\harvardyearright , Multiply robust federated estimation of targeted
   average treatment effects, {\em in} `Advances in Neural Information
   Processing Systems', Vol.~36.
-\newline\harvardurl{https://proceedings.neurips.cc/paper\_files/paper/2023/hash/def4492b32f0248a0e4d92cc46bbdaad-Abstract-Conference.html}
-
-\harvarditem[Hastie et~al.]{Hastie, Tibshirani \harvardand\
-  Friedman}{2009}{hastie2009elements}
-Hastie, T., Tibshirani, R. \harvardand\ Friedman, J.  \harvardyearleft
-  2009\harvardyearright , {\em The Elements of Statistical Learning: Data
-  Mining, Inference, and Prediction}, 2nd edn, Springer, New York.
 
 \harvarditem{Hern{\'a}n \harvardand\ Robins}{2016}{hernan2016using}
 Hern{\'a}n, M.~A. \harvardand\ Robins, J.~M.  \harvardyearleft
   2016\harvardyearright , `Using big data to emulate a target trial when a
   randomized trial is not available', {\em American Journal of Epidemiology}
   {\bf 183}(8),~758--764.
+
+\harvarditem{Hirano \harvardand\ Imbens}{2001}{hirano2001estimation}
+Hirano, K. \harvardand\ Imbens, G.~W.  \harvardyearleft 2001\harvardyearright ,
+  `Estimation of causal effects using propensity score weighting: An
+  application to data on right heart catheterization', {\em Health Services and
+  Outcomes Research Methodology} {\bf 2}(3),~259--278.
 
 \harvarditem[Hou et~al.]{Hou, Mukherjee \harvardand\
   Cai}{2025}{hou2025efficient}
@@ -97,6 +129,22 @@ Koga, T., Chaudhuri, K. \harvardand\ Page, D.  \harvardyearleft
   2024\harvardyearright , Differentially private multi-site treatment effect
   estimation, {\em in} `Proceedings of the 2024 {IEEE} Conference on Safe and
   Trustworthy Machine Learning ({SaTML})', pp.~472--489.
+
+\harvarditem{Li \harvardand\ Duan}{2026}{li2026efficient}
+Li, S. \harvardand\ Duan, R.  \harvardyearleft 2026\harvardyearright ,
+  `Efficient collaborative learning of the average treatment effect', {\em
+  Biometrics} {\bf 82}(2),~ujag076.
+
+\harvarditem[Li et~al.]{Li, Gilbert, Duan \harvardand\
+  Luedtke}{2025}{li2023weakly}
+Li, S., Gilbert, P.~B., Duan, R. \harvardand\ Luedtke, A.  \harvardyearleft
+  2025\harvardyearright , `Data fusion using weakly aligned sources', {\em
+  Journal of the American Statistical Association} {\bf 120}(552),~2569--2579.
+
+\harvarditem{Li \harvardand\ Luedtke}{2023}{li2021efficient}
+Li, S. \harvardand\ Luedtke, A.  \harvardyearleft 2023\harvardyearright ,
+  `Efficient estimation under data fusion', {\em Biometrika} {\bf
+  110}(4),~1041--1054.
 
 \harvarditem[McMahan et~al.]{McMahan, Moore, Ramage, Hampson \harvardand\
   Arcas}{2017}{mcmahan2017communication}
@@ -147,6 +195,11 @@ Smucler, E., Rotnitzky, A. \harvardand\ Robins, J.~M.  \harvardyearleft
 Tan, Z.  \harvardyearleft 2020\harvardyearright , `Model-assisted inference for
   treatment effects using regularized calibrated estimation with
   high-dimensional data', {\em The Annals of Statistics} {\bf 48}(2),~811--837.
+
+\harvarditem{Tian \harvardand\ Feng}{2023}{tian2021transfer}
+Tian, Y. \harvardand\ Feng, Y.  \harvardyearleft 2023\harvardyearright ,
+  `Transfer learning under high-dimensional generalized linear models', {\em
+  Journal of the American Statistical Association} {\bf 118}(544),~2684--2697.
 
 \harvarditem[Tong et~al.]{Tong, Hu, Hripcsak, Ning \harvardand\
   Chen}{2025}{Tong2025disc2o}

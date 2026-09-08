@@ -67,7 +67,7 @@ SBATCH_CMD=(
 )
 
 echo "======================================================"
-echo " FACE-HD C2 Score/Moment Audit Submission"
+echo " RoCE C2 Score/Moment Audit Submission"
 echo "======================================================"
 echo " Repo:        ${REPO_DIR}"
 echo " Tasks:       ${TASKS}"

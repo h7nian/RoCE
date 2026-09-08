@@ -1,5 +1,5 @@
 #!/usr/bin/env Rscript
-# Static method/reference alignment audit for FACE-HD.
+# Static method/reference alignment audit for RoCE.
 #
 # This script is intentionally read-only. It checks that docs/main.tex follows
 # the local FACE/SMMAL references and that the current implementation follows
@@ -98,7 +98,7 @@ smmal_text <- extract_pdf_text(path_in_repo("docs", "SMMAL.pdf"))
 agg_code <- read_text(path_in_repo("R", "cross_fitting_aggregation.R"))
 cf_code <- read_text(path_in_repo("R", "cross_fitting_algorithms.R"))
 fit_code <- read_text(path_in_repo("R", "model_fitting.R"))
-cv_code <- read_text(path_in_repo("src", "cv_utils.hpp"))
+cv_code <- read_text(path_in_repo("src", "cv_utils.h"))
 dr_code <- read_text(path_in_repo("src", "density_ratio.cpp"))
 oracle_code <- read_text(path_in_repo("R", "estimators_oracle.R"))
 
@@ -288,7 +288,7 @@ add_row(
   "density_ratio_training_full_source_scale",
   if (dr_training_full_scale) "pass" else "fail",
   if (dr_training_full_scale) "info" else "warning",
-  "src/density_ratio.cpp; src/cv_utils.hpp",
+  "src/density_ratio.cpp; src/cv_utils.h",
   if (dr_training_full_scale) {
     "Density-ratio training gradient is on the full-source empirical scale."
   } else {
@@ -303,7 +303,7 @@ add_row(
   "density_ratio_validation_scale",
   if (dr_val_has_source_scale && !dr_val_uses_arm_mean) "pass" else "needs_followup",
   "warning",
-  "src/cv_utils.hpp",
+  "src/cv_utils.h",
   if (dr_val_has_source_scale && !dr_val_uses_arm_mean) {
     "Density-ratio validation loss explicitly carries the source empirical scale."
   } else {

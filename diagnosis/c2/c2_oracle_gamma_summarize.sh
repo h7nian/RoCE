@@ -54,7 +54,7 @@ fi
 SBATCH_CMD+=(diagnosis/c2/c2_oracle_gamma_summarize.cmd)
 
 echo "======================================================"
-echo " FACE-HD C2 Oracle Gamma Summary Submission"
+echo " RoCE C2 Oracle Gamma Summary Submission"
 echo "======================================================"
 echo " Repo:        ${REPO_DIR}"
 echo " Dependency:  ${DEPENDENCY:-none}"

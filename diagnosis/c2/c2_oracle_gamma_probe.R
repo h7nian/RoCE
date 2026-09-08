@@ -1,7 +1,7 @@
 #!/usr/bin/env Rscript
 # Diagnosis-only probe for oracle density-ratio gamma normalization.
 #
-# The FACE-HD DGP stores gamma_params as joint multinomial logits
+# The RoCE DGP stores gamma_params as joint multinomial logits
 # log P(R=s_j,A=a|X) / P(R=t|X).  The source-assisted oracle estimator uses
 # source-conditional averages of I(A=a) exp(-Z gamma), so this probe compares
 # the current raw convention with the source-conditional intercept-normalized
@@ -22,19 +22,19 @@ seed <- as.integer(args[[5L]])
 stopifnot(n_total > 0L, K_sites > 0L, p > 0L, seed > 0L)
 
 suppressPackageStartupMessages({
-  if (requireNamespace("FACEHD", quietly = FALSE)) {
-    library(FACEHD)
+  if (requireNamespace("RoCE", quietly = FALSE)) {
+    library(RoCE)
   } else if (requireNamespace("devtools", quietly = FALSE)) {
     devtools::load_all(".")
   } else {
-    stop("Neither installed FACEHD nor devtools available.", call. = FALSE)
+    stop("Neither installed RoCE nor devtools available.", call. = FALSE)
   }
 })
 
-facehd_function <- function(name) {
-  ns <- asNamespace("FACEHD")
+roce_function <- function(name) {
+  ns <- asNamespace("RoCE")
   if (!exists(name, envir = ns, inherits = FALSE)) {
-    stop(sprintf("FACEHD namespace does not contain required function '%s'.", name),
+    stop(sprintf("RoCE namespace does not contain required function '%s'.", name),
          call. = FALSE)
   }
   get(name, envir = ns, inherits = FALSE)
@@ -46,7 +46,7 @@ needed_functions <- c(
 )
 for (fn_name in needed_functions) {
   if (!exists(fn_name, mode = "function")) {
-    assign(fn_name, facehd_function(fn_name))
+    assign(fn_name, roce_function(fn_name))
   }
 }
 
@@ -160,7 +160,7 @@ data <- generate_simulation_data(
   outcome_type = "binary",
   heterogeneity_type = "none",
   shift_strength = 0.5,
-  dgp_type = "facehd",
+  dgp_type = "roce",
   warn_ignored = FALSE
 )
 split <- split_data_by_site(data)

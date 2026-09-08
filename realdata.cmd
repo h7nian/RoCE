@@ -20,7 +20,7 @@
 #SBATCH -p preempt,saffo-2tb,msismall,msilarge,msilong,amdsmall,agsmall,amdlarge,amd512,amd2tb
 
 # ============================================================================
-# FACE-HD Real-Data SLURM Batch Script
+# RoCE Real-Data SLURM Batch Script
 # ============================================================================
 # Paired with realdata.sh; invoked via sbatch with --export carrying:
 #   K_arg               number of sites (target + sources)
@@ -45,13 +45,13 @@ set -euo pipefail
 
 cd "${SLURM_SUBMIT_DIR:-$(dirname "$0")}"
 
-# Pin to the spack/centos7-ivybridge build that FACEHD.so is compiled against;
+# Pin to the spack/centos7-ivybridge build that RoCE.so is compiled against;
 # unqualified `module load R` can resolve to a different build on Rocky 8 nodes.
 module load R/4.2.2-gcc-8.2.0-vp7tyde
 
 # Override unconditionally: the spack `R/4.2.2-gcc-8.2.0-vp7tyde` module sets
 # its own R_LIBS_USER (~/R/library), which is empty on this account. All 270
-# installed packages — including FACEHD and its deps — live in ~/Rlibs.
+# installed packages — including RoCE and its deps — live in ~/Rlibs.
 export R_LIBS_USER="${HOME}/Rlibs"
 
 # Prevent BLAS/OpenMP oversubscription when using R-level parallelism.
@@ -99,7 +99,7 @@ LOG_FILE="log/${SETTING_ID}_${SLURM_JOB_ID}.out"
 mkdir -p log results/real_data
 
 echo "=============================================="
-echo "FACE-HD Real-Data (RHC) Job"
+echo "RoCE Real-Data (RHC) Job"
 echo "=============================================="
 echo "Job ID:      ${SLURM_JOB_ID}"
 echo "Setting ID:  ${SETTING_ID}"
@@ -127,25 +127,25 @@ if [[ ! -s inst/extdata/rhc.csv ]]; then
 fi
 
 # ----------------------------------------------------------------------------
-# FACEHD is expected to be installed already via `./test.sh --compile-only`
+# RoCE is expected to be installed already via `./test.sh --compile-only`
 # (or an equivalent out-of-band `R CMD INSTALL`). Skipping the in-job install
 # lets multiple realdata experiments run concurrently without racing on the
-# $R_LIBS_USER/00LOCK-FACE-HD directory.
+# $R_LIBS_USER/00LOCK-RoCE directory.
 #
-# Sanity-check that FACEHD is importable before the experiment begins, so a
+# Sanity-check that RoCE is importable before the experiment begins, so a
 # stale / missing install is surfaced immediately instead of at the first
-# `library(FACEHD)` call deep inside realdata.R.
+# `library(RoCE)` call deep inside realdata.R.
 # ----------------------------------------------------------------------------
 echo ""
-echo "[$(date)] Sanity check: FACEHD package loadable?"
-Rscript -e 'if (!requireNamespace("FACEHD", quietly = FALSE)) {
-  stop("FACEHD is not installed; run ./test.sh --compile-only first.")
+echo "[$(date)] Sanity check: RoCE package loadable?"
+Rscript -e 'if (!requireNamespace("RoCE", quietly = FALSE)) {
+  stop("RoCE is not installed; run ./test.sh --compile-only first.")
 } else {
-  cat(sprintf("FACEHD %s loaded.\n", as.character(utils::packageVersion("FACEHD"))))
+  cat(sprintf("RoCE %s loaded.\n", as.character(utils::packageVersion("RoCE"))))
 }'
 LOAD_EXIT=$?
 if [[ ${LOAD_EXIT} -ne 0 ]]; then
-    echo "[$(date)] FACEHD load check failed with exit code ${LOAD_EXIT}"
+    echo "[$(date)] RoCE load check failed with exit code ${LOAD_EXIT}"
     exit ${LOAD_EXIT}
 fi
 

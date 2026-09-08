@@ -2,7 +2,7 @@
 
 library(testthat)
 
-# Package loaded by helper-load.R (all functions available via FACEHD namespace)
+# Package loaded by helper-load.R (all functions available via RoCE namespace)
 
 test_that("scale_center works on vectors", {
   x <- c(1, 2, 3, 4, 5)

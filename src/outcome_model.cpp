@@ -10,8 +10,35 @@
 //   - predict_glm_cpp:                                 GLM prediction (vectorized)
 // ============================================================================
 
-#include "optimization.hpp"
-#include "cv_utils.hpp"
+#include "optimization.h"
+#include "cv_utils.h"
+
+namespace {
+
+// Return the same stopping diagnostics for outcome fits that are already
+// exposed by the density-ratio solvers.  Keeping these in the fit object lets
+// the R layer distinguish a well-converged solution from a finite parameter
+// vector that stopped at the iteration or coefficient boundary.
+List outcome_fit_result(const VectorXd& alpha, bool converged,
+                        int iterations, double max_update,
+                        double convergence_threshold,
+                        int family_int, int link_int) {
+    return List::create(
+        Named("alpha") = alpha,
+        Named("converged") = converged,
+        Named("iterations") = iterations,
+        Named("max_update") = max_update,
+        Named("convergence_threshold") = convergence_threshold,
+        // The current GLM coordinate update has no backtracking stage, so a
+        // line-search failure is structurally impossible rather than missing.
+        Named("line_search_failures") = 0,
+        Named("max_abs_coefficient") = alpha.lpNorm<Eigen::Infinity>(),
+        Named("family") = family_int,
+        Named("link") = link_int
+    );
+}
+
+}  // namespace
 
 // Forward declaration — fit_general_glm_cpp is called by fit_unified_outcome_cpp
 List fit_general_glm_cpp(const MatrixXd& X, const VectorXd& Y, const VectorXd& weights,
@@ -111,6 +138,11 @@ List fit_general_glm_cpp(const MatrixXd& X, const VectorXd& Y, const VectorXd& w
     // Initialize beta: warm-start from previous solution if provided
     VectorXd beta = (warm_start.size() == p) ? warm_start : VectorXd::Zero(p);
     
+    bool converged = false;
+    int iterations = 0;
+    double max_update = NA_REAL;
+    double convergence_threshold = NA_REAL;
+
     // Coordinate descent for the refined (untruncated) weighted GLM objective
     for (int iter = 0; iter < max_iter; iter++) {
         VectorXd beta_old = beta;
@@ -169,21 +201,21 @@ List fit_general_glm_cpp(const MatrixXd& X, const VectorXd& Y, const VectorXd& w
             }
         }
         
+        iterations = iter + 1;
+        max_update = (beta - beta_old).lpNorm<Eigen::Infinity>();
+        convergence_threshold = convergence_threshold_cpp(beta, tol);
+
         // Check convergence
         if (check_convergence_cpp(beta_old, beta, tol)) {
-            return List::create(Named("alpha") = beta,
-                               Named("converged") = true,
-                               Named("iterations") = iter + 1,
-                               Named("family") = family_int,
-                               Named("link") = link_int);
+            converged = true;
+            break;
         }
     }
-    
-    return List::create(Named("alpha") = beta,
-                       Named("converged") = false,
-                       Named("iterations") = max_iter,
-                       Named("family") = family_int,
-                       Named("link") = link_int);
+
+    return outcome_fit_result(
+        beta, converged, iterations, max_update, convergence_threshold,
+        family_int, link_int
+    );
 }
 
 // ============================================================================
@@ -195,7 +227,8 @@ List select_lambda_cv_general_refined_outcome_cpp(const MatrixXd& W_outcome, con
                                                  const VectorXd& A_source, const VectorXd& gamma_s,
                                                  int family_int, int link_int, const VectorXd& lambda_grid, 
                                                  int n_folds, int max_iter, double tol, int A_val,
-                                                 const MatrixXd& Z_site) {
+                                                 const MatrixXd& Z_site,
+                                                 Rcpp::Nullable<Rcpp::NumericVector> cv_fold_id = R_NilValue) {
     
     int n = W_outcome.rows();
     int p = W_outcome.cols() + 1;
@@ -217,6 +250,7 @@ List select_lambda_cv_general_refined_outcome_cpp(const MatrixXd& W_outcome, con
     if (n_arm < n_folds) {
         throw std::runtime_error("select_lambda_cv_general_refined_outcome_cpp: not enough A_val observations for requested CV folds.");
     }
+    auto folds = CVUtils::create_fold_splits(n_arm, n_folds, cv_fold_id);
 
     // Pre-compute outcome features with intercept
     MatrixXd X_arm_int = prepend_intercept(subset_rows(W_outcome, arm_idx));
@@ -226,8 +260,6 @@ List select_lambda_cv_general_refined_outcome_cpp(const MatrixXd& W_outcome, con
     MatrixXd Z_arm_for_dr = prepend_intercept(subset_rows(Z_site, arm_idx));
     VectorXd weights_all = compute_density_ratio_weights(Z_arm_for_dr, gamma_s, false);
 
-    auto folds = CVUtils::create_fold_splits(n_arm, n_folds);
-
     // Pre-allocate fold data
     std::vector<MatrixXd> X_train_folds(n_folds), X_val_folds(n_folds);
     std::vector<VectorXd> Y_train_folds(n_folds), Y_val_folds(n_folds);
@@ -235,9 +267,10 @@ List select_lambda_cv_general_refined_outcome_cpp(const MatrixXd& W_outcome, con
     for (int fold = 0; fold < n_folds; fold++) {
         X_train_folds[fold] = CVUtils::slice_rows(X_arm_int, folds.train[fold]);
         Y_train_folds[fold] = CVUtils::slice_elements(Y_arm, folds.train[fold]);
-        // Scale by treated-fold size / full source size. glm_cd_update divides
-        // by the arm-fold size, yielding a full-source empirical mean.
-        double train_scale = static_cast<double>(folds.train[fold].size()) / static_cast<double>(n);
+        // The arm-training mean estimates the conditional arm expectation.
+        // Use the full source arm fraction, as in the final refit; including
+        // the CV training fraction here would change the effective lambda.
+        double train_scale = static_cast<double>(n_arm) / static_cast<double>(n);
         double val_scale = static_cast<double>(folds.val[fold].size()) / static_cast<double>(n);
         w_train_folds[fold] = CVUtils::slice_elements(weights_all, folds.train[fold]) * train_scale;
         X_val_folds[fold] = CVUtils::slice_rows(X_arm_int, folds.val[fold]);
@@ -248,13 +281,17 @@ List select_lambda_cv_general_refined_outcome_cpp(const MatrixXd& W_outcome, con
     // CV loop: outer=fold, inner=lambda
     MatrixXd fold_scores(n_lambda, n_folds);
     fold_scores.fill(INFINITY);
+    std::vector<int> path_tail_skipped(n_folds, 0);
 
+    const int cv_threads = CVUtils::nuisance_cv_thread_count(n_folds);
+    ROCE_PARALLELIZE_CV_FOLDS(cv_threads)
     for (int fold = 0; fold < n_folds; fold++) {
         if (folds.train[fold].empty() || folds.val[fold].empty()) continue;
 
         int n_train = folds.train[fold].size();
         VectorXd beta = VectorXd::Zero(p);
         std::vector<bool> active(p, true);
+        int consecutive_failures = 0;
 
         for (int li = 0; li < n_lambda; li++) {
             int lambda_idx = lambda_order[li];
@@ -262,15 +299,37 @@ List select_lambda_cv_general_refined_outcome_cpp(const MatrixXd& W_outcome, con
             double cv_tol = std::max(tol, NumericalConstants::CV_TOL_FLOOR);
             int cv_max_iter = std::min(max_iter, NumericalConstants::CV_MAX_ITER);
 
-            CVUtils::glm_cd_update(beta, active, X_train_folds[fold], Y_train_folds[fold],
-                                   w_train_folds[fold], n_train, lambda, link, family, cv_tol, cv_max_iter);
-
-            fold_scores(lambda_idx, fold) = CVUtils::glm_val_loss(
-                beta, X_val_folds[fold], Y_val_folds[fold], w_val_folds[fold], family, link);
+            VectorXd beta_before = beta;
+            CVUtils::GLMCDResult fit = CVUtils::glm_cd_update(
+                beta, active, X_train_folds[fold], Y_train_folds[fold],
+                w_train_folds[fold], n_train, lambda, link, family,
+                cv_tol, cv_max_iter
+            );
+            if (fit.converged) {
+                consecutive_failures = 0;
+                fold_scores(lambda_idx, fold) = CVUtils::glm_val_loss(
+                    beta, X_val_folds[fold], Y_val_folds[fold],
+                    w_val_folds[fold], family, link
+                );
+            } else {
+                beta = beta_before;
+                std::fill(active.begin(), active.end(), true);
+                path_tail_skipped[fold] = CVUtils::cv_path_tail_after_failure(
+                    consecutive_failures, li, n_lambda
+                );
+                if (path_tail_skipped[fold] > 0) break;
+            }
         }
     }
 
-    return CVUtils::aggregate_cv_results(fold_scores, lambda_grid, n_lambda, n_folds);
+    int skipped_fold_fits = std::accumulate(
+        path_tail_skipped.begin(), path_tail_skipped.end(), 0
+    );
+    return CVUtils::append_explicit_fold_audit(
+        CVUtils::aggregate_cv_results(
+            fold_scores, lambda_grid, n_lambda, n_folds, skipped_fold_fits
+        ), folds, cv_fold_id
+    );
 }
 
 // ============================================================================
@@ -283,7 +342,8 @@ List select_lambda_cv_calibrated_outcome_cpp(const MatrixXd& W_outcome, const Ve
                                              const VectorXd& lambda_grid, int n_folds,
                                              int max_iter, double tol, int A_val, double M_tau,
                                              const MatrixXd& Z_site,
-                                             int family_int, int link_int) {
+                                             int family_int, int link_int,
+                                             Rcpp::Nullable<Rcpp::NumericVector> cv_fold_id = R_NilValue) {
     
     int n = W_outcome.rows();
     int n_lambda = lambda_grid.size();
@@ -302,6 +362,7 @@ List select_lambda_cv_calibrated_outcome_cpp(const MatrixXd& W_outcome, const Ve
     if (n_arm < n_folds) {
         throw std::runtime_error("select_lambda_cv_calibrated_outcome_cpp: not enough A_val observations for requested CV folds.");
     }
+    auto folds = CVUtils::create_fold_splits(n_arm, n_folds, cv_fold_id);
 
     // Pre-compute outcome features with intercept
     MatrixXd X_arm_int = prepend_intercept(subset_rows(W_outcome, arm_idx));
@@ -311,8 +372,6 @@ List select_lambda_cv_calibrated_outcome_cpp(const MatrixXd& W_outcome, const Ve
     MatrixXd Z_arm_for_dr = prepend_intercept(subset_rows(Z_site, arm_idx));
     VectorXd weights_all = compute_density_ratio_weights(Z_arm_for_dr, gamma_init, true, M_tau);
 
-    auto folds = CVUtils::create_fold_splits(n_arm, n_folds);
-
     // Pre-allocate fold data
     std::vector<MatrixXd> X_train_folds(n_folds), X_val_folds(n_folds);
     std::vector<VectorXd> Y_train_folds(n_folds), Y_val_folds(n_folds);
@@ -320,9 +379,9 @@ List select_lambda_cv_calibrated_outcome_cpp(const MatrixXd& W_outcome, const Ve
     for (int fold = 0; fold < n_folds; fold++) {
         X_train_folds[fold] = CVUtils::slice_rows(X_arm_int, folds.train[fold]);
         Y_train_folds[fold] = CVUtils::slice_elements(Y_arm, folds.train[fold]);
-        // Scale by treated-fold size / full source size. glm_cd_update divides
-        // by the arm-fold size, yielding a full-source empirical mean.
-        double train_scale = static_cast<double>(folds.train[fold].size()) / static_cast<double>(n);
+        // Match the full-refit loss scale without an extra CV training fraction.
+        // Validation weights below retain observation-count weighting across folds.
+        double train_scale = static_cast<double>(n_arm) / static_cast<double>(n);
         double val_scale = static_cast<double>(folds.val[fold].size()) / static_cast<double>(n);
         w_train_folds[fold] = CVUtils::slice_elements(weights_all, folds.train[fold]) * train_scale;
         X_val_folds[fold] = CVUtils::slice_rows(X_arm_int, folds.val[fold]);
@@ -335,13 +394,17 @@ List select_lambda_cv_calibrated_outcome_cpp(const MatrixXd& W_outcome, const Ve
     LinkFunction link = static_cast<LinkFunction>(link_int);
     MatrixXd fold_scores(n_lambda, n_folds);
     fold_scores.fill(INFINITY);
+    std::vector<int> path_tail_skipped(n_folds, 0);
 
+    const int cv_threads = CVUtils::nuisance_cv_thread_count(n_folds);
+    ROCE_PARALLELIZE_CV_FOLDS(cv_threads)
     for (int fold = 0; fold < n_folds; fold++) {
         if (folds.train[fold].empty() || folds.val[fold].empty()) continue;
 
         int n_train = folds.train[fold].size();
         VectorXd alpha = VectorXd::Zero(p);
         std::vector<bool> active(p, true);
+        int consecutive_failures = 0;
 
         for (int li = 0; li < n_lambda; li++) {
             int lambda_idx = lambda_order[li];
@@ -349,15 +412,37 @@ List select_lambda_cv_calibrated_outcome_cpp(const MatrixXd& W_outcome, const Ve
             double cv_tol = std::max(tol, NumericalConstants::CV_TOL_FLOOR);
             int cv_max_iter = std::min(max_iter, NumericalConstants::CV_MAX_ITER);
 
-            CVUtils::glm_cd_update(alpha, active, X_train_folds[fold], Y_train_folds[fold],
-                                   w_train_folds[fold], n_train, lambda, link, family, cv_tol, cv_max_iter);
-
-            fold_scores(lambda_idx, fold) = CVUtils::glm_val_loss(
-                alpha, X_val_folds[fold], Y_val_folds[fold], w_val_folds[fold], family, link);
+            VectorXd alpha_before = alpha;
+            CVUtils::GLMCDResult fit = CVUtils::glm_cd_update(
+                alpha, active, X_train_folds[fold], Y_train_folds[fold],
+                w_train_folds[fold], n_train, lambda, link, family,
+                cv_tol, cv_max_iter
+            );
+            if (fit.converged) {
+                consecutive_failures = 0;
+                fold_scores(lambda_idx, fold) = CVUtils::glm_val_loss(
+                    alpha, X_val_folds[fold], Y_val_folds[fold],
+                    w_val_folds[fold], family, link
+                );
+            } else {
+                alpha = alpha_before;
+                std::fill(active.begin(), active.end(), true);
+                path_tail_skipped[fold] = CVUtils::cv_path_tail_after_failure(
+                    consecutive_failures, li, n_lambda
+                );
+                if (path_tail_skipped[fold] > 0) break;
+            }
         }
     }
 
-    return CVUtils::aggregate_cv_results(fold_scores, lambda_grid, n_lambda, n_folds);
+    int skipped_fold_fits = std::accumulate(
+        path_tail_skipped.begin(), path_tail_skipped.end(), 0
+    );
+    return CVUtils::append_explicit_fold_audit(
+        CVUtils::aggregate_cv_results(
+            fold_scores, lambda_grid, n_lambda, n_folds, skipped_fold_fits
+        ), folds, cv_fold_id
+    );
 }
 
 

@@ -5,7 +5,7 @@
 # traceback handler so the full call stack surfaces (the parallel workers hid it).
 
 options(error = function() { traceback(2L); quit(save = "no", status = 1L) })
-suppressPackageStartupMessages(library(FACEHD))
+suppressPackageStartupMessages(library(RoCE))
 
 cat("[repro] face DGP | n_total=3000 K=2 p=50 C1 binary kf=5 | reproducing OR failure\n")
 res <- run_simulation_study(

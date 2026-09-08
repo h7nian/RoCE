@@ -17,8 +17,8 @@ if command -v module >/dev/null 2>&1; then
     module load R/4.2.2-gcc-8.2.0-vp7tyde 2>/dev/null || module load R
 fi
 
-# Optional: prepend an isolated library holding a rebuilt FACEHD (fix validation),
-# so library(FACEHD) loads the patched build while dependencies resolve from ~/Rlibs.
+# Optional: prepend an isolated library holding a rebuilt RoCE (fix validation),
+# so library(RoCE) loads the patched build while dependencies resolve from ~/Rlibs.
 if [[ -n "${C2_FIX_LIB:-}" ]]; then
     export R_LIBS_USER="${C2_FIX_LIB}:${HOME}/Rlibs"
 else
@@ -60,7 +60,7 @@ SEED=$(( SEED_BASE + seed_in_cell ))
 TAG="c2cov_k${K}_n${N_TOTAL}_seed${SEED}"
 
 echo "======================================================"
-echo " FACE-HD C2 Coverage Scaling | Task ${TASK_ID}"
+echo " RoCE C2 Coverage Scaling | Task ${TASK_ID}"
 echo "======================================================"
 echo " Tag:         ${TAG}"
 echo " cell:        ${cell_idx} (K=${K}, n=${N_TOTAL})"

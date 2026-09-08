@@ -17,7 +17,7 @@ cd "${SLURM_SUBMIT_DIR:-$(dirname "$0")/../..}"
 mkdir -p diagnosis/method_alignment/audit_results
 
 echo "======================================================"
-echo " FACE-HD PDF Extraction"
+echo " RoCE PDF Extraction"
 echo "======================================================"
 echo " Repo:  $(pwd)"
 echo " Start: $(date)"

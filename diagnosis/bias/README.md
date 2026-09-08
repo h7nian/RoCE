@@ -1,4 +1,4 @@
-# `diagnosis/bias/` — FACE-HD one_round / two_round bias diagnosis
+# `diagnosis/bias/` — RoCE one_round / two_round bias diagnosis
 
 > **⚠️ SUPERSEDED (2026-06-01).** The mechanism below (per-fold calibration too
 > small → `exp(Zγ)` blow-up → **`colMeans` parameter-averaging across `k2`** →
@@ -13,7 +13,7 @@
 > the corrected, current conclusions.
 
 This folder documents a multi-day investigation into the under-coverage and
-occasional blow-up of `one_round_crossfit` / `two_round_crossfit` (the FACE-HD
+occasional blow-up of `one_round_crossfit` / `two_round_crossfit` (the RoCE
 two-layer cross-fit estimators). **The algorithm was not modified during any
 of this work — only observed.** The conclusion is that the estimators are
 correct under their nominal sample-size regime, but the regime is more

@@ -8,7 +8,7 @@
 # their SE by a multiplier bootstrap on the per-site AIPW influence functions
 # (no nuisance re-fitting), which yields the honest fixed-effects sampling SE.
 # Per seed it records the estimate, truth, analytic SE (with tau^2) and bootstrap SE,
-# and coverage under each. FACE-HD and target_only are NOT bootstrapped (handled elsewhere).
+# and coverage under each. RoCE and target_only are NOT bootstrapped (handled elsewhere).
 
 args <- commandArgs(trailingOnly = TRUE)
 if (length(args) != 7L) stop("expected 7 args: tag config n_total K p seed n_folds", call. = FALSE)
@@ -18,11 +18,11 @@ p <- as.integer(args[[5L]]); seed <- as.integer(args[[6L]]); n_folds <- as.integ
 B <- as.integer(Sys.getenv("C2_BOOT_B", "1000"))
 
 suppressPackageStartupMessages({
-  if (requireNamespace("FACEHD", quietly = FALSE)) library(FACEHD)
+  if (requireNamespace("RoCE", quietly = FALSE)) library(RoCE)
   else if (requireNamespace("devtools", quietly = FALSE)) devtools::load_all(".")
-  else stop("Neither installed FACEHD nor devtools available.", call. = FALSE)
+  else stop("Neither installed RoCE nor devtools available.", call. = FALSE)
 })
-ff <- function(name) { ns <- asNamespace("FACEHD")
+ff <- function(name) { ns <- asNamespace("RoCE")
   if (!exists(name, envir = ns, inherits = FALSE)) stop(sprintf("missing %s", name), call. = FALSE)
   get(name, envir = ns, inherits = FALSE) }
 for (fn in c("generate_simulation_data","split_data_by_site",
@@ -41,7 +41,7 @@ set.seed(seed)
 data <- generate_simulation_data(n_total=n_total, K=K_sites, p=p, config=config,
   estimand_type="superpopulation", site_allocation="model", transform_type="mild",
   outcome_type="binary", heterogeneity_type="none", shift_strength=shift_strength,
-  dgp_type="facehd", warn_ignored=FALSE)
+  dgp_type="roce", warn_ignored=FALSE)
 split <- split_data_by_site(data)
 truth <- as.numeric(data$mu1_true)
 

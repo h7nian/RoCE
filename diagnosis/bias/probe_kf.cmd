@@ -25,7 +25,7 @@ N_SEEDS="${PROBE_KF_SEEDS:-3}"
 JOB_TAG="${SLURM_JOB_ID:-manual}"
 
 echo "======================================================"
-echo " FACE-HD K_f Probe Scan"
+echo " RoCE K_f Probe Scan"
 echo "======================================================"
 echo " Seeds/cell: ${N_SEEDS}"
 echo " Job:        ${SLURM_JOB_ID}"

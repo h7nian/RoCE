@@ -18,7 +18,7 @@ export C2_SCORE_AUDIT_OUTPUT_ROOT="${C2_SCORE_AUDIT_OUTPUT_ROOT:-diagnosis/c2/sc
 mkdir -p "${C2_SCORE_AUDIT_OUTPUT_ROOT}/log" "${C2_SCORE_AUDIT_OUTPUT_ROOT}/summary"
 
 echo "======================================================"
-echo " FACE-HD C2 Score/Moment Summary"
+echo " RoCE C2 Score/Moment Summary"
 echo "======================================================"
 echo " Repo:        $(pwd)"
 echo " Output root: ${C2_SCORE_AUDIT_OUTPUT_ROOT}"

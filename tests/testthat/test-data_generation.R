@@ -2,7 +2,7 @@
 
 library(testthat)
 
-# Package loaded by helper-load.R (all functions available via FACEHD namespace)
+# Package loaded by helper-load.R (all functions available via RoCE namespace)
 
 test_that("generate_base_covariates creates correct dimensions", {
   set.seed(42)
@@ -65,7 +65,7 @@ test_that("generate_simulation_data creates valid structure", {
   p <- 4
   
   data <- generate_simulation_data(n_total, K, p, config = "C1",
-                                   estimand_type = "sample", dgp_type = "facehd")
+                                   estimand_type = "sample", dgp_type = "roce")
   
   # Check that data has required components
   expect_true("X" %in% names(data))
@@ -87,6 +87,7 @@ test_that("generate_simulation_data creates valid structure", {
   expect_equal(length(data$R), n_total)
   expect_equal(length(data$A), n_total)
   expect_equal(length(data$Y), n_total)
+  expect_equal(data$Y, ifelse(data$A == 1, data$Y_1, data$Y_0))
   
   # Check treatment is binary
   expect_true(all(data$A %in% c(0, 1)))
@@ -117,7 +118,7 @@ test_that("split_data_by_site correctly separates sites", {
   p <- 4
   
   data <- generate_simulation_data(n_total, K, p, config = "C1",
-                                   estimand_type = "sample", dgp_type = "facehd")
+                                   estimand_type = "sample", dgp_type = "roce")
   data_split <- split_data_by_site(data)
   
   # Should have target + K source sites
@@ -139,23 +140,23 @@ test_that("split_data_by_site correctly separates sites", {
   }
 })
 
-test_that("FACE-HD configs change fitted bases without changing the DGP", {
+test_that("RoCE configs change fitted bases without changing the DGP", {
   set.seed(42)
   n_total <- 200
   K <- 2
   p <- 4
   
   data_c1 <- generate_simulation_data(n_total, K, p, config = "C1",
-                                      estimand_type = "sample", dgp_type = "facehd")
+                                      estimand_type = "sample", dgp_type = "roce")
   set.seed(42)
   data_c2 <- generate_simulation_data(n_total, K, p, config = "C2",
-                                      estimand_type = "sample", dgp_type = "facehd")
+                                      estimand_type = "sample", dgp_type = "roce")
   set.seed(42)
   data_c3 <- generate_simulation_data(n_total, K, p, config = "C3",
-                                      estimand_type = "sample", dgp_type = "facehd")
+                                      estimand_type = "sample", dgp_type = "roce")
   set.seed(42)
   data_c4 <- generate_simulation_data(n_total, K, p, config = "C4",
-                                      estimand_type = "sample", dgp_type = "facehd")
+                                      estimand_type = "sample", dgp_type = "roce")
 
   # The true data-generating process is fixed across configurations.
   expect_identical(data_c1$R, data_c2$R)
@@ -188,7 +189,7 @@ test_that("FACE-HD configs change fitted bases without changing the DGP", {
   expect_false(isTRUE(all.equal(data_c1$W_outcome, data_c4$W_outcome)))
 })
 
-test_that("shift_strength affects FACE-HD site model under model allocation", {
+test_that("shift_strength affects RoCE site model under model allocation", {
   K <- 3
   p <- 10
   n_ref <- 2000
@@ -330,6 +331,10 @@ test_that("build_face_ate_map builds correct ATE structure", {
   expect_true(all(deviated_vals == 5.0))  # 3.0 + 2.0
   informative_vals <- ate_map_d[paste0("s", 4:5)]
   expect_true(all(informative_vals == 3.0))
+
+  # Binary base ATE is a first-class parameter (continuous default unchanged)
+  ate_map_bin <- build_face_ate_map(K, base_ate = FACE_BINARY_ATE_TARGET)
+  expect_true(all(ate_map_bin == FACE_BINARY_ATE_TARGET))
 })
 
 test_that("generate_face_data returns valid structure", {
@@ -358,6 +363,7 @@ test_that("generate_face_data returns valid structure", {
   expect_equal(length(data$R), n_total)
   expect_equal(length(data$A), n_total)
   expect_equal(length(data$Y), n_total)
+  expect_equal(data$Y, ifelse(data$A == 1, data$Y_1, data$Y_0))
   
   # Treatment binary
   expect_true(all(data$A %in% c(0, 1)))
@@ -365,7 +371,7 @@ test_that("generate_face_data returns valid structure", {
   # Continuous outcomes should NOT be binary
   expect_false(all(data$Y %in% c(0, 1)))
   
-  # FACE-HD specific params should be NULL
+  # RoCE specific params should be NULL
   expect_null(data$gamma_params)
   expect_null(data$beta1_true)
   expect_null(data$beta0_true)
@@ -387,6 +393,77 @@ test_that("generate_face_data supports binary outcomes", {
   # True values should be between 0 and 1 (probabilities)
   expect_true(data_bin$mu1_true > 0 && data_bin$mu1_true < 1)
   expect_true(data_bin$mu0_true > 0 && data_bin$mu0_true < 1)
+})
+
+test_that("FACE binary outcome is calibrated (no expit saturation), data matches estimand", {
+  # Standardizing the logit signal keeps both arms away from 0/1, so the outcome
+  # regression's treated-arm minority class is healthy (the saturation that made
+  # the raw Δ_T = 3 log-odds binary DGP degenerate). p = 50 is the dimension that
+  # previously saturated. estimand_type = "sample": truth uses the realized
+  # target X, so the generated potential outcomes must match it up to Bernoulli
+  # sampling noise.
+  set.seed(7)
+  d <- generate_face_data(n_total = 8000, K = 2, p = 50, config = "C1",
+                          outcome_type = "binary", estimand_type = "sample")
+  t_idx <- d$R == "t"
+  expect_equal(mean(d$Y_1[t_idx]), d$mu1_true, tolerance = 0.05)
+  expect_equal(mean(d$Y_0[t_idx]), d$mu0_true, tolerance = 0.05)
+  # Both arms bounded away from saturation (vs. the old ~0.98 / ~0.83)
+  expect_true(d$mu1_true < 0.9 && d$mu0_true > 0.1)
+})
+
+test_that("FACE binary superpopulation truth matches generated data", {
+  set.seed(11)
+  d <- generate_face_data(n_total = 20000, K = 2, p = 50, config = "C1",
+                          outcome_type = "binary",
+                          estimand_type = "superpopulation")
+  t_idx <- d$R == "t"
+  expect_equal(mean(d$Y_1[t_idx]), d$mu1_true, tolerance = 0.05)
+  expect_equal(mean(d$Y_0[t_idx]), d$mu0_true, tolerance = 0.05)
+})
+
+test_that("FACE binary truth reuses matching calibration moments exactly", {
+  calibration <- RoCE:::get_face_binary_calibration(
+    p = 4, n_ref = 2000L, ref_seed = 731L
+  )
+  reused <- RoCE:::calculate_face_truth(
+    p = 4, outcome_type = "binary", n_ref = 2000L, ref_seed = 731L,
+    binary_calib = calibration
+  )
+  recomputed <- RoCE:::calculate_face_truth(
+    p = 4, outcome_type = "binary", n_ref = 2000L, ref_seed = 731L
+  )
+
+  expect_equal(reused, recomputed, tolerance = 0)
+  expect_error(
+    RoCE:::calculate_face_truth(
+      p = 5, outcome_type = "binary", n_ref = 2000L, ref_seed = 731L,
+      binary_calib = calibration
+    ),
+    "does not match"
+  )
+})
+
+test_that("FACE continuous estimand is exactly FACE_ATE_TARGET and the binary patch is inert", {
+  # The binary calibration must not perturb the continuous path: its estimand is
+  # still exactly Δ_T, and the continuous RNG stream is unchanged (deterministic).
+  set.seed(3)
+  d_sup <- generate_face_data(2000, K = 2, p = 10, config = "C1",
+                              outcome_type = "continuous",
+                              estimand_type = "superpopulation")
+  expect_equal(d_sup$mu1_true - d_sup$mu0_true, FACE_ATE_TARGET, tolerance = 1e-8)
+
+  set.seed(3)
+  d_samp <- generate_face_data(2000, K = 2, p = 10, config = "C1",
+                               outcome_type = "continuous",
+                               estimand_type = "sample")
+  expect_equal(d_samp$mu1_true - d_samp$mu0_true, FACE_ATE_TARGET, tolerance = 1e-8)
+
+  set.seed(3)
+  d_rep <- generate_face_data(2000, K = 2, p = 10, config = "C1",
+                              outcome_type = "continuous",
+                              estimand_type = "sample")
+  expect_identical(d_samp$Y, d_rep$Y)
 })
 
 test_that("generate_face_data config affects W_outcome and Z_site", {

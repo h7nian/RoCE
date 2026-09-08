@@ -123,7 +123,7 @@ test_that("estimate_oracle_dr: runs with true nuisance parameters and is finite"
   payload <- .get_estimator_smoke()
   data <- payload$data
   skip_if(is.null(data$gamma_params) || is.null(data$alpha1_true),
-          message = "FACE-HD truth (gamma_params + alpha1_true) not exposed.")
+          message = "RoCE truth (gamma_params + alpha1_true) not exposed.")
 
   res <- estimate_oracle_dr(
     payload$data_split,
@@ -141,7 +141,7 @@ test_that("estimate_oracle_dr: default CV uses legacy min aggregation rule", {
   payload <- .get_estimator_smoke()
   data <- payload$data
   skip_if(is.null(data$gamma_params) || is.null(data$alpha1_true),
-          message = "FACE-HD truth (gamma_params + alpha1_true) not exposed.")
+          message = "RoCE truth (gamma_params + alpha1_true) not exposed.")
 
   res <- estimate_oracle_dr(
     payload$data_split,

@@ -17,7 +17,7 @@ if command -v module >/dev/null 2>&1; then
     module load R/4.2.2-gcc-8.2.0-vp7tyde 2>/dev/null || module load R
 fi
 
-# Optional isolated lib holding the patched FACEHD (fix validation).
+# Optional isolated lib holding the patched RoCE (fix validation).
 if [[ -n "${C2_FIX_LIB:-}" ]]; then
     export R_LIBS_USER="${C2_FIX_LIB}:${HOME}/Rlibs"
 else
@@ -52,7 +52,7 @@ read -r CONFIG N_TOTAL <<< "${CELLS[${cell_idx}]}"
 SEED=$(( SEED_BASE + seed_in_cell ))
 TAG="cfgcov"
 
-echo "=== FACE-HD config coverage | task ${TASK_ID} | ${CONFIG} n=${N_TOTAL} K=${K} p=${P} seed=${SEED} ==="
+echo "=== RoCE config coverage | task ${TASK_ID} | ${CONFIG} n=${N_TOTAL} K=${K} p=${P} seed=${SEED} ==="
 echo " lib: ${R_LIBS_USER}   out: ${C2_CFG_OUTPUT_ROOT}   start: $(date)"
 
 Rscript --vanilla diagnosis/c2/config_coverage.R \

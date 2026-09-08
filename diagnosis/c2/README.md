@@ -1,4 +1,4 @@
-# `diagnosis/c2/` - FACE-HD C2 coverage diagnosis
+# `diagnosis/c2/` - RoCE C2 coverage diagnosis
 
 Measurement-only C2 experiments submitted through MSI/Slurm.
 

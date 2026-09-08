@@ -1,0 +1,23 @@
+library(testthat)
+source(if(file.exists("shared_calibration_basis.R"))"shared_calibration_basis.R" else
+  "diagnosis/tate_common_weight/shared_calibration_basis.R")
+test_that("declared shared directions preserve initial predictors on new data", {
+  x<-seq(-2,2,length.out=9); W<-cbind(x-.3,x^2); Z<-matrix(x,ncol=1)
+  spec<-.fit_shared_calibration_basis(W,Z,"outcome")
+  fresh<-c(-1.7,.17,2.4); new_W<-cbind(fresh-.3,fresh^2); new_Z<-matrix(fresh,ncol=1)
+  U<-.apply_shared_calibration_basis(spec,new_W,new_Z)
+  expect_identical(U,new_W)
+  expect_equal(drop(cbind(1,U)%*%spec$outcome_map%*%c(.2,.7,.4)),drop(cbind(1,new_W)%*%c(.2,.7,.4)))
+  expect_equal(drop(cbind(1,U)%*%spec$site_map%*%c(-.1,.9)),drop(cbind(1,new_Z)%*%c(-.1,.9)))
+  swapped<-.fit_shared_calibration_basis(Z,W,"site")
+  expect_identical(.apply_shared_calibration_basis(swapped,new_Z,new_W),new_W)
+})
+test_that("unsupported spans and unstable specifications fail explicitly", {
+  x<-seq(-2,2,length.out=9); W<-cbind(x,x^2); Z<-matrix(x,ncol=1)
+  expect_error(.fit_shared_calibration_basis(W,Z,"site"),"does not span")
+  expect_error(.fit_shared_calibration_basis(cbind(x,x),Z,"outcome"),"rank")
+  expect_error(.fit_shared_calibration_basis(W,Z,"auto"),"explicitly")
+  spec<-.fit_shared_calibration_basis(W,Z,"outcome")
+  expect_error(.apply_shared_calibration_basis(spec,W,matrix(x^3,ncol=1)),"mapping")
+  expect_error(.apply_shared_calibration_basis(spec,W,Z[-1,,drop=FALSE]),"specification")
+})

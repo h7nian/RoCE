@@ -1,5 +1,5 @@
 .c2_nuisance_lambda_enabled <- function() {
-  env_enabled <- Sys.getenv("FACEHD_RUN_C2_NUISANCE_LAMBDA", "0") %in%
+  env_enabled <- Sys.getenv("ROCE_RUN_C2_NUISANCE_LAMBDA", "0") %in%
     c("1", "TRUE", "true", "True")
   filter <- Sys.getenv("TEST_FILTER", "")
   env_enabled || grepl("c2-nuisance-lambda", filter, fixed = TRUE)
@@ -24,11 +24,6 @@
 .c2_dr_weights <- function(Z, gamma) {
   exp(-as.numeric(cbind(1, as.matrix(Z)) %*% as.numeric(gamma)))
 }
-
-source({
-  helper_path <- file.path("diagnosis", "c2", "c2_true_gamma_utils.R")
-  if (file.exists(helper_path)) helper_path else file.path("..", "..", helper_path)
-})
 
 .c2_ess <- function(w) {
   if (length(w) == 0L) return(NA_real_)
@@ -131,15 +126,15 @@ source({
 
 test_that("c2-nuisance-lambda probe compares gamma lambda choices directly", {
   skip_if_not(.c2_nuisance_lambda_enabled(),
-              message = "set FACEHD_RUN_C2_NUISANCE_LAMBDA=1 or run with --filter c2-nuisance-lambda")
+              message = "set ROCE_RUN_C2_NUISANCE_LAMBDA=1 or run with --filter c2-nuisance-lambda")
 
-  n_total <- .c2_nuisance_int_env("FACEHD_C2_NUISANCE_N", 900L)
-  K_sites <- .c2_nuisance_int_env("FACEHD_C2_NUISANCE_K", 2L)
-  p <- .c2_nuisance_int_env("FACEHD_C2_NUISANCE_P", 50L)
-  nlambda <- .c2_nuisance_int_env("FACEHD_C2_NUISANCE_NLAMBDA", 8L)
-  n_cv_folds <- .c2_nuisance_int_env("FACEHD_C2_NUISANCE_CV_FOLDS", 3L)
-  base_seed <- .c2_nuisance_int_env("FACEHD_C2_NUISANCE_SEED", 42050L)
-  reps <- .c2_nuisance_int_env("FACEHD_C2_NUISANCE_REPS", 1L)
+  n_total <- .c2_nuisance_int_env("ROCE_C2_NUISANCE_N", 900L)
+  K_sites <- .c2_nuisance_int_env("ROCE_C2_NUISANCE_K", 2L)
+  p <- .c2_nuisance_int_env("ROCE_C2_NUISANCE_P", 50L)
+  nlambda <- .c2_nuisance_int_env("ROCE_C2_NUISANCE_NLAMBDA", 8L)
+  n_cv_folds <- .c2_nuisance_int_env("ROCE_C2_NUISANCE_CV_FOLDS", 3L)
+  base_seed <- .c2_nuisance_int_env("ROCE_C2_NUISANCE_SEED", 42050L)
+  reps <- .c2_nuisance_int_env("ROCE_C2_NUISANCE_REPS", 1L)
   A_val <- 1L
 
   stages <- c("initial", "calibrated")
@@ -157,7 +152,7 @@ test_that("c2-nuisance-lambda probe compares gamma lambda choices directly", {
       outcome_type = "binary",
       heterogeneity_type = "none",
       shift_strength = 0.5,
-      dgp_type = "facehd",
+      dgp_type = "roce",
       warn_ignored = FALSE
     )
     split <- split_data_by_site(data)

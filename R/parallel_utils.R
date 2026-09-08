@@ -1,4 +1,4 @@
-# parallel_utils.R - Parallelization utilities for FACE-HD cross-fitting
+# parallel_utils.R - Parallelization utilities for RoCE cross-fitting
 #
 # Provides setup_parallel() and parallel_lapply() used by cross_fitting_algorithms.R
 # to process multiple source sites in parallel.
@@ -59,11 +59,39 @@ setup_parallel <- function(n_cores = NULL) {
 
 #' Apply function over list with optional parallelization
 #'
-#' @param x List to iterate over
-#' @param fun Function to apply
-#' @param n_cores Number of cores (1 for sequential)
-#' @param ... Additional arguments to fun
-#' @return List of results
+#' @param results List returned by the sequential or parallel apply operation.
+#' @param x Original list of inputs, used to label failures.
+#' @param caller Calling function name included in diagnostic messages.
+#' @return The validated \code{results} list; throws if any element failed.
+#' @keywords internal
+.validate_parallel_results <- function(results, x, caller = "parallel_lapply") {
+  failed <- which(vapply(
+    results, function(result) inherits(result, "try-error"), logical(1L)
+  ))
+  if (length(failed) == 0L) {
+    return(results)
+  }
+
+  item_names <- names(x)
+  failed_labels <- if (!is.null(item_names)) {
+    item_names[failed]
+  } else {
+    as.character(failed)
+  }
+  failure_messages <- unique(vapply(
+    results[failed], function(result) trimws(as.character(result)), character(1L)
+  ))
+  stop(
+    sprintf(
+      "%s: worker(s) for item(s) %s failed: %s",
+      caller,
+      paste(failed_labels, collapse = ", "),
+      paste(failure_messages, collapse = " | ")
+    ),
+    call. = FALSE
+  )
+}
+
 parallel_lapply <- function(x, fun, n_cores = 1, ...) {
   # Skip parallelism when there is at most one element: fork/cluster setup
   # overhead exceeds the compute savings for trivially small inputs.  This
@@ -111,6 +139,7 @@ parallel_lapply <- function(x, fun, n_cores = 1, ...) {
     return(parallel::parLapply(cl, x, fun, ...))
   } else {
     # Use mclapply for Unix-like systems (fork-based, more efficient)
-    return(parallel::mclapply(x, fun, ..., mc.cores = n_cores))
+    results <- parallel::mclapply(x, fun, ..., mc.cores = n_cores)
+    return(.validate_parallel_results(results, x))
   }
 }

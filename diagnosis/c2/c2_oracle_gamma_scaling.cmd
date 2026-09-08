@@ -28,7 +28,7 @@ TASK_ID="${SLURM_ARRAY_TASK_ID:?SLURM_ARRAY_TASK_ID is required}"
 # Oracle-gamma coverage vs n: does the ORACLE (true density-ratio) estimator keep
 # ~0.95 coverage at large n while the FITTED-gamma estimator degrades (0.94->0.84)?
 # If yes, identification/estimand is sound and the bug is gamma-hat ESTIMATION
-# (the density-ratio CV validation-loss scale in cv_utils.hpp). Reuses the proven,
+# (the density-ratio CV validation-loss scale in cv_utils.h). Reuses the proven,
 # UNMODIFIED diagnosis/c2/c2_oracle_gamma_probe.R.
 #
 # Grid computed from TASK_ID: cells (K,n) x SEEDS_PER_CELL seeds.
@@ -48,7 +48,7 @@ SEED=$(( SEED_BASE + seed_in_cell ))
 TAG="c2orc_k${K}_n${N_TOTAL}_seed${SEED}"
 
 echo "======================================================"
-echo " FACE-HD C2 Oracle-Gamma Scaling | Task ${TASK_ID}"
+echo " RoCE C2 Oracle-Gamma Scaling | Task ${TASK_ID}"
 echo "======================================================"
 echo " Tag:        ${TAG}  (K=${K}, n=${N_TOTAL}, seed=${SEED})"
 echo " output root:${C2_ORACLE_GAMMA_OUTPUT_ROOT}"

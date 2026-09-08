@@ -2,7 +2,7 @@
 
 library(testthat)
 
-# Package loaded by helper-load.R (all functions available via FACEHD namespace)
+# Package loaded by helper-load.R (all functions available via RoCE namespace)
 
 extract_roxygen_exports <- function(r_files) {
   exported <- character(0)

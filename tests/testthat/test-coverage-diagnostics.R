@@ -1,5 +1,5 @@
 test_that("diagnose completed n5000 C2 coverage summaries", {
-  requested_results_dir <- Sys.getenv("FACEHD_COVERAGE_DIAG_RESULTS_DIR", unset = NA_character_)
+  requested_results_dir <- Sys.getenv("ROCE_COVERAGE_DIAG_RESULTS_DIR", unset = NA_character_)
   candidate_dirs <- if (!is.na(requested_results_dir) && nzchar(requested_results_dir)) {
     requested_results_dir
   } else {

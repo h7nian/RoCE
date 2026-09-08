@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================================
-# FACE-HD C2 diagnosis submission script
+# RoCE C2 diagnosis submission script
 # ----------------------------------------------------------------------------
 # Submits a SLURM array for measurement-only C2 diagnostics.  The grid is
 # intentionally small and hypothesis-driven:
@@ -73,7 +73,7 @@ SBATCH_CMD=(
 )
 
 echo "======================================================"
-echo " FACE-HD C2 Diagnosis Submission"
+echo " RoCE C2 Diagnosis Submission"
 echo "======================================================"
 echo " Repo:           ${REPO_DIR}"
 echo " Tasks:          ${TASKS}"

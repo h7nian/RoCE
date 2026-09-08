@@ -11,7 +11,7 @@
 
 library(testthat)
 
-# Package loaded by helper-load.R (all functions available via FACEHD namespace).
+# Package loaded by helper-load.R (all functions available via RoCE namespace).
 # Reuses the cached smoke result from test-cross_fitting.R when both files run
 # in the same session.
 
@@ -90,7 +90,8 @@ test_that("calculate_aipw_influence: influence has length n and centered mean = 
   # Influence function shape matches eq:if_target_only: one row per observation.
   expect_equal(length(res$influence), n)
 
-  # The reported variance must equal mean(IF^2) / n_t (eq:variance_components).
+  # The reported variance must equal mean(IF^2) / n_t (the target-only
+  # component used in eq:agg_penalized_objective).
   expect_equal(res$variance, mean(res$influence^2) / n, tolerance = 1e-10)
 })
 
@@ -116,6 +117,57 @@ test_that("calculate_dr_weights: normalized to mean(w) = 1 and strictly positive
   # After the post-clip mean-normalization the weights average to 1 up to
   # boundary effects from clipping. Be generous on tolerance for clipped runs.
   expect_lt(abs(mean(w) - 1), 0.25)
+  clipping <- attr(w, "clipping_diagnostics", exact = TRUE)
+  expect_named(
+    clipping,
+    c(
+      "n", "n_below", "n_above", "n_clipped", "fraction_clipped",
+      "preclip_min", "preclip_max"
+    )
+  )
+  expect_equal(clipping$n, n_source)
+  expect_equal(clipping$n_clipped, clipping$n_below + clipping$n_above)
+  expect_equal(clipping$fraction_clipped, clipping$n_clipped / n_source)
+})
+
+test_that("density-ratio clipping diagnostics aggregate across source sites", {
+  weights <- list(s1 = rep(1, 4), s2 = rep(1, 6))
+  attr(weights$s1, "clipping_diagnostics") <- list(
+    n = 4, n_clipped = 1, fraction_clipped = 0.25,
+    preclip_min = 0.05, preclip_max = 4
+  )
+  attr(weights$s2, "clipping_diagnostics") <- list(
+    n = 6, n_clipped = 3, fraction_clipped = 0.5,
+    preclip_min = 0.08, preclip_max = 12
+  )
+
+  diagnostic <- RoCE:::.density_ratio_clipping_diagnostics(weights)
+
+  expect_equal(diagnostic$dr_weight_n, 10L)
+  expect_equal(diagnostic$dr_weight_n_clipped, 4L)
+  expect_equal(diagnostic$dr_weight_fraction_clipped, 0.4)
+  expect_equal(diagnostic$dr_weight_max_site_fraction_clipped, 0.5)
+  expect_equal(diagnostic$dr_weight_min_before_clipping, 0.05)
+  expect_equal(diagnostic$dr_weight_max_before_clipping, 12)
+  attr(weights$s2, "clipping_diagnostics")$fraction_clipped <- 0.2
+  expect_error(
+    RoCE:::.density_ratio_clipping_diagnostics(weights),
+    "incomplete or inconsistent"
+  )
+})
+
+test_that("log-weight normalization remains finite for extreme predictors", {
+  weights <- RoCE:::.normalize_log_weights(c(1000, 999, 998), "test")
+
+  expect_true(all(is.finite(weights)))
+  expect_true(all(weights > 0))
+  expect_equal(mean(weights), 1, tolerance = 1e-15)
+  expect_equal(weights[[1L]] / weights[[2L]], exp(1), tolerance = 1e-14)
+  extreme <- RoCE:::.normalize_log_weights(c(1000, 0, -1000), "test")
+  expect_true(all(is.finite(extreme)))
+  expect_true(all(extreme > 0))
+  expect_equal(mean(extreme), 1, tolerance = 1e-15)
+  expect_error(RoCE:::.normalize_log_weights(c(0, Inf)), "finite")
 })
 
 test_that("calculate_dr_weights: validates matching covariate dimensions", {

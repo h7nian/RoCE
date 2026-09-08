@@ -54,10 +54,10 @@ cat(sprintf("[probe] phase=%s n=%d K=%d p=%d n_seeds=%d\n",
 suppressPackageStartupMessages({
   if (requireNamespace("devtools", quietly = TRUE)) {
     devtools::load_all(".", quiet = TRUE)
-  } else if (requireNamespace("FACEHD", quietly = TRUE)) {
-    library(FACEHD)
+  } else if (requireNamespace("RoCE", quietly = TRUE)) {
+    library(RoCE)
   } else {
-    stop("Neither devtools nor FACEHD available.")
+    stop("Neither devtools nor RoCE available.")
   }
 })
 
@@ -96,7 +96,7 @@ run_phase_A <- function() {
     estimand_type = "superpopulation", site_allocation = "model",
     transform_type = "mild", outcome_type = "binary",
     heterogeneity_type = "none", shift_strength = 0.5,
-    dgp_type = "facehd"
+    dgp_type = "roce"
   )
   data_split <- split_data_by_site(data)
 
@@ -137,7 +137,7 @@ run_phase_B <- function(data_split = NULL) {
       estimand_type = "superpopulation", site_allocation = "model",
       transform_type = "mild", outcome_type = "binary",
       heterogeneity_type = "none", shift_strength = 0.5,
-      dgp_type = "facehd"
+      dgp_type = "roce"
     )
     data_split <- split_data_by_site(data)
   }
@@ -282,7 +282,7 @@ run_phase_C <- function() {
       estimand_type = "superpopulation", site_allocation = "model",
       transform_type = "mild", outcome_type = "binary",
       heterogeneity_type = "none", shift_strength = 0.5,
-      dgp_type = "facehd"
+      dgp_type = "roce"
     )
     data_split <- split_data_by_site(data)
 

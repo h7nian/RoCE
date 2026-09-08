@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================================
-# FACE-HD C2 nuisance refit probe submission script
+# RoCE C2 nuisance refit probe submission script
 # ----------------------------------------------------------------------------
 # Submits diagnosis-only jobs that refit gamma/alpha nuisance pieces on the same
 # C2 folds under fixed lambda multipliers.  Estimator source is not modified.
@@ -66,7 +66,7 @@ SBATCH_CMD=(
 )
 
 echo "======================================================"
-echo " FACE-HD C2 Nuisance Refit Probe Submission"
+echo " RoCE C2 Nuisance Refit Probe Submission"
 echo "======================================================"
 echo " Repo:           ${REPO_DIR}"
 echo " Tasks:          ${TASKS}"

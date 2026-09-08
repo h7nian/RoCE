@@ -3,11 +3,11 @@ find_coverage_results_dir <- function() {
   # hypotheses about the C2 coverage/bias story, so it must not run (and
   # possibly fail on data that does not match the hypothesis) in the default
   # unit suite just because a local results/ directory happens to exist.
-  if (!(Sys.getenv("FACEHD_RUN_C2_COVERAGE_BIAS", "0") %in%
+  if (!(Sys.getenv("ROCE_RUN_C2_COVERAGE_BIAS", "0") %in%
         c("1", "TRUE", "true", "True"))) {
-    skip("C2 coverage-bias diagnostic; set FACEHD_RUN_C2_COVERAGE_BIAS=1 to run")
+    skip("C2 coverage-bias diagnostic; set ROCE_RUN_C2_COVERAGE_BIAS=1 to run")
   }
-  requested <- Sys.getenv("FACEHD_COVERAGE_DIAG_RESULTS_DIR", unset = NA_character_)
+  requested <- Sys.getenv("ROCE_COVERAGE_DIAG_RESULTS_DIR", unset = NA_character_)
   candidates <- if (!is.na(requested) && nzchar(requested)) {
     requested
   } else {

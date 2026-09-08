@@ -13,7 +13,7 @@ cd "${SLURM_SUBMIT_DIR:-$(dirname "$0")/../..}"
 mkdir -p diagnosis/c2/nuisance_refit_probe/log diagnosis/c2/nuisance_refit_probe/summary
 
 echo "======================================================"
-echo " FACE-HD C2 Nuisance Refit Summary"
+echo " RoCE C2 Nuisance Refit Summary"
 echo "======================================================"
 echo " Start: $(date)"
 echo " Host:  $(hostname)"

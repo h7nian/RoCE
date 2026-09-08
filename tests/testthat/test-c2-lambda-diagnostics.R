@@ -1,5 +1,5 @@
 .c2_lambda_diag_enabled <- function() {
-  env_enabled <- Sys.getenv("FACEHD_RUN_C2_LAMBDA_DIAG", "0") %in%
+  env_enabled <- Sys.getenv("ROCE_RUN_C2_LAMBDA_DIAG", "0") %in%
     c("1", "TRUE", "true", "True")
   filter <- Sys.getenv("TEST_FILTER", "")
   env_enabled || grepl("c2-lambda", filter, fixed = TRUE)
@@ -117,13 +117,13 @@
     outcome_type = "binary",
     heterogeneity_type = "none",
     shift_strength = 0.5,
-    dgp_type = "facehd",
+    dgp_type = "roce",
     warn_ignored = FALSE
   )
   data_split <- split_data_by_site(data)
   truth <- as.numeric(data$mu1_true)
 
-  n_cores <- .c2_lambda_int_env("FACEHD_C2_LAMBDA_CORES", 1L)
+  n_cores <- .c2_lambda_int_env("ROCE_C2_LAMBDA_CORES", 1L)
 
   result <- run_crossfit(
     data_split,
@@ -228,25 +228,25 @@
 
 test_that("c2-lambda diagnostics compare nuisance lambda rules without algorithm changes", {
   skip_if_not(.c2_lambda_diag_enabled(),
-              message = "set FACEHD_RUN_C2_LAMBDA_DIAG=1 or run with --filter c2-lambda")
+              message = "set ROCE_RUN_C2_LAMBDA_DIAG=1 or run with --filter c2-lambda")
 
-  n_reps <- .c2_lambda_int_env("FACEHD_C2_LAMBDA_REPS", 3L)
-  n_total <- .c2_lambda_int_env("FACEHD_C2_LAMBDA_N", 2000L)
-  n_folds <- .c2_lambda_int_env("FACEHD_C2_LAMBDA_FOLDS", 5L)
-  nlambda_init <- .c2_lambda_int_env("FACEHD_C2_LAMBDA_NLAMBDA_INIT", 30L)
-  K_sites <- .c2_lambda_int_env("FACEHD_C2_LAMBDA_K", 3L)
-  p_values <- as.integer(strsplit(Sys.getenv("FACEHD_C2_LAMBDA_P", "50"),
+  n_reps <- .c2_lambda_int_env("ROCE_C2_LAMBDA_REPS", 3L)
+  n_total <- .c2_lambda_int_env("ROCE_C2_LAMBDA_N", 2000L)
+  n_folds <- .c2_lambda_int_env("ROCE_C2_LAMBDA_FOLDS", 5L)
+  nlambda_init <- .c2_lambda_int_env("ROCE_C2_LAMBDA_NLAMBDA_INIT", 30L)
+  K_sites <- .c2_lambda_int_env("ROCE_C2_LAMBDA_K", 3L)
+  p_values <- as.integer(strsplit(Sys.getenv("ROCE_C2_LAMBDA_P", "50"),
                                   ",", fixed = TRUE)[[1L]])
   p_values <- p_values[is.finite(p_values) & p_values > 0L]
   if (length(p_values) == 0L) p_values <- 50L
 
   modes <- .c2_lambda_char_env(
-    "FACEHD_C2_LAMBDA_MODES",
+    "ROCE_C2_LAMBDA_MODES",
     c("one_round", "two_round"),
     c("one_round", "two_round")
   )
   nuisance_rules <- .c2_lambda_char_env(
-    "FACEHD_C2_LAMBDA_NUISANCE_RULES",
+    "ROCE_C2_LAMBDA_NUISANCE_RULES",
     c("min", "1se"),
     c("min", "1se")
   )

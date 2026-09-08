@@ -1,5 +1,5 @@
 .c2_crossfit_timing_enabled <- function() {
-  env_enabled <- Sys.getenv("FACEHD_RUN_C2_CROSSFIT_TIMING", "0") %in%
+  env_enabled <- Sys.getenv("ROCE_RUN_C2_CROSSFIT_TIMING", "0") %in%
     c("1", "TRUE", "true", "True")
   filter <- Sys.getenv("TEST_FILTER", "")
   env_enabled || grepl("c2-crossfit-timing", filter, fixed = TRUE)
@@ -20,14 +20,14 @@
 }
 
 .c2_timing_sources_env <- function(available) {
-  value <- Sys.getenv("FACEHD_C2_CROSSFIT_TIMING_SOURCES", unset = "")
+  value <- Sys.getenv("ROCE_C2_CROSSFIT_TIMING_SOURCES", unset = "")
   if (!nzchar(value)) return(available[1L])
   parsed <- trimws(strsplit(value, ",", fixed = TRUE)[[1L]])
   parsed <- parsed[nzchar(parsed)]
   bad <- setdiff(parsed, available)
   if (length(bad) > 0L) {
     stop(sprintf(
-      "FACEHD_C2_CROSSFIT_TIMING_SOURCES contains unavailable source(s): %s; available: %s",
+      "ROCE_C2_CROSSFIT_TIMING_SOURCES contains unavailable source(s): %s; available: %s",
       paste(bad, collapse = ", "), paste(available, collapse = ", ")
     ), call. = FALSE)
   }
@@ -80,17 +80,17 @@
 
 test_that("c2-crossfit-timing localizes one-round source-site bottlenecks", {
   skip_if_not(.c2_crossfit_timing_enabled(),
-              message = "set FACEHD_RUN_C2_CROSSFIT_TIMING=1 or run with --filter c2-crossfit-timing")
+              message = "set ROCE_RUN_C2_CROSSFIT_TIMING=1 or run with --filter c2-crossfit-timing")
 
-  n_total <- .c2_timing_int_env("FACEHD_C2_CROSSFIT_TIMING_N", 5000L)
-  K_sites <- .c2_timing_int_env("FACEHD_C2_CROSSFIT_TIMING_K", 5L)
-  p <- .c2_timing_int_env("FACEHD_C2_CROSSFIT_TIMING_P", 50L)
-  n_folds <- .c2_timing_int_env("FACEHD_C2_CROSSFIT_TIMING_FOLDS", 3L)
-  nlambda_init <- .c2_timing_int_env("FACEHD_C2_CROSSFIT_TIMING_NLAMBDA_INIT", 20L)
-  seed <- .c2_timing_int_env("FACEHD_C2_CROSSFIT_TIMING_SEED", 270001L)
-  k1 <- .c2_timing_int_env("FACEHD_C2_CROSSFIT_TIMING_K1", 1L)
-  shift_strength <- .c2_timing_num_env("FACEHD_C2_CROSSFIT_TIMING_SHIFT", 0.5)
-  nuisance_rule <- Sys.getenv("FACEHD_C2_CROSSFIT_TIMING_NUISANCE_RULE", "min")
+  n_total <- .c2_timing_int_env("ROCE_C2_CROSSFIT_TIMING_N", 5000L)
+  K_sites <- .c2_timing_int_env("ROCE_C2_CROSSFIT_TIMING_K", 5L)
+  p <- .c2_timing_int_env("ROCE_C2_CROSSFIT_TIMING_P", 50L)
+  n_folds <- .c2_timing_int_env("ROCE_C2_CROSSFIT_TIMING_FOLDS", 3L)
+  nlambda_init <- .c2_timing_int_env("ROCE_C2_CROSSFIT_TIMING_NLAMBDA_INIT", 20L)
+  seed <- .c2_timing_int_env("ROCE_C2_CROSSFIT_TIMING_SEED", 270001L)
+  k1 <- .c2_timing_int_env("ROCE_C2_CROSSFIT_TIMING_K1", 1L)
+  shift_strength <- .c2_timing_num_env("ROCE_C2_CROSSFIT_TIMING_SHIFT", 0.5)
+  nuisance_rule <- Sys.getenv("ROCE_C2_CROSSFIT_TIMING_NUISANCE_RULE", "min")
   nuisance_rule <- match.arg(nuisance_rule, c("min", "1se"))
 
   out_dir <- file.path("c2_crossfit_timing_output")
@@ -122,7 +122,7 @@ test_that("c2-crossfit-timing localizes one-round source-site bottlenecks", {
       outcome_type = "binary",
       heterogeneity_type = "none",
       shift_strength = shift_strength,
-      dgp_type = "facehd",
+      dgp_type = "roce",
       warn_ignored = FALSE
     )
   })
@@ -131,7 +131,7 @@ test_that("c2-crossfit-timing localizes one-round source-site bottlenecks", {
   source_sites <- setdiff(names(data_split), "t")
   selected_sources <- .c2_timing_sources_env(source_sites)
   if (k1 > n_folds) {
-    stop(sprintf("FACEHD_C2_CROSSFIT_TIMING_K1=%d exceeds n_folds=%d", k1, n_folds),
+    stop(sprintf("ROCE_C2_CROSSFIT_TIMING_K1=%d exceeds n_folds=%d", k1, n_folds),
          call. = FALSE)
   }
 

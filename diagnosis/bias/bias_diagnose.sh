@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================================
-# FACE-HD Bias Diagnosis Submission Script
+# RoCE Bias Diagnosis Submission Script
 # ----------------------------------------------------------------------------
 # Submits a SLURM array job that runs 11 small simulation settings, all in
 # config C1 with binary outcome + mild transform + superpopulation estimand.
@@ -115,7 +115,7 @@ SBATCH_CMD=(
 )
 
 echo "======================================================"
-echo " FACE-HD Bias Diagnosis Submission"
+echo " RoCE Bias Diagnosis Submission"
 echo "======================================================"
 echo " Repo:           ${REPO_DIR}"
 echo " Tasks:          ${TASKS}"

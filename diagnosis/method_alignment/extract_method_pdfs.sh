@@ -33,7 +33,7 @@ SBATCH_CMD=(
 )
 
 echo "======================================================"
-echo " FACE-HD PDF Extraction Submission"
+echo " RoCE PDF Extraction Submission"
 echo "======================================================"
 echo " Repo:      ${REPO_DIR}"
 echo " Partition: ${PARTITION}"

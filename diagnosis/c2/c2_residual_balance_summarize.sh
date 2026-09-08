@@ -54,7 +54,7 @@ fi
 SBATCH_CMD+=(diagnosis/c2/c2_residual_balance_summarize.cmd)
 
 echo "======================================================"
-echo " FACE-HD C2 Residual Balance Summary Submission"
+echo " RoCE C2 Residual Balance Summary Submission"
 echo "======================================================"
 echo " Repo:       ${REPO_DIR}"
 echo " Dependency: ${DEPENDENCY:-none}"

@@ -1,10 +1,10 @@
 #!/usr/bin/env Rscript
-# C2 lambda-grid comparison: FACE-HD dense-grid lambda.min  vs  RCAL x0.5+tune.cut.
+# C2 lambda-grid comparison: RoCE dense-grid lambda.min  vs  RCAL x0.5+tune.cut.
 #
 # Diagnosis-only. Quantifies how differently TWO lambda-selection STRATEGIES pick the
 # density-ratio penalty lambda_gamma, evaluated on the IDENTICAL out-of-fold calibrated-
 # gamma CV entropy curve produced during a REAL C2 run_crossfit run:
-#   (A) FACE-HD : lambda.min = argmin over its dense 100-point log grid (down to 1e-4*lmax when n>p).
+#   (A) RoCE : lambda.min = argmin over its dense 100-point log grid (down to 1e-4*lmax when n>p).
 #   (B) RCAL   : lambda.min on the coarse grid  lmax * 0.5^(0:10)  (nrho=11, tune.fac=0.5),
 #                loss="cal" (entropy), tune.cut=TRUE  -- Tan's RCAL::glm.regu.cv default,
 #                also what SMMAL used.
@@ -44,27 +44,27 @@ stopifnot(n_total > 0L, K_sites > 0L, p > 0L, seed > 0L,
           n_folds >= 3L, nlambda_init > 0L)
 
 suppressPackageStartupMessages({
-  if (requireNamespace("FACEHD", quietly = FALSE)) {
-    library(FACEHD)
+  if (requireNamespace("RoCE", quietly = FALSE)) {
+    library(RoCE)
   } else if (requireNamespace("devtools", quietly = FALSE)) {
     devtools::load_all(".")
   } else {
-    stop("Neither installed FACEHD nor devtools available.", call. = FALSE)
+    stop("Neither installed RoCE nor devtools available.", call. = FALSE)
   }
 })
 
-facehd_constant <- function(name, default) {
-  ns <- asNamespace("FACEHD")
+roce_constant <- function(name, default) {
+  ns <- asNamespace("RoCE")
   if (exists(name, envir = ns, inherits = FALSE)) {
     return(get(name, envir = ns, inherits = FALSE))
   }
   default
 }
 
-facehd_function <- function(name) {
-  ns <- asNamespace("FACEHD")
+roce_function <- function(name) {
+  ns <- asNamespace("RoCE")
   if (!exists(name, envir = ns, inherits = FALSE)) {
-    stop(sprintf("FACEHD namespace does not contain required function '%s'.", name),
+    stop(sprintf("RoCE namespace does not contain required function '%s'.", name),
          call. = FALSE)
   }
   get(name, envir = ns, inherits = FALSE)
@@ -77,17 +77,17 @@ needed_functions <- c(
 )
 for (fn_name in needed_functions) {
   if (!exists(fn_name, mode = "function")) {
-    assign(fn_name, facehd_function(fn_name))
+    assign(fn_name, roce_function(fn_name))
   }
 }
 
-MAX_ITER_DEFAULT <- facehd_constant("MAX_ITER_DEFAULT", 1000L)
-TOL_DEFAULT <- facehd_constant("TOL_DEFAULT", 1e-7)
+MAX_ITER_DEFAULT <- roce_constant("MAX_ITER_DEFAULT", 1000L)
+TOL_DEFAULT <- roce_constant("TOL_DEFAULT", 1e-7)
 `%||%` <- function(x, y) if (is.null(x)) y else x
 
 # Sparsity (nnz) refit is OPT-IN: it adds two cold-start fixed-lambda gamma fits per captured
-# curve, which at the tiny FACE-HD/RCAL lambda values run to MAX_ITER and dominate wall-clock.
-# The core deliverable (lambda_FACEHD vs lambda_RCAL on the captured entropy curve) needs no refit.
+# curve, which at the tiny RoCE/RCAL lambda values run to MAX_ITER and dominate wall-clock.
+# The core deliverable (lambda_RoCE vs lambda_RCAL on the captured entropy curve) needs no refit.
 NNZ_REFIT <- tolower(Sys.getenv("C2LG_NNZ", "false")) %in% c("1", "true", "yes")
 
 out_root <- Sys.getenv(
@@ -101,12 +101,12 @@ prefix <- file.path(out_dir, sprintf(
 ))
 
 # ---------------------------------------------------------------------------
-# RCAL emulation on a captured FACE-HD CV curve.
+# RCAL emulation on a captured RoCE CV curve.
 # RCAL::glm.regu.cv: rho.seq = tune.fac^seq(nrho-1,0,-1) * rho.max0 ; loss="cal";
 #   sel <- which.min(err.ave) (lambda.min). tune.fac=0.5, nrho=1+10=11 (Tan vignette / SMMAL).
-# tune.cut drops non-converged (small) rho; on FACE-HD's curve every grid point is finite
+# tune.cut drops non-converged (small) rho; on RoCE's curve every grid point is finite
 # (the C++ throws otherwise), and RCAL's floor (lmax*0.5^10 ~= 9.8e-4*lmax) sits ABOVE
-# FACE-HD's 1e-4*lmax floor, so no rung is dropped -- the divergence is grid resolution + floor.
+# RoCE's 1e-4*lmax floor, so no rung is dropped -- the divergence is grid resolution + floor.
 # ---------------------------------------------------------------------------
 RCAL_NRHO <- 11L
 RCAL_TUNE_FAC <- 0.5
@@ -154,7 +154,7 @@ CAP$n_calls <- 0L
 CAP$t_cv <- 0     # cumulative seconds inside the original CV
 CAP$t_post <- 0   # cumulative seconds inside capture post-processing (emulate + optional nnz)
 
-ns <- asNamespace("FACEHD")
+ns <- asNamespace("RoCE")
 orig_cv <- get("select_lambda_cv_calibrated_density_ratio_cpp", envir = ns)
 
 # Formal order MUST match R/RcppExports.R exactly.
@@ -178,30 +178,30 @@ patched_cv <- function(Z_site, A_source, mean_grad_psi, alpha_init, lambda_grid,
     rec <- list(
       n = nrow(Z_site), p = ncol(Z_site), M_tau = as.numeric(M_tau),
       lambda_max = max(LG),
-      lambda_facehd_min = as.numeric(res$lambda_min),
-      idx_facehd_min = idx_min,
-      lambda_facehd_1se = as.numeric(res$lambda_1se),
-      entropy_facehd_min = if (idx_min >= 1L && idx_min <= length(CV)) CV[[idx_min]] else min(CV),
-      facehd_at_floor = as.integer(idx_min == length(LG))
+      lambda_roce_min = as.numeric(res$lambda_min),
+      idx_roce_min = idx_min,
+      lambda_roce_1se = as.numeric(res$lambda_1se),
+      entropy_roce_min = if (idx_min >= 1L && idx_min <= length(CV)) CV[[idx_min]] else min(CV),
+      roce_at_floor = as.integer(idx_min == length(LG))
     )
     em <- rcal_emulate(LG, CV)
     if (is.null(em)) {
       rec$lambda_rcal_min <- NA_real_; rec$rcal_rung_k <- NA_integer_
       rec$entropy_rcal_min <- NA_real_
-      rec$nnz_facehd <- NA_integer_; rec$nnz_rcal <- NA_integer_
+      rec$nnz_roce <- NA_integer_; rec$nnz_rcal <- NA_integer_
     } else {
       rec$lambda_rcal_min <- em$lambda_rcal_min
       rec$rcal_rung_k <- em$rcal_rung_k
       rec$entropy_rcal_min <- em$entropy_rcal_min
       if (NNZ_REFIT) {
-        rec$nnz_facehd <- refit_nnz(Z_site, A_source, mean_grad_psi, alpha_init,
-                                   rec$lambda_facehd_min, M_tau, W_outcome,
+        rec$nnz_roce <- refit_nnz(Z_site, A_source, mean_grad_psi, alpha_init,
+                                   rec$lambda_roce_min, M_tau, W_outcome,
                                    A_val, family_int, link_int)
         rec$nnz_rcal <- refit_nnz(Z_site, A_source, mean_grad_psi, alpha_init,
                                   rec$lambda_rcal_min, M_tau, W_outcome,
                                   A_val, family_int, link_int)
       } else {
-        rec$nnz_facehd <- NA_integer_
+        rec$nnz_roce <- NA_integer_
         rec$nnz_rcal <- NA_integer_
       }
     }
@@ -233,7 +233,7 @@ data <- generate_simulation_data(
   outcome_type = "binary",
   heterogeneity_type = "none",
   shift_strength = 0.5,
-  dgp_type = "facehd",
+  dgp_type = "roce",
   warn_ignored = FALSE
 )
 split <- split_data_by_site(data)
@@ -276,24 +276,24 @@ if (length(records) == 0L) {
 # ---- per-call table ----
 per_call <- do.call(rbind, lapply(seq_along(records), function(i) {
   r <- records[[i]]
-  ratio <- r$lambda_facehd_min / r$lambda_rcal_min
+  ratio <- r$lambda_roce_min / r$lambda_rcal_min
   data.frame(
     tag = tag, seed = seed, n_total = n_total, K = K_sites, p = p,
     call_idx = i, n_obs = r$n, p_dim = r$p, M_tau = r$M_tau,
     lambda_max = r$lambda_max,
-    lambda_facehd_min = r$lambda_facehd_min,
-    idx_facehd_min = r$idx_facehd_min,
-    lambda_facehd_1se = r$lambda_facehd_1se,
+    lambda_roce_min = r$lambda_roce_min,
+    idx_roce_min = r$idx_roce_min,
+    lambda_roce_1se = r$lambda_roce_1se,
     lambda_rcal_min = r$lambda_rcal_min,
     rcal_rung_k = r$rcal_rung_k,
-    ratio_facehd_over_rcal = ratio,
+    ratio_roce_over_rcal = ratio,
     log2_ratio = log2(ratio),
-    entropy_facehd_min = r$entropy_facehd_min,
+    entropy_roce_min = r$entropy_roce_min,
     entropy_rcal_min = r$entropy_rcal_min,
-    entropy_gap = r$entropy_rcal_min - r$entropy_facehd_min,
-    nnz_facehd = r$nnz_facehd,
+    entropy_gap = r$entropy_rcal_min - r$entropy_roce_min,
+    nnz_roce = r$nnz_roce,
     nnz_rcal = r$nnz_rcal,
-    facehd_at_floor = r$facehd_at_floor,
+    roce_at_floor = r$roce_at_floor,
     stringsAsFactors = FALSE
   )
 }))
@@ -306,21 +306,21 @@ fin <- function(x) x[is.finite(x)]
 summary_row <- data.frame(
   tag = tag, seed = seed, n_total = n_total, K = K_sites, p = p,
   n_calls = nrow(per_call),
-  median_ratio = stats::median(fin(per_call$ratio_facehd_over_rcal)),
-  mean_ratio = mean(fin(per_call$ratio_facehd_over_rcal)),
+  median_ratio = stats::median(fin(per_call$ratio_roce_over_rcal)),
+  mean_ratio = mean(fin(per_call$ratio_roce_over_rcal)),
   median_log2_ratio = stats::median(fin(per_call$log2_ratio)),
   mean_log2_ratio = mean(fin(per_call$log2_ratio)),
   mean_entropy_gap = mean(fin(per_call$entropy_gap)),
-  mean_nnz_facehd = mean(fin(per_call$nnz_facehd)),
+  mean_nnz_roce = mean(fin(per_call$nnz_roce)),
   mean_nnz_rcal = mean(fin(per_call$nnz_rcal)),
-  frac_facehd_at_floor = mean(per_call$facehd_at_floor),
+  frac_roce_at_floor = mean(per_call$roce_at_floor),
   stringsAsFactors = FALSE
 )
 summary_file <- paste0(prefix, "_summary.csv")
 write.csv(summary_row, summary_file, row.names = FALSE)
 
-cat(sprintf("[c2_lambda_grid_compare] seed=%d  n_calls=%d  median(lambda_FACEHD/lambda_RCAL)=%.4f  median(log2)=%.3f  nnz_FACEHD=%.1f  nnz_RCAL=%.1f  at_floor=%.2f\n",
+cat(sprintf("[c2_lambda_grid_compare] seed=%d  n_calls=%d  median(lambda_RoCE/lambda_RCAL)=%.4f  median(log2)=%.3f  nnz_RoCE=%.1f  nnz_RCAL=%.1f  at_floor=%.2f\n",
             seed, summary_row$n_calls, summary_row$median_ratio,
-            summary_row$median_log2_ratio, summary_row$mean_nnz_facehd,
-            summary_row$mean_nnz_rcal, summary_row$frac_facehd_at_floor))
+            summary_row$median_log2_ratio, summary_row$mean_nnz_roce,
+            summary_row$mean_nnz_rcal, summary_row$frac_roce_at_floor))
 cat(sprintf("[c2_lambda_grid_compare] wrote %s and %s\n", per_call_file, summary_file))

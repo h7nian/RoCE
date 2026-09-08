@@ -80,7 +80,7 @@ exec > >(tee -a "${REPORT}") 2>&1
 
 ATTEMPT_TS="$(date +%Y%m%d_%H%M%S)"
 echo "======================================================"
-echo " FACE-HD Quick Diagnosis"
+echo " RoCE Quick Diagnosis"
 echo "======================================================"
 echo " Attempt start:  $(date)"
 echo " Attempt tag:    ${ATTEMPT_TS}"

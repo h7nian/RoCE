@@ -1,5 +1,5 @@
 .c2_ps_basis_enabled <- function() {
-  env_enabled <- Sys.getenv("FACEHD_RUN_C2_TARGET_PS_BASIS", "0") %in%
+  env_enabled <- Sys.getenv("ROCE_RUN_C2_TARGET_PS_BASIS", "0") %in%
     c("1", "TRUE", "true", "True")
   filter <- Sys.getenv("TEST_FILTER", "")
   env_enabled || grepl("c2-target-ps-basis", filter, fixed = TRUE)
@@ -228,15 +228,15 @@
 
 test_that("c2-target-ps-basis diagnoses target-only propensity basis", {
   skip_if_not(.c2_ps_basis_enabled(),
-              message = "set FACEHD_RUN_C2_TARGET_PS_BASIS=1 or run with --filter c2-target-ps-basis")
+              message = "set ROCE_RUN_C2_TARGET_PS_BASIS=1 or run with --filter c2-target-ps-basis")
 
-  n_reps <- .c2_ps_basis_int_env("FACEHD_C2_TARGET_PS_BASIS_REPS", 5L)
-  n_total <- .c2_ps_basis_int_env("FACEHD_C2_TARGET_PS_BASIS_N", 5000L)
-  K <- .c2_ps_basis_int_env("FACEHD_C2_TARGET_PS_BASIS_K", 5L)
-  p <- .c2_ps_basis_int_env("FACEHD_C2_TARGET_PS_BASIS_P", 50L)
-  n_folds <- .c2_ps_basis_int_env("FACEHD_C2_TARGET_PS_BASIS_FOLDS", 10L)
-  base_seed <- .c2_ps_basis_int_env("FACEHD_C2_TARGET_PS_BASIS_SEED", 250000L)
-  shift_strength <- .c2_ps_basis_num_env("FACEHD_C2_TARGET_PS_BASIS_SHIFT", 0.5)
+  n_reps <- .c2_ps_basis_int_env("ROCE_C2_TARGET_PS_BASIS_REPS", 5L)
+  n_total <- .c2_ps_basis_int_env("ROCE_C2_TARGET_PS_BASIS_N", 5000L)
+  K <- .c2_ps_basis_int_env("ROCE_C2_TARGET_PS_BASIS_K", 5L)
+  p <- .c2_ps_basis_int_env("ROCE_C2_TARGET_PS_BASIS_P", 50L)
+  n_folds <- .c2_ps_basis_int_env("ROCE_C2_TARGET_PS_BASIS_FOLDS", 10L)
+  base_seed <- .c2_ps_basis_int_env("ROCE_C2_TARGET_PS_BASIS_SEED", 250000L)
+  shift_strength <- .c2_ps_basis_num_env("ROCE_C2_TARGET_PS_BASIS_SHIFT", 0.5)
 
   out_dir <- file.path("c2_target_ps_basis_output")
   dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
@@ -269,7 +269,7 @@ test_that("c2-target-ps-basis diagnoses target-only propensity basis", {
       p = p,
       config = "C2",
       estimand_type = "superpopulation",
-      dgp_type = "facehd",
+      dgp_type = "roce",
       outcome_type = "binary",
       site_allocation = "model",
       transform_type = "mild",

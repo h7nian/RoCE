@@ -1,20 +1,20 @@
 # Diagnosis-only monkey patch for density-ratio CV scaling.
 #
 # The patch replaces only the R wrappers used to choose density-ratio lambdas
-# in the current R session. Final fixed-lambda fitting still calls FACEHD's
+# in the current R session. Final fixed-lambda fitting still calls RoCE's
 # compiled fit_*_density_ratio_cpp functions. No package source files are
 # modified.
 
 c2_patch_ns_get <- function(name) {
-  ns <- asNamespace("FACEHD")
+  ns <- asNamespace("RoCE")
   if (!exists(name, envir = ns, inherits = FALSE)) {
-    stop(sprintf("FACEHD namespace does not contain '%s'.", name), call. = FALSE)
+    stop(sprintf("RoCE namespace does not contain '%s'.", name), call. = FALSE)
   }
   get(name, envir = ns, inherits = FALSE)
 }
 
 c2_replace_namespace_binding <- function(name, value) {
-  ns <- asNamespace("FACEHD")
+  ns <- asNamespace("RoCE")
   was_locked <- bindingIsLocked(name, ns)
   if (was_locked) unlockBinding(name, ns)
   assign(name, value, envir = ns)
@@ -34,7 +34,7 @@ install_c2_dr_cv_scale_patch <- function(
   cpp_env <- new.env(parent = baseenv())
   Rcpp::sourceCpp(cpp_path, env = cpp_env, rebuild = FALSE, verbose = FALSE)
 
-  ns <- asNamespace("FACEHD")
+  ns <- asNamespace("RoCE")
   original_initial <- get("fit_initial_density_ratio", envir = ns, inherits = FALSE)
   original_unified <- get("fit_unified_density_ratio", envir = ns, inherits = FALSE)
 

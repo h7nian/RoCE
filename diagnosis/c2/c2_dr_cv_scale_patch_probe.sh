@@ -1,9 +1,9 @@
 #!/bin/bash
 # ============================================================================
-# FACE-HD C2 diagnosis-only density-ratio CV scale patch probe
+# RoCE C2 diagnosis-only density-ratio CV scale patch probe
 # ----------------------------------------------------------------------------
 # Runs the residual-balance probe with a session-local density-ratio CV
-# validation scaling patch. The FACEHD source tree is not modified.
+# validation scaling patch. The RoCE source tree is not modified.
 # ============================================================================
 
 set -euo pipefail
@@ -77,7 +77,7 @@ SBATCH_CMD=(
 )
 
 echo "======================================================"
-echo " FACE-HD C2 DR-CV Scale Patch Probe Submission"
+echo " RoCE C2 DR-CV Scale Patch Probe Submission"
 echo "======================================================"
 echo " Repo:           ${REPO_DIR}"
 echo " Tasks:          ${TASKS}"

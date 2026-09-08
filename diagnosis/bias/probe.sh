@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================================
-# FACE-HD bias-diagnosis fast probe submission
+# RoCE bias-diagnosis fast probe submission
 # ----------------------------------------------------------------------------
 # Submits a SHORT single-task SLURM job that runs diagnosis/bias/probe.R
 # (3 phases: A data sanity, B per-function probe, C end-to-end seed sweep).
@@ -70,7 +70,7 @@ SBATCH_CMD=(
 )
 
 echo "======================================================"
-echo " FACE-HD Bias Probe Submission"
+echo " RoCE Bias Probe Submission"
 echo "======================================================"
 echo " Phase:       ${PHASE}"
 echo " Setting:     n=${N_TOTAL} K=${K} p=${P} seeds=${N_SEEDS}"

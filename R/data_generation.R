@@ -1,4 +1,4 @@
-# data_generation.R - Simulation data generation for FACE-HD algorithms
+# data_generation.R - Simulation data generation for RoCE algorithms
 #
 # This file contains functions to generate synthetic data for Monte Carlo
 # simulations following the data generating process described in main.tex.
@@ -6,8 +6,8 @@
 # Contents:
 #   1. Covariate Generation
 #   2. Site/Treatment Assignment
-#   3. Outcome Generation (FACE-HD DGP)
-#   4. Full Simulation Data Generation (FACE-HD DGP)
+#   3. Outcome Generation (RoCE DGP)
+#   4. Full Simulation Data Generation (RoCE DGP)
 #   4b. FACE Paper DGP → extracted to R/data_generation_face.R
 #   5. Data Splitting Utilities
 
@@ -97,35 +97,34 @@ transform_covariates <- function(X, transform_type = "strong") {
 #' Following main.tex: Multinomial logistic model parameters with unit norm
 #' constraint and a balancing intercept.
 #'
-#' **Parameter Structure:**
-#' $$
-#' $\boldsymbol{\gamma}_{s_j,a} = (c_0, \epsilon_{j,a,1}, \epsilon_{j,a,2}, \mathbf{0}_{p-2})
-#' $$
-#' where $\epsilon_{j,a,k} \sim \mathcal{N}(0, \sigma_\epsilon^2)$ with
-#' $\sigma_\epsilon = \texttt{sigma\_epsilon} \times \texttt{shift\_strength}$,
-#' and $c_0 = \texttt{GAMMA\_BALANCE\_INTERCEPT}$ is a negative intercept chosen so that
-#' $P(R=t) \approx 1/(K+1)$ under the unit-strength setting.
+#' \strong{Parameter structure:}
+#' \deqn{\boldsymbol{\gamma}_{s_j,a}
+#'   = (c_0, \epsilon_{j,a,1}, \epsilon_{j,a,2}, \mathbf{0}_{p-2}).}
+#' Here \eqn{\epsilon_{j,a,k} \sim \mathcal{N}(0, \sigma_\epsilon^2)}, with
+#' \eqn{\sigma_\epsilon = \mathtt{sigma\_epsilon} \times
+#' \mathtt{shift\_strength}}, and
+#' \eqn{c_0 = \mathtt{GAMMA\_BALANCE\_INTERCEPT}} is a negative intercept chosen so
+#' that \eqn{P(R=t) \approx 1/(K+1)} under the unit-strength setting.
 #'
-#' **Balancing derivation:** In the multinomial logistic model the target is
+#' \strong{Balancing derivation:} In the multinomial logistic model the target is
 #' the baseline category (all-zero γ).  Each of the 2K source categories has
-#' $\mathbb{E}[\exp(\gamma^T Z)] = \exp(c_{\rm eff} + (1 - c_{\rm eff}^2)/2)$
-#' under unit norm.  Setting this equal to $1/2$ yields
-#' $P(R=t) = 1/(1 + 2K \cdot 1/2) = 1/(K+1)$ regardless of K.
+#' \eqn{\mathbb{E}[\exp(\gamma^T Z)]
+#' = \exp(c_{\rm eff} + (1 - c_{\rm eff}^2)/2)} under unit norm. Setting this
+#' equal to \eqn{1/2} yields
+#' \eqn{P(R=t) = 1/(1 + 2K \cdot 1/2) = 1/(K+1)} regardless of K.
 #'
-#' **Unit Norm Constraint:**
-#' $$
-#' \|\boldsymbol{\gamma}_{s_j,a}\|_2 = 1 \quad \forall j, a
-#' $$
+#' \strong{Unit norm constraint:}
+#' \deqn{\|\boldsymbol{\gamma}_{s_j,a}\|_2 = 1 \quad \forall j, a.}
 #' The full vector (including intercept) is normalized to unit L2 norm.
 #'
 #' @param K number of source sites
 #' @param p number of covariates (excluding intercept)
 #' @param sigma_epsilon base standard deviation for variations (default 0.1)
 #' @param shift_strength multiplier for sigma_epsilon controlling covariate shift
-#'        intensity (default \code{FACEHD_SHIFT_STRENGTH_DEFAULT})
+#'        intensity (default \code{ROCE_SHIFT_STRENGTH_DEFAULT})
 #' @return list with γ parameters for each site and treatment combination
 generate_site_model_parameters <- function(K, p, sigma_epsilon = 0.1,
-                                           shift_strength = FACEHD_SHIFT_STRENGTH_DEFAULT) {
+                                           shift_strength = ROCE_SHIFT_STRENGTH_DEFAULT) {
   gamma_list <- list()
 
   for (j in 1:K) {
@@ -323,11 +322,11 @@ generate_site_treatment_assignments <- function(n, site_probs, K) {
 #'   (identity link with Gaussian noise)
 #' @param heterogeneity_type type of outcome heterogeneity across sites:
 #'   - "none" (default): all sites use same parameters
-#'   - "mild": ~40%% change in 2 non-zero coefficients for all source sites
-#'   - "strong": ~80%% change in 2 non-zero coefficients for all source sites
+#'   - "mild": approximately 40\% change in 2 non-zero coefficients for all source sites
+#'   - "strong": approximately 80\% change in 2 non-zero coefficients for all source sites
 #'   - "partial": only first half of source sites have mild heterogeneity
 #' @return observed outcomes (binary: 0/1 for binary; continuous for continuous)
-generate_outcomes <- function(W, A, R, alpha1, alpha0, noise_sd = FACEHD_NOISE_SD_DEFAULT,
+generate_outcomes <- function(W, A, R, alpha1, alpha0, noise_sd = ROCE_NOISE_SD_DEFAULT,
                               outcome_type = "binary",
                               heterogeneity_type = "none") {
   n <- length(A)
@@ -431,16 +430,24 @@ generate_outcomes <- function(W, A, R, alpha1, alpha0, noise_sd = FACEHD_NOISE_S
 #'
 #' @param p number of base covariates
 #' @param K number of source sites (needed for site probability calculation)
-#' @param config configuration ("C1", "C2", "C3", or "C4"). The FACE-HD
+#' @param config configuration ("C1", "C2", "C3", or "C4"). The RoCE
 #'   superpopulation truth is fixed across configurations; \code{config}
 #'   is validated here for interface consistency with \code{generate_simulation_data()}.
 #' @param n_ref size of reference population for Monte Carlo integration (default 100000)
 #' @param ref_seed fixed seed for reference population (default 99999)
 #' @param transform_type type of covariate transformation ("strong", "mild", or "none")
+#' @param site_allocation Site-allocation mechanism. For \code{"model"}, the
+#'   target truth is weighted by the covariate-dependent target probability;
+#'   otherwise allocation is independent of the target covariate law.
+#' @param outcome_type Outcome family, \code{"binary"} or \code{"continuous"}.
+#' @param shift_strength Positive multiplier controlling covariate shift in the
+#'   site-allocation model.
 #' @return list with mu1_superpop (E_t[Y(1)]) and mu0_superpop (E_t[Y(0)])
 #' @details
 #' The TARGET-SPECIFIC superpopulation parameter is defined as:
-#'   E_t[Y(1)] = E[Y(1)|R=t] = E_X[logistic(X^\dagger{}^T α_1) * P(R=t|X^\dagger)] / E_X[P(R=t|X^\dagger)]
+#' \deqn{E_t[Y(1)] = E[Y(1)\mid R=t]
+#' = \frac{E_X[\operatorname{logistic}((X^\dagger)^T\alpha_1)
+#' P(R=t\mid X^\dagger)]}{E_X[P(R=t\mid X^\dagger)]}.}
 #' 
 #' This is computed via importance-weighted Monte Carlo integration:
 #' 1. Generate large reference population with fixed seed
@@ -450,17 +457,18 @@ generate_outcomes <- function(W, A, R, alpha1, alpha0, noise_sd = FACEHD_NOISE_S
 #'
 #' The same seeds ensure all simulations use the same true value.
 #' 
-#' **Why target-specific?**
-#' FACE-HD estimates μ^1_t = E_t[Y(1)], the potential outcome mean in the TARGET 
-#' population. Due to covariate shift, this differs from the overall E[Y(1)].
-#' Using target-specific superpopulation truth ensures we're evaluating the
-#' estimator against the correct inferential target.
+#' \strong{Why target-specific?}
+#' RoCE's primary estimand is the TATE μ^1_t - μ^0_t in the TARGET
+#' population, with each arm also available as a secondary estimand. Due to
+#' covariate shift, these target-arm means differ from their overall-population
+#' counterparts. Target-specific superpopulation truths therefore provide the
+#' correct reference for both arms and their contrast.
 calculate_superpopulation_truth <- function(p, K = 3, config,
                                             n_ref = 100000, ref_seed = 99999,
                                             transform_type = "mild",
                                             site_allocation = "model",
                                             outcome_type = "binary",
-                                            shift_strength = FACEHD_SHIFT_STRENGTH_DEFAULT) {
+                                            shift_strength = ROCE_SHIFT_STRENGTH_DEFAULT) {
   if (!(config %in% VALID_CONFIGS)) {
     stop(sprintf("Invalid config: '%s'. Must be one of: %s",
                  config, paste(VALID_CONFIGS, collapse = ", ")))
@@ -487,7 +495,7 @@ calculate_superpopulation_truth <- function(p, K = 3, config,
     }
     X_dagger_ref <- transform_covariates(X_ref, transform_type = transform_type)
 
-    # The FACE-HD DGP is fixed across C1-C4. Configurations only change the
+    # The RoCE DGP is fixed across C1-C4. Configurations only change the
     # fitted working bases exposed to estimators in generate_simulation_data().
     Z_site_ref <- X_dagger_ref
     W_ref <- X_dagger_ref
@@ -537,7 +545,7 @@ calculate_superpopulation_truth <- function(p, K = 3, config,
     mu0_overall <- mean(mu0_given_x)
 
     return(list(
-      # Target-specific superpopulation (what FACE-HD estimates)
+      # Target-specific superpopulation (what RoCE estimates)
       mu1_superpop = mu1_superpop,
       mu0_superpop = mu0_superpop,
       ate_superpop = mu1_superpop - mu0_superpop,
@@ -566,11 +574,13 @@ calculate_superpopulation_truth <- function(p, K = 3, config,
 #' @param n_total total number of observations
 #' @param K number of source sites
 #' @param p number of base covariates
-#' @param config configuration ("C1", "C2", "C3", or "C4")
-#'   - C1: fitted site/outcome bases both use X† (both correctly specified)
-#'   - C2: fitted site basis uses X†, fitted outcome basis uses X
-#'   - C3: fitted site basis uses X, fitted outcome basis uses X†
-#'   - C4: fitted site/outcome bases both use X (tests DR boundary)
+#' @param config configuration ("C1", "C2", "C3", or "C4"). Under
+#'   \code{dgp_type = "roce"}, C1 uses the exact transformed basis for both
+#'   nuisances, C2 reduces only the outcome basis, C3 reduces only the site
+#'   basis, and C4 reduces both. Under \code{dgp_type = "face"}, C1--C2 use a
+#'   rich quadratic calibration basis and C1--C3 use the correct quadratic
+#'   outcome basis; see \code{generate_face_data()} for the important
+#'   skew-normal density-ratio qualification.
 #' @param estimand_type type of estimand to use for true value calculation:
 #'   - "sample": sample-specific true value E_n[Y(1)] based on realized
 #'     covariates. This varies across simulations and is appropriate for 
@@ -594,21 +604,38 @@ calculate_superpopulation_truth <- function(p, K = 3, config,
 #'   - "strong": aggressive nonlinear transformations (original)
 #'   - "mild": gentle transformations that preserve IF orthogonality
 #'   - "none": no transformation (X_dagger = X)
+#' @param outcome_type Outcome family: \code{"binary"} or \code{"continuous"}.
+#' @param heterogeneity_type Source outcome-model heterogeneity setting.
+#' @param shift_strength Positive multiplier controlling covariate shift.
+#' @param dgp_type Data-generating process: \code{"face"} or \code{"roce"}.
+#' @param ate_deviation Non-negative additive source treatment-shift deviation
+#'   under the FACE DGP. It is a mean shift for Gaussian outcomes and a
+#'   log-odds shift for binary outcomes, not generally the induced marginal
+#'   TATE difference.
+#' @param n_deviated_sites Number of leading deviated source sites under the
+#'   FACE DGP.
+#' @param effect_mod_strength Source-only treatment-effect-modification strength
+#'   under the FACE DGP; zero recovers the standard DGP.
+#' @param n_target Optional target-site size for explicit FACE-DGP allocation.
+#' @param n_source_sizes Optional vector of source-site sizes for explicit
+#'   FACE-DGP allocation.
+#' @param warn_ignored Whether to warn when a valid argument is irrelevant to
+#'   the selected DGP.
 #' @return list with all generated data
 #' @details
 #' The choice of estimand_type affects how to validate SE estimates:
 #' 
-#' **sample:**
+#' \strong{sample:}
 #' - True value = mean(logistic(X_dagger,target^T α)) for realized sample target covariates
 #' - Different simulations have different true values
 #' - Correct comparison: SE vs SD(bias), where bias = estimate - true_value_i
-#' - Coverage: should be ~95% when SE is correctly estimated
+#' - Coverage: should be approximately 95\% when SE is correctly estimated
 #' 
-#' **superpopulation (default):**
+#' \strong{superpopulation (default):}
 #' - True value = E_X[logistic(X_dagger^T α)] (fixed across simulations)
 #' - All simulations use the same true value
 #' - Correct comparison: SE vs SD(estimate)
-#' - Coverage: may be <95% due to additional variability from true value estimation
+#' - Coverage: may be below 95\% due to additional variability from true value estimation
 #' 
 #' For most purposes, "superpopulation" provides clearer diagnostics for SE validation.
 #'
@@ -625,23 +652,25 @@ generate_simulation_data <- function(n_total = NULL, K = 3, p = 4, config = "C1"
                                      transform_type = "mild",
                                      outcome_type = "binary",
                                      heterogeneity_type = "none",
-                                     shift_strength = FACEHD_SHIFT_STRENGTH_DEFAULT,
+                                     shift_strength = ROCE_SHIFT_STRENGTH_DEFAULT,
                                    # DGP selector: "face" (FACE negative-transfer DGP, default)
-                                   # or "facehd" (FACE-HD DGP). ate_deviation / n_deviated_sites
+                                   # or "roce" (RoCE DGP). ate_deviation / n_deviated_sites
                                    # apply only when dgp_type = "face".
                                    dgp_type = "face",
                                    ate_deviation   = 0.0,
                                    n_deviated_sites = 0L,
+                                   # Source-only effect modification (FACE DGP); 0 = standard DGP.
+                                   effect_mod_strength = 0,
                                    # Explicit per-site sample sizes (FACE DGP only)
                                    n_target         = NULL,
                                    n_source_sizes   = NULL,
                                    warn_ignored = TRUE) {
   # Explicit per-site sample sizes are a FACE-DGP feature. Reject them for the
-  # facehd DGP (which controls site sizes via site_allocation) rather than
+  # roce DGP (which controls site sizes via site_allocation) rather than
   # silently ignoring the request.
   if ((!is.null(n_source_sizes) || !is.null(n_target)) && dgp_type != "face") {
     stop("n_target / n_source_sizes (explicit per-site sizes) are supported only ",
-         "for dgp_type = 'face'; the facehd DGP sets site sizes via site_allocation.",
+         "for dgp_type = 'face'; the roce DGP sets site sizes via site_allocation.",
          call. = FALSE)
   }
   # In per-site mode, derive a concrete n_total (and K) so the centralized
@@ -672,7 +701,7 @@ generate_simulation_data <- function(n_total = NULL, K = 3, p = 4, config = "C1"
 
   # ---- FACE paper DGP (Han et al., JASA 2023, Section 5.1) ----
   # Self-contained early return: all data generation for this DGP is handled
-  # here so that the existing FACE-HD code below is not affected in any way.
+  # here so that the existing RoCE code below is not affected in any way.
   if (dgp_type == "face") {
     return(
       generate_face_data(
@@ -684,6 +713,7 @@ generate_simulation_data <- function(n_total = NULL, K = 3, p = 4, config = "C1"
         outcome_type     = outcome_type,
         ate_deviation    = ate_deviation,
         n_deviated_sites = as.integer(n_deviated_sites),
+        effect_mod_strength = effect_mod_strength,
         n_target         = n_target,
         n_source_sizes   = n_source_sizes
       )
@@ -753,7 +783,7 @@ generate_simulation_data <- function(n_total = NULL, K = 3, p = 4, config = "C1"
   # Generate transformed covariates
   X_dagger <- transform_covariates(X, transform_type = transform_type)
 
-  # True FACE-HD DGP bases. These stay fixed across C1-C4 so configurations
+  # True RoCE DGP bases. These stay fixed across C1-C4 so configurations
   # only change the fitted working bases exposed to estimators.
   Z_site_true <- X_dagger
   W_outcome_true <- X_dagger
@@ -819,26 +849,22 @@ generate_simulation_data <- function(n_total = NULL, K = 3, p = 4, config = "C1"
   alpha1 <- alphas$alpha1
   alpha0 <- alphas$alpha0
 
-  # Generate outcomes
-  Y <- generate_outcomes(W_outcome_true, A, R, alpha1, alpha0,
-                         noise_sd = FACEHD_NOISE_SD_DEFAULT,
-                         outcome_type = outcome_type,
-                         heterogeneity_type = heterogeneity_type)
-  
-  # Generate potential outcomes for coverage evaluation
+  # Generate potential outcomes for coverage evaluation, then select the
+  # observed outcome so consistency holds observation by observation.
   # Y_1: potential outcome under treatment A=1
   # Y_0: potential outcome under treatment A=0
   A_ones <- rep(1, n_total)
   A_zeros <- rep(0, n_total)
 
   Y_1 <- generate_outcomes(W_outcome_true, A_ones, R, alpha1, alpha0,
-                           noise_sd = FACEHD_NOISE_SD_DEFAULT,
+                           noise_sd = ROCE_NOISE_SD_DEFAULT,
                            outcome_type = outcome_type,
                            heterogeneity_type = heterogeneity_type)
   Y_0 <- generate_outcomes(W_outcome_true, A_zeros, R, alpha1, alpha0,
-                           noise_sd = FACEHD_NOISE_SD_DEFAULT,
+                           noise_sd = ROCE_NOISE_SD_DEFAULT,
                            outcome_type = outcome_type,
                            heterogeneity_type = heterogeneity_type)
+  Y <- ifelse(A == 1, Y_1, Y_0)
   
   # Calculate true potential outcome means
   # The interpretation depends on estimand_type:
@@ -924,7 +950,7 @@ generate_simulation_data <- function(n_total = NULL, K = 3, p = 4, config = "C1"
     W_outcome = W_outcome,
     estimand_type = estimand_type,  # Record which estimand type was used
     outcome_type = outcome_type,    # Record outcome type
-    dgp_type = "facehd"              # Record DGP type
+    dgp_type = "roce"              # Record DGP type
   )
   
   return(data)

@@ -5,7 +5,7 @@
 # diagnosis/c2/c2_targeted_lambda_probe.R, which established that on the IDENTICAL out-of-fold
 # calibrated-gamma CV folds the entropy lambda.min and the out-of-fold BALANCING-MOMENT MSE argmin
 # can differ. THIS script measures whether forcing the estimator to use lambda_balancing changes
-# the FACE-HD estimator's coverage, PAIRED on the same data / folds / seed.
+# the RoCE estimator's coverage, PAIRED on the same data / folds / seed.
 #
 #   ARM baseline : the estimator as-is. The namespace patch on
 #                  select_lambda_cv_calibrated_density_ratio_cpp() is CAPTURE-ONLY -- it returns the
@@ -57,27 +57,27 @@ stopifnot(n_total > 0L, K_sites > 0L, p > 0L, seed > 0L,
           n_folds >= 3L, nlambda_init > 0L)
 
 suppressPackageStartupMessages({
-  if (requireNamespace("FACEHD", quietly = FALSE)) {
-    library(FACEHD)
+  if (requireNamespace("RoCE", quietly = FALSE)) {
+    library(RoCE)
   } else if (requireNamespace("devtools", quietly = FALSE)) {
     devtools::load_all(".")
   } else {
-    stop("Neither installed FACEHD nor devtools available.", call. = FALSE)
+    stop("Neither installed RoCE nor devtools available.", call. = FALSE)
   }
 })
 
-facehd_constant <- function(name, default) {
-  ns <- asNamespace("FACEHD")
+roce_constant <- function(name, default) {
+  ns <- asNamespace("RoCE")
   if (exists(name, envir = ns, inherits = FALSE)) {
     return(get(name, envir = ns, inherits = FALSE))
   }
   default
 }
 
-facehd_function <- function(name) {
-  ns <- asNamespace("FACEHD")
+roce_function <- function(name) {
+  ns <- asNamespace("RoCE")
   if (!exists(name, envir = ns, inherits = FALSE)) {
-    stop(sprintf("FACEHD namespace does not contain required function '%s'.", name),
+    stop(sprintf("RoCE namespace does not contain required function '%s'.", name),
          call. = FALSE)
   }
   get(name, envir = ns, inherits = FALSE)
@@ -90,15 +90,15 @@ needed_functions <- c(
 )
 for (fn_name in needed_functions) {
   if (!exists(fn_name, mode = "function")) {
-    assign(fn_name, facehd_function(fn_name))
+    assign(fn_name, roce_function(fn_name))
   }
 }
 
-MAX_ITER_DEFAULT <- facehd_constant("MAX_ITER_DEFAULT", 1000L)
-TOL_DEFAULT <- facehd_constant("TOL_DEFAULT", 1e-7)
-LOGISTIC_CLIP <- facehd_constant("LOGISTIC_CLIP", 50)
-FAMILY_BINOMIAL <- facehd_constant("FAMILY_BINOMIAL", 1L)
-LINK_LOGIT <- facehd_constant("LINK_LOGIT", 1L)
+MAX_ITER_DEFAULT <- roce_constant("MAX_ITER_DEFAULT", 1000L)
+TOL_DEFAULT <- roce_constant("TOL_DEFAULT", 1e-7)
+LOGISTIC_CLIP <- roce_constant("LOGISTIC_CLIP", 50)
+FAMILY_BINOMIAL <- roce_constant("FAMILY_BINOMIAL", 1L)
+LINK_LOGIT <- roce_constant("LINK_LOGIT", 1L)
 `%||%` <- function(x, y) if (is.null(x)) y else x
 
 # Number of OWN balancing CV folds (stratified by A). Kept small (default 3) so the warm-started
@@ -147,7 +147,7 @@ balancing_source_mean <- function(Z_int, A_rows, A_val, gamma, psi_prime) {
   colMeans(sweep(Z_int, 1L, w, "*"))
 }
 
-ns <- asNamespace("FACEHD")
+ns <- asNamespace("RoCE")
 orig_cv <- get("select_lambda_cv_calibrated_density_ratio_cpp", envir = ns)
 
 # ---------------------------------------------------------------------------
@@ -357,7 +357,7 @@ data <- generate_simulation_data(
   outcome_type = "binary",
   heterogeneity_type = "none",
   shift_strength = 0.5,
-  dgp_type = "facehd",
+  dgp_type = "roce",
   warn_ignored = FALSE
 )
 split <- split_data_by_site(data)

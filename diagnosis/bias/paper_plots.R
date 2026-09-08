@@ -2,7 +2,7 @@
 # ============================================================================
 # diagnosis/bias/paper_plots.R
 # ----------------------------------------------------------------------------
-# Publication-quality figures (PDF, vector) from the FACE-HD simulation
+# Publication-quality figures (PDF, vector) from the RoCE simulation
 # summaries. Pulls from BOTH:
 #   - results/*_summary.csv        (production grid; K_f parsed from filename)
 #   - diagnosis/bias/verify_out/*  (K_f sweep; n_folds column present)
@@ -23,8 +23,8 @@ dir.create(fig_dir, showWarnings = FALSE, recursive = TRUE)
 
 # ---- Method display labels + ordering + styling ---------------------------
 METHOD_LABEL <- c(
-  one_round_crossfit = "FACE-HD (1-round)",
-  two_round_crossfit = "FACE-HD (2-round)",
+  one_round_crossfit = "RoCE (1-round)",
+  two_round_crossfit = "RoCE (2-round)",
   federated_dr       = "Fed-DR",
   pooled_dr          = "Pooled-DR",
   oracle_dr          = "Oracle-DR",
@@ -117,7 +117,7 @@ if (!is.null(prod)) {
       points(x, kf3, pch = 19, cex = 1.7, col = cols)
       axis(1, at = x, labels = mlab(meths), las = 2, cex.axis = 0.8)
     }
-    mtext(sprintf("Coverage by method (n=5000, K=3, p=%d, K_f=3).  Red = FACE-HD.  Band = [0.94, 0.96].", pp),
+    mtext(sprintf("Coverage by method (n=5000, K=3, p=%d, K_f=3).  Red = RoCE.  Band = [0.94, 0.96].", pp),
           outer = TRUE, cex = 0.95, font = 2)
     dev.off()
     cat(sprintf("[paper_plots] wrote %s\n", basename(out_pdf)))

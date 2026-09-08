@@ -1,5 +1,5 @@
 .c2_core_intermediate_enabled <- function() {
-  env_enabled <- Sys.getenv("FACEHD_RUN_C2_CORE_INTERMEDIATE", "0") %in%
+  env_enabled <- Sys.getenv("ROCE_RUN_C2_CORE_INTERMEDIATE", "0") %in%
     c("1", "TRUE", "true", "True")
   filter <- Sys.getenv("TEST_FILTER", "")
   env_enabled || grepl("c2-core-intermediate", filter, fixed = TRUE)
@@ -288,10 +288,13 @@
     d_alpha <- max(mean(dr_weights), DIVISION_FLOOR)
     phi_centered <- source_res$phi - source_res$estimate
     A_s <- -1 / d_alpha * colMeans(as.numeric(dr_weights) * Z_int_centered * as.numeric(phi_centered))
-    aw_i <- as.numeric(source_data$A == A_val) * as.numeric(dr_weights)
-    M_alpha <- t(Z_int_centered) %*% (Z_int_centered * aw_i) / max(1, n_source)
+    density_score_weights <- as.numeric(dr_weights)
+    M_alpha <- t(Z_int_centered) %*%
+      (Z_int_centered * density_score_weights) / max(1, n_source)
     adj_alpha <- solve_with_ridge(M_alpha) %*% A_s
-    infl_alpha_source <- as.numeric(aw_i * (Z_int_centered %*% adj_alpha))
+    infl_alpha_source <- as.numeric(
+      density_score_weights * (Z_int_centered %*% adj_alpha)
+    )
     target_if_component <- -as.numeric(Z_target_centered %*% adj_alpha)
     varphi_source <- as.numeric(source_res$varphi_ot) + infl_alpha_source
     varphi_source <- varphi_source - mean(varphi_source)
@@ -355,7 +358,7 @@
       "calibrated_alpha_cv"
     ),
     expected = c(
-      "eq:final_opt variance + cross-site covariance + discrepancy-weighted L1 penalty",
+      "eq:agg_penalized_objective TATE variance + cross-site covariance + truncated-Wald L1 penalty",
       "FACE-style inner validation: train weights on inner-training summaries and score on validation variance",
       "glmnet-style path starts at KKT lambda_max and descends geometrically",
       "SMMAL-style outer k1, secondary k2, plug-ins trained without k1/k2, fold-summed calibrated loss",
@@ -363,7 +366,7 @@
       "calibrated alpha loss uses calibrated outcome CV when lambda=NULL"
     ),
     implementation = c(
-      "optimize_weights() includes V_ot, V_t, V_s, C_ot, C_cross and lambda*|eta|*(mu_ot-mu_ts)^2",
+      "optimize_weights() includes V_ot, V_t, V_s, C_ot, C_cross and (lambda*t_j-1)_+*|eta_j| on the N_all variance scale",
       "select_aggregation_lambda_inner_cv() optimizes eta on components[-m] and scores .validation_aggregation_objective() on components[[m]]",
       ".aggregation_lambda_max() and .aggregation_lambda_grid() build the path",
       "process_source_site() loops k2 != k1, uses training_folds=setdiff(1:n_folds,c(k1,k2)), then fit_unified_* with calibrated=TRUE",
@@ -391,24 +394,24 @@
 
 test_that("c2-core-intermediate writes single-seed intermediate estimators", {
   skip_if_not(.c2_core_intermediate_enabled(),
-              message = "set FACEHD_RUN_C2_CORE_INTERMEDIATE=1 or run with --filter c2-core-intermediate")
+              message = "set ROCE_RUN_C2_CORE_INTERMEDIATE=1 or run with --filter c2-core-intermediate")
 
-  n_total <- .c2_core_int_env("FACEHD_C2_CORE_INTERMEDIATE_N", 5000L)
-  K_sites <- .c2_core_int_env("FACEHD_C2_CORE_INTERMEDIATE_K", 5L)
-  p <- .c2_core_int_env("FACEHD_C2_CORE_INTERMEDIATE_P", 50L)
-  n_folds <- .c2_core_int_env("FACEHD_C2_CORE_INTERMEDIATE_FOLDS", 10L)
-  nlambda_init <- .c2_core_int_env("FACEHD_C2_CORE_INTERMEDIATE_NLAMBDA_INIT", 100L)
-  seed <- .c2_core_int_env("FACEHD_C2_CORE_INTERMEDIATE_SEED", 240001L)
-  shift_strength <- .c2_core_num_env("FACEHD_C2_CORE_INTERMEDIATE_SHIFT", 0.5)
-  n_cores <- .c2_core_int_env("FACEHD_C2_CORE_INTERMEDIATE_CORES", 1L)
+  n_total <- .c2_core_int_env("ROCE_C2_CORE_INTERMEDIATE_N", 5000L)
+  K_sites <- .c2_core_int_env("ROCE_C2_CORE_INTERMEDIATE_K", 5L)
+  p <- .c2_core_int_env("ROCE_C2_CORE_INTERMEDIATE_P", 50L)
+  n_folds <- .c2_core_int_env("ROCE_C2_CORE_INTERMEDIATE_FOLDS", 10L)
+  nlambda_init <- .c2_core_int_env("ROCE_C2_CORE_INTERMEDIATE_NLAMBDA_INIT", 100L)
+  seed <- .c2_core_int_env("ROCE_C2_CORE_INTERMEDIATE_SEED", 240001L)
+  shift_strength <- .c2_core_num_env("ROCE_C2_CORE_INTERMEDIATE_SHIFT", 0.5)
+  n_cores <- .c2_core_int_env("ROCE_C2_CORE_INTERMEDIATE_CORES", 1L)
   nuisance_rule <- .c2_core_char_vector_env(
-    "FACEHD_C2_CORE_INTERMEDIATE_NUISANCE_RULE", "min", c("min", "1se")
+    "ROCE_C2_CORE_INTERMEDIATE_NUISANCE_RULE", "min", c("min", "1se")
   )[1L]
   aggregation_rule <- .c2_core_char_vector_env(
-    "FACEHD_C2_CORE_INTERMEDIATE_AGG_RULE", "min", c("min", "1se")
+    "ROCE_C2_CORE_INTERMEDIATE_AGG_RULE", "min", c("min", "1se")
   )[1L]
   methods <- .c2_core_char_vector_env(
-    "FACEHD_C2_CORE_INTERMEDIATE_METHODS",
+    "ROCE_C2_CORE_INTERMEDIATE_METHODS",
     c("target_only", "federated_dr", "pooled_dr", "tilted_aipw", "oracle_dr", "one_round_crossfit"),
     c("target_only", "sample_size", "inverse_variance", "federated_dr", "pooled_dr",
       "tilted_aipw", "oracle_dr", "one_round_crossfit", "two_round_crossfit")
@@ -458,7 +461,7 @@ test_that("c2-core-intermediate writes single-seed intermediate estimators", {
     outcome_type = "binary",
     heterogeneity_type = "none",
     shift_strength = shift_strength,
-    dgp_type = "facehd",
+    dgp_type = "roce",
     warn_ignored = FALSE
   )
   data_split <- split_data_by_site(data)
@@ -624,7 +627,7 @@ test_that("c2-core-intermediate writes single-seed intermediate estimators", {
 
 test_that("c2-core-intermediate static contract matches FACE/SMMAL-style implementation", {
   skip_if_not(.c2_core_intermediate_enabled(),
-              message = "set FACEHD_RUN_C2_CORE_INTERMEDIATE=1 or run with --filter c2-core-intermediate")
+              message = "set ROCE_RUN_C2_CORE_INTERMEDIATE=1 or run with --filter c2-core-intermediate")
 
   agg <- paste(readLines(.c2_core_repo_file("R", "cross_fitting_aggregation.R"),
                          warn = FALSE), collapse = "\n")

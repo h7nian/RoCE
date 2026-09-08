@@ -29,7 +29,7 @@ if (( cell_idx < 0 || cell_idx >= ${#CELLS[@]} )); then echo "ERR cell $cell_idx
 read -r CONFIG N_TOTAL <<< "${CELLS[${cell_idx}]}"
 SEED=$(( SEED_BASE + seed_in_cell ))
 
-echo "=== FACE-HD baseline comparison | task ${TASK_ID} | ${CONFIG} n=${N_TOTAL} K=${K} p=${P} seed=${SEED} | $(date) ==="
+echo "=== RoCE baseline comparison | task ${TASK_ID} | ${CONFIG} n=${N_TOTAL} K=${K} p=${P} seed=${SEED} | $(date) ==="
 Rscript --vanilla diagnosis/c2/comparison_coverage.R \
     "cmpcov" "${CONFIG}" "${N_TOTAL}" "${K}" "${P}" "${SEED}" "${N_FOLDS}"
 echo "=== task ${TASK_ID} done $(date) ==="

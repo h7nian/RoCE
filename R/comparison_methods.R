@@ -3,8 +3,10 @@
 # =============================================================================
 # TARGET ESTIMAND
 # =============================================================================
-# All methods estimate the POTENTIAL OUTCOME MEAN:
-#   μ¹_t = E_t[Y(1)]  (expected outcome under treatment at target site)
+# Arm-specific entry points estimate a target potential-outcome mean,
+# μᵃ_t = E_t[Y(a)]. run_all_comparisons_tate() pairs the two arm-specific
+# influence blocks before estimating the target average treatment effect,
+# τ_t = μ¹_t - μ⁰_t, so the cross-arm covariance is retained.
 # =============================================================================
 #
 # This file contains multi-site estimators that aggregate across sites:
@@ -19,36 +21,498 @@
 # Target-only estimators are in estimators_target.R.
 # Oracle estimator is in estimators_oracle.R.
 
+.name_influence_blocks <- function(blocks, block_names) {
+  if (length(blocks) != length(block_names)) {
+    stop("influence block names and blocks must have the same length.",
+         call. = FALSE)
+  }
+  stats::setNames(blocks, block_names)
+}
+
+.comparison_influence_variance <- function(blocks) {
+  if (length(blocks) == 0L) {
+    stop("at least one influence block is required.", call. = FALSE)
+  }
+  sum(vapply(blocks, function(block) {
+    influence <- as.numeric(block$influence)
+    weight <- as.numeric(block$weight)
+    if (length(weight) != 1L || !is.finite(weight) ||
+        length(influence) == 0L || any(!is.finite(influence))) {
+      stop("comparison influence blocks must contain finite influence vectors and scalar weights.",
+           call. = FALSE)
+    }
+    centered <- influence - mean(influence)
+    weight^2 * mean(centered^2) / length(centered)
+  }, numeric(1L)))
+}
+
+.density_ratio_clipping_diagnostics <- function(weights_by_site) {
+  empty <- list(
+    dr_weight_n = NA_integer_,
+    dr_weight_n_clipped = NA_integer_,
+    dr_weight_fraction_clipped = NA_real_,
+    dr_weight_max_site_fraction_clipped = NA_real_,
+    dr_weight_min_before_clipping = NA_real_,
+    dr_weight_max_before_clipping = NA_real_
+  )
+  if (is.null(weights_by_site) || length(weights_by_site) == 0L) {
+    return(empty)
+  }
+  diagnostics <- lapply(
+    weights_by_site,
+    function(weights) attr(weights, "clipping_diagnostics", exact = TRUE)
+  )
+  if (any(vapply(diagnostics, is.null, logical(1L)))) {
+    return(empty)
+  }
+  required <- c(
+    "n", "n_clipped", "fraction_clipped", "preclip_min", "preclip_max"
+  )
+  invalid <- vapply(diagnostics, function(diagnostic) {
+    if (!is.list(diagnostic) ||
+        length(setdiff(required, names(diagnostic))) > 0L) {
+      return(TRUE)
+    }
+    values <- stats::setNames(suppressWarnings(as.numeric(unlist(
+      diagnostic[required], use.names = FALSE
+    ))), required)
+    if (length(values) != length(required) || any(!is.finite(values))) {
+      return(TRUE)
+    }
+    n <- values[["n"]]
+    n_clipped <- values[["n_clipped"]]
+    fraction <- values[["fraction_clipped"]]
+    n < 1 || n != floor(n) || n_clipped < 0 ||
+      n_clipped != floor(n_clipped) || n_clipped > n ||
+      fraction < 0 || fraction > 1 ||
+      abs(fraction - n_clipped / n) > 1e-12 ||
+      values[["preclip_min"]] <= 0 ||
+      values[["preclip_max"]] < values[["preclip_min"]]
+  }, logical(1L))
+  if (any(invalid)) {
+    stop(
+      "density-ratio clipping metadata are incomplete or inconsistent.",
+      call. = FALSE
+    )
+  }
+  n <- sum(vapply(diagnostics, `[[`, numeric(1L), "n"))
+  n_clipped <- sum(vapply(diagnostics, `[[`, numeric(1L), "n_clipped"))
+  list(
+    dr_weight_n = as.integer(n),
+    dr_weight_n_clipped = as.integer(n_clipped),
+    dr_weight_fraction_clipped = n_clipped / n,
+    dr_weight_max_site_fraction_clipped = max(vapply(
+      diagnostics, `[[`, numeric(1L), "fraction_clipped"
+    )),
+    dr_weight_min_before_clipping = min(vapply(
+      diagnostics, `[[`, numeric(1L), "preclip_min"
+    )),
+    dr_weight_max_before_clipping = max(vapply(
+      diagnostics, `[[`, numeric(1L), "preclip_max"
+    ))
+  )
+}
+
+.combine_comparison_arms <- function(
+    mu1_result, mu0_result, method,
+    variance_method = c("bootstrap", "analytic"),
+    n_bootstrap = BOOTSTRAP_REPLICATES_DEFAULT) {
+  variance_method <- match.arg(variance_method)
+  blocks1 <- mu1_result$influence_blocks
+  blocks0 <- mu0_result$influence_blocks
+  if (is.null(blocks1) || is.null(blocks0)) {
+    stop(sprintf(
+      "%s does not expose both arm-specific influence blocks.", method
+    ), call. = FALSE)
+  }
+  if (is.null(names(blocks1)) || is.null(names(blocks0)) ||
+      !setequal(names(blocks1), names(blocks0))) {
+    stop(sprintf(
+      "%s arm-specific influence blocks have inconsistent site names.", method
+    ), call. = FALSE)
+  }
+
+  blocks0 <- blocks0[names(blocks1)]
+  tate_blocks <- Map(function(block1, block0) {
+    influence1 <- as.numeric(block1$influence)
+    influence0 <- as.numeric(block0$influence)
+    if (length(influence1) != length(influence0)) {
+      stop(sprintf(
+        "%s arm-specific influence blocks have inconsistent lengths.", method
+      ), call. = FALSE)
+    }
+    list(
+      influence = as.numeric(block1$weight) * influence1 -
+        as.numeric(block0$weight) * influence0,
+      weight = 1
+    )
+  }, blocks1, blocks0)
+  names(tate_blocks) <- names(blocks1)
+
+  mu1_influence_variance <- .comparison_influence_variance(blocks1)
+  mu0_influence_variance <- .comparison_influence_variance(blocks0)
+  analytic_variance <- max(
+    .comparison_influence_variance(tate_blocks), VARIANCE_MIN
+  )
+  cross_arm_covariance <- (
+    mu1_influence_variance + mu0_influence_variance - analytic_variance
+  ) / 2
+  cross_arm_correlation <- cross_arm_covariance / sqrt(
+    max(mu1_influence_variance, VARIANCE_MIN) *
+      max(mu0_influence_variance, VARIANCE_MIN)
+  )
+  variance_result <- .resolve_comparison_variance(
+    analytic_variance = analytic_variance,
+    blocks = tate_blocks,
+    variance_method = variance_method,
+    n_bootstrap = n_bootstrap
+  )
+  estimate <- as.numeric(mu1_result$estimate - mu0_result$estimate)
+  dr_diagnostics1 <- mu1_result$components$dr_weight_diagnostics
+  dr_diagnostics0 <- mu0_result$components$dr_weight_diagnostics
+  if (!is.null(dr_diagnostics1) && !is.null(dr_diagnostics0) &&
+      !identical(dr_diagnostics1, dr_diagnostics0)) {
+    stop(sprintf(
+      "%s treatment arms carry inconsistent density-ratio diagnostics.",
+      method
+    ), call. = FALSE)
+  }
+  dr_diagnostics <- dr_diagnostics1 %||% dr_diagnostics0 %||% NULL
+
+  list(
+    estimate = estimate,
+    variance = variance_result$variance,
+    se = variance_result$se,
+    method = method,
+    n = max(mu1_result$n %||% 0L, mu0_result$n %||% 0L),
+    influence_blocks = tate_blocks,
+    components = list(
+      estimand = "TATE",
+      variance_method = variance_result$variance_method,
+      variance_analytic = variance_result$variance_analytic,
+      se_analytic = variance_result$se_analytic,
+      se_bootstrap = variance_result$se_bootstrap,
+      n_bootstrap = variance_result$n_bootstrap,
+      mu1_estimate = mu1_result$estimate,
+      mu0_estimate = mu0_result$estimate,
+      mu1_reported_se = mu1_result$se,
+      mu0_reported_se = mu0_result$se,
+      mu1_influence_se = sqrt(mu1_influence_variance),
+      mu0_influence_se = sqrt(mu0_influence_variance),
+      cross_arm_covariance = cross_arm_covariance,
+      cross_arm_correlation = cross_arm_correlation,
+      dr_weight_diagnostics = dr_diagnostics
+    )
+  )
+}
+
+
+#' Run deterministic independent fits across named sites
+#'
+#' @param sites Character site identifiers.
+#' @param fit_function Function accepting one site identifier.
+#' @param n_cores Number of independent fits to run in parallel.
+#' @return Named list of site-level results.
+#' @keywords internal
+.parallel_site_fits <- function(sites, fit_function, n_cores = 1L) {
+  sites <- as.character(sites)
+  if (length(sites) == 0L) {
+    return(stats::setNames(list(), character(0)))
+  }
+  actual_cores <- min(setup_parallel(n_cores), length(sites))
+  # Give every site an isolated seed so fold construction is identical under
+  # sequential and forked execution. Restore the parent to the state just after
+  # seed allocation; fork bookkeeping must not perturb downstream bootstraps.
+  site_seeds <- stats::setNames(
+    sample.int(.Machine$integer.max, length(sites)),
+    sites
+  )
+  rng_state_after_seed_allocation <- get(
+    ".Random.seed", envir = globalenv(), inherits = FALSE
+  )
+  on.exit(
+    assign(
+      ".Random.seed", rng_state_after_seed_allocation,
+      envir = globalenv()
+    ),
+    add = TRUE
+  )
+  site_fits <- parallel_lapply(sites, function(site) {
+    with_seed(site_seeds[[site]], fit_function(site))
+  }, n_cores = actual_cores)
+  stats::setNames(site_fits, sites)
+}
 
 #' Compute site-level AIPW fits once for naive comparison methods
 #'
 #' Internal helper used by sample-size and inverse-variance baselines to avoid
 #' duplicated nuisance-model fitting work.
 #'
-#' @param data_split split data by site
-#' @param family GLM family
-#' @param use_rcal Logical
-#' @param use_crossfit Logical
-#' @param n_folds Optional number of folds
-#' @param A_val Treatment value
-#' @return Named list of per-site fit_site_aipw outputs
+#' @param data_split Split data by site.
+#' @param family GLM family.
+#' @param use_rcal Logical.
+#' @param use_crossfit Logical.
+#' @param n_folds Optional number of folds.
+#' @param A_val Treatment value.
+#' @param n_cores Number of site-level fits to run in parallel.
+#' @return Named list of per-site \code{fit_site_aipw} outputs.
+#' @keywords internal
 .fit_site_aipw_all_sites <- function(data_split, family = "binomial",
                                      use_rcal = FALSE, use_crossfit = TRUE,
-                                     n_folds = NULL, A_val = 1L) {
+                                     n_folds = NULL, A_val = 1L,
+                                     n_cores = 1L) {
   sites <- names(data_split)
-  site_fits <- setNames(vector("list", length(sites)), sites)
-  for (site in sites) {
-    site_data <- data_split[[site]]
-    site_fits[[site]] <- fit_site_aipw(
-      site_data,
+  .parallel_site_fits(sites, function(site) {
+    fit_site_aipw(
+      data_split[[site]],
       family = family,
       use_rcal = use_rcal,
       use_crossfit = use_crossfit,
       n_folds = n_folds,
       A_val = A_val
     )
+  }, n_cores = n_cores)
+}
+
+
+#' Fit source-to-target density-ratio weights once for DR baselines
+#'
+#' Federated-DR and Pooled-DR use the same density-ratio weights, and those
+#' weights do not depend on the treatment arm. This internal helper avoids
+#' repeating the same cross-validation up to four times per source in a TATE
+#' comparison.
+#'
+#' @param data_split Split data by site.
+#' @param dr_lambda Optional fixed density-ratio penalty.
+#' @param dr_lambda_rule Density-ratio CV rule.
+#' @param n_cores Number of source fits to run in parallel.
+#' @param dr_weights_by_site Optional precomputed named list.
+#' @param caller Calling function name used in validation errors.
+#' @return Named list of normalized density-ratio weight vectors.
+.resolve_dr_weights_by_site <- function(
+    data_split, dr_lambda = NULL, dr_lambda_rule = c("min", "1se"),
+    n_cores = 1L, dr_weights_by_site = NULL,
+    caller = ".resolve_dr_weights_by_site") {
+  dr_lambda_rule <- .match_nuisance_lambda_rule(
+    dr_lambda_rule, caller, arg = "dr_lambda_rule"
+  )
+  source_sites <- setdiff(names(data_split), "t")
+
+  if (is.null(dr_weights_by_site)) {
+    if (length(source_sites) == 0L) {
+      return(stats::setNames(list(), character(0)))
+    }
+    target_covariates <- as.matrix(data_split[["t"]]$Z_site)
+    actual_cores <- min(setup_parallel(n_cores), length(source_sites))
+    # Density-ratio CV may use random fold assignment. Give every source a
+    # stable isolated seed and restore the caller's RNG exactly, so caching and
+    # source-level parallelism cannot perturb subsequent outcome-model CV.
+    had_rng_state <- exists(
+      ".Random.seed", envir = globalenv(), inherits = FALSE
+    )
+    if (had_rng_state) {
+      rng_state <- get(".Random.seed", envir = globalenv(), inherits = FALSE)
+    }
+    on.exit({
+      if (had_rng_state) {
+        assign(".Random.seed", rng_state, envir = globalenv())
+      } else if (exists(
+        ".Random.seed", envir = globalenv(), inherits = FALSE
+      )) {
+        rm(".Random.seed", envir = globalenv())
+      }
+    }, add = TRUE)
+    source_seeds <- stats::setNames(
+      104729L + seq_along(source_sites),
+      source_sites
+    )
+    fitted_weights <- parallel_lapply(source_sites, function(site) {
+      with_seed(source_seeds[[site]], {
+        calculate_dr_weights(
+          Z_source = as.matrix(data_split[[site]]$Z_site),
+          Z_target = target_covariates,
+          lambda = dr_lambda,
+          lambda_rule = dr_lambda_rule
+        )
+      })
+    }, n_cores = actual_cores)
+    return(stats::setNames(fitted_weights, source_sites))
   }
-  site_fits
+
+  if (!is.list(dr_weights_by_site) ||
+      is.null(names(dr_weights_by_site)) ||
+      anyDuplicated(names(dr_weights_by_site))) {
+    stop(
+      caller,
+      ": dr_weights_by_site must be a uniquely named list.",
+      call. = FALSE
+    )
+  }
+  missing_sites <- setdiff(source_sites, names(dr_weights_by_site))
+  extra_sites <- setdiff(names(dr_weights_by_site), source_sites)
+  if (length(missing_sites) > 0L || length(extra_sites) > 0L) {
+    stop(
+      sprintf(
+        "%s: dr_weights_by_site names must match source sites; missing={%s}, extra={%s}.",
+        caller,
+        paste(missing_sites, collapse = ","),
+        paste(extra_sites, collapse = ",")
+      ),
+      call. = FALSE
+    )
+  }
+  for (site in source_sites) {
+    weights <- dr_weights_by_site[[site]]
+    expected_length <- data_split[[site]]$n
+    if (!is.numeric(weights) || length(weights) != expected_length ||
+        any(!is.finite(weights)) || any(weights <= 0)) {
+      stop(
+        sprintf(
+          "%s: density-ratio weights for source '%s' must contain %d positive finite values.",
+          caller, site, expected_length
+        ),
+        call. = FALSE
+      )
+    }
+  }
+  dr_weights_by_site[source_sites]
+}
+
+
+#' Fit reusable site-level components for the DR comparison estimators
+#'
+#' Federated-DR and Pooled-DR share the same source-level weighted AIPW fit and
+#' density-ratio influence correction. Computing those components once avoids
+#' duplicate high-dimensional nuisance CV and matrix solves.
+#'
+#' @param data_split Split data by site.
+#' @param dr_weights_by_site Validated source density-ratio weights.
+#' @param family Outcome GLM family.
+#' @param A_val Treatment arm.
+#' @param required_sites Sites needed by the caller.
+#' @param n_cores Number of independent site fits to run in parallel.
+#' @param dr_site_components Optional precomputed named list.
+#' @param caller Calling function name for validation errors.
+#' @return Named list of reusable target/source DR components.
+#' @keywords internal
+.resolve_dr_site_components <- function(
+    data_split, dr_weights_by_site, family = "binomial", A_val = 1L,
+    required_sites = names(data_split), n_cores = 1L,
+    dr_site_components = NULL, caller = ".resolve_dr_site_components") {
+  required_sites <- unique(as.character(required_sites))
+  unknown_sites <- setdiff(required_sites, names(data_split))
+  if (length(unknown_sites) > 0L) {
+    stop(
+      sprintf("%s: unknown required site(s): %s.", caller,
+              paste(unknown_sites, collapse = ", ")),
+      call. = FALSE
+    )
+  }
+
+  if (is.null(dr_site_components)) {
+    target_data <- data_split[["t"]]
+    Z_target <- as.matrix(target_data$Z_site)
+    mean_phi_target <- c(1, colMeans(Z_target))
+    Z_target_centered <- sweep(
+      cbind(1, Z_target), 2, mean_phi_target, "-"
+    )
+
+    return(.parallel_site_fits(required_sites, function(site) {
+      site_data <- data_split[[site]]
+      is_target <- identical(site, "t")
+      dr_weights <- if (is_target) NULL else dr_weights_by_site[[site]]
+      base_result <- calculate_weighted_site_aipw(
+        y = site_data$Y,
+        a = site_data$A,
+        X = as.matrix(site_data$W_outcome),
+        weights = dr_weights,
+        family = family,
+        A_val = A_val
+      )
+
+      if (is_target) {
+        return(list(
+          estimate = base_result$estimate,
+          variance = base_result$variance,
+          n = site_data$n,
+          varphi_ot = base_result$varphi_ot,
+          base_result = base_result
+        ))
+      }
+
+      Z_source <- as.matrix(site_data$Z_site)
+      Z_centered <- sweep(cbind(1, Z_source), 2, mean_phi_target, "-")
+      n_source <- site_data$n
+      d_alpha <- max(mean(dr_weights), DIVISION_FLOOR)
+      phi_centered <- base_result$phi - base_result$estimate
+      A_s <- -1 / d_alpha * colMeans(
+        as.numeric(dr_weights) * Z_centered * as.numeric(phi_centered)
+      )
+      # calculate_dr_weights() uses A_dummy = 1 for every source observation.
+      # Its score and Jacobian must therefore use the full source sample. The
+      # AIPW pseudo-outcome already carries the requested-arm indicator in its
+      # residual term.
+      density_score_weights <- as.numeric(dr_weights)
+      M_alpha <- t(Z_centered) %*%
+        (Z_centered * density_score_weights) /
+        max(1, n_source)
+      adjustment <- solve_with_ridge(M_alpha) %*% A_s
+      source_correction <- as.numeric(
+        density_score_weights * (Z_centered %*% adjustment)
+      )
+      target_correction <- -as.numeric(
+        Z_target_centered %*% adjustment
+      )
+      source_influence <-
+        as.numeric(base_result$varphi_ot) + source_correction
+      source_influence <- source_influence - mean(source_influence)
+
+      list(
+        estimate = base_result$estimate,
+        variance = mean(source_influence^2) / max(1, n_source),
+        n = n_source,
+        varphi_ot = source_influence,
+        target_if_component = target_correction,
+        source_if_correction = source_correction,
+        lambda = as.numeric(
+          attr(dr_weights, "lambda_used") %||% NA_real_
+        ),
+        base_result = base_result
+      )
+    }, n_cores = n_cores))
+  }
+
+  if (!is.list(dr_site_components) ||
+      is.null(names(dr_site_components)) ||
+      anyDuplicated(names(dr_site_components))) {
+    stop(
+      caller, ": dr_site_components must be a uniquely named list.",
+      call. = FALSE
+    )
+  }
+  missing_sites <- setdiff(required_sites, names(dr_site_components))
+  if (length(missing_sites) > 0L) {
+    stop(
+      sprintf("%s: dr_site_components is missing site(s): %s.", caller,
+              paste(missing_sites, collapse = ", ")),
+      call. = FALSE
+    )
+  }
+  required_fields <- c("estimate", "variance", "n", "varphi_ot")
+  for (site in required_sites) {
+    component <- dr_site_components[[site]]
+    missing_fields <- required_fields[
+      vapply(required_fields, function(field) is.null(component[[field]]), logical(1L))
+    ]
+    if (length(missing_fields) > 0L) {
+      stop(
+        sprintf("%s: component for site '%s' is missing field(s): %s.",
+                caller, site, paste(missing_fields, collapse = ", ")),
+        call. = FALSE
+      )
+    }
+  }
+  dr_site_components[required_sites]
 }
 
 
@@ -67,18 +531,22 @@
 #' @param use_crossfit Logical. If TRUE (default), use cross-fitted nuisances
 #'   for variance-valid inference (use_rcal is ignored in this mode).
 #' @param n_folds Number of cross-fitting folds (default uses data-driven value).
+#' @param A_val Treatment arm, either 0 or 1.
 #' @param site_fits Optional precomputed per-site outputs from
-#'   \\code{fit_site_aipw}. When provided, avoids refitting nuisances.
+#'   \code{fit_site_aipw}. When provided, avoids refitting nuisances.
 #' @param variance_method Standard-error method: \code{"bootstrap"} (default) uses the
 #'   multiplier (wild) bootstrap over influence-function blocks; \code{"analytic"} uses
 #'   the method's analytic variance.
+#' @param n_bootstrap Number of multiplier-bootstrap draws when
+#'   \code{variance_method = "bootstrap"}.
 #' @return estimate with variance
 #' @export
 estimate_sample_size_weighted <- function(data_split, family = "binomial",
                                           use_rcal = FALSE, use_crossfit = TRUE,
                                           n_folds = NULL, A_val = 1L,
                                           site_fits = NULL,
-                                          variance_method = c("bootstrap", "analytic")) {
+                                          variance_method = c("bootstrap", "analytic"),
+                                          n_bootstrap = BOOTSTRAP_REPLICATES_DEFAULT) {
   variance_method <- match.arg(variance_method)
   validate_algorithm_inputs(data_split, family = family, A_val = A_val)
 
@@ -161,12 +629,16 @@ estimate_sample_size_weighted <- function(data_split, family = "binomial",
   # Variance: bootstrap (default) over per-site influence blocks with sample-size
   # weights, or the analytic random-effects (tau^2) variance. The bootstrap reproduces
   # the fixed-effects sampling variance and avoids the tau^2 inflation.
-  boot_blocks <- lapply(names(site_estimates), function(site) {
+  boot_blocks <- .name_influence_blocks(
+    lapply(names(site_estimates), function(site) {
     list(influence = site_fits[[site]]$varphi_ot,
          weight = site_estimates[[site]]$n / total_n)
-  })
+    }),
+    names(site_estimates)
+  )
   var_res <- .resolve_comparison_variance(
-    analytic_variance = var_re, blocks = boot_blocks, variance_method = variance_method
+    analytic_variance = var_re, blocks = boot_blocks,
+    variance_method = variance_method, n_bootstrap = n_bootstrap
   )
 
   return(list(
@@ -175,11 +647,13 @@ estimate_sample_size_weighted <- function(data_split, family = "binomial",
     se = var_res$se,
     method = "sample_size",
     n = total_n,
+    influence_blocks = boot_blocks,
     components = list(
       variance_method = var_res$variance_method,
       variance_analytic = var_res$variance_analytic,
       se_analytic = var_res$se_analytic,
       se_bootstrap = var_res$se_bootstrap,
+      n_bootstrap = var_res$n_bootstrap,
       var_fixed_effects = as.numeric(var_fe),
       var_random_effects = as.numeric(var_re),
       tau_squared = as.numeric(tau_sq),
@@ -212,18 +686,22 @@ estimate_sample_size_weighted <- function(data_split, family = "binomial",
 #' @param use_crossfit Logical. If TRUE (default), use cross-fitted nuisances
 #'   for variance-valid inference (use_rcal is ignored in this mode).
 #' @param n_folds Number of cross-fitting folds (default uses data-driven value).
+#' @param A_val Treatment arm, either 0 or 1.
 #' @param site_fits Optional precomputed per-site outputs from
-#'   \\code{fit_site_aipw}. When provided, avoids refitting nuisances.
+#'   \code{fit_site_aipw}. When provided, avoids refitting nuisances.
 #' @param variance_method Standard-error method: \code{"bootstrap"} (default) uses the
 #'   multiplier (wild) bootstrap over influence-function blocks; \code{"analytic"} uses
 #'   the method's analytic variance.
+#' @param n_bootstrap Number of multiplier-bootstrap draws when
+#'   \code{variance_method = "bootstrap"}.
 #' @return estimate with variance
 #' @export
 estimate_inverse_variance_weighted <- function(data_split, family = "binomial",
                                                use_rcal = FALSE, use_crossfit = TRUE,
                                                n_folds = NULL, A_val = 1L,
                                                site_fits = NULL,
-                                               variance_method = c("bootstrap", "analytic")) {
+                                               variance_method = c("bootstrap", "analytic"),
+                                               n_bootstrap = BOOTSTRAP_REPLICATES_DEFAULT) {
   variance_method <- match.arg(variance_method)
   validate_algorithm_inputs(data_split, family = family, A_val = A_val)
 
@@ -367,12 +845,17 @@ estimate_inverse_variance_weighted <- function(data_split, family = "binomial",
 
   # Variance: bootstrap (default) over per-site influence blocks with fixed-effects
   # precision weights, or the analytic random-effects variance above.
-  boot_blocks <- lapply(names(site_results), function(site) {
+  boot_blocks <- .name_influence_blocks(
+    lapply(seq_along(site_results), function(idx) {
+    site <- names(site_results)[idx]
     list(influence = site_fits[[site]]$varphi_ot,
-         weight = site_results[[site]]$precision / total_precision)
-  })
+         weight = weights[idx])
+    }),
+    names(site_results)
+  )
   var_res <- .resolve_comparison_variance(
-    analytic_variance = final_variance, blocks = boot_blocks, variance_method = variance_method
+    analytic_variance = final_variance, blocks = boot_blocks,
+    variance_method = variance_method, n_bootstrap = n_bootstrap
   )
 
   return(list(
@@ -381,11 +864,13 @@ estimate_inverse_variance_weighted <- function(data_split, family = "binomial",
     se = var_res$se,
     method = "inverse_variance",
     n = total_n,
+    influence_blocks = boot_blocks,
     components = list(
       variance_method = var_res$variance_method,
       variance_analytic = var_res$variance_analytic,
       se_analytic = var_res$se_analytic,
       se_bootstrap = var_res$se_bootstrap,
+      n_bootstrap = var_res$n_bootstrap,
       var_fixed_effects = var_fe,
       var_random_effects = if (tau_sq > 0) var_re else var_fe,
       var_pooled = pooled_variance,
@@ -403,13 +888,17 @@ estimate_inverse_variance_weighted <- function(data_split, family = "binomial",
 #' @param data_split split data by site
 #' @param family GLM family ("binomial", "gaussian", etc.). Default "binomial".
 #'        Supports both "binomial" (logit) and "gaussian" (identity).
+#' @param A_val Treatment arm, either 0 or 1.
 #' @param variance_method Standard-error method: \code{"bootstrap"} (default) uses the
 #'   multiplier (wild) bootstrap over influence-function blocks; \code{"analytic"} uses
 #'   the method's analytic variance.
+#' @param n_bootstrap Number of multiplier-bootstrap draws when
+#'   \code{variance_method = "bootstrap"}.
 #' @return estimate with variance
 #' @export
 estimate_tilted_aipw <- function(data_split, family = "binomial", A_val = 1L,
-                                 variance_method = c("bootstrap", "analytic")) {
+                                 variance_method = c("bootstrap", "analytic"),
+                                 n_bootstrap = BOOTSTRAP_REPLICATES_DEFAULT) {
   variance_method <- match.arg(variance_method)
   validate_algorithm_inputs(data_split, family = family, A_val = A_val)
   glm_spec <- resolve_glm_family(family)
@@ -433,7 +922,7 @@ estimate_tilted_aipw <- function(data_split, family = "binomial", A_val = 1L,
                             family = glm_spec$family)
     eta_t <- as.numeric(cbind(1, target_x) %*% or_fit_t$coefficients)
     m_hat_t <- switch(glm_spec$link,
-                      "logit" = 1 / (1 + exp(-eta_t)),
+                      "logit" = logistic(eta_t),
                       "identity" = eta_t,
                       eta_t)
     m_hat_t <- clip_outcome_pred(m_hat_t, glm_spec$family)
@@ -481,7 +970,7 @@ estimate_tilted_aipw <- function(data_split, family = "binomial", A_val = 1L,
                 family = glm_spec$family)
       eta_source <- as.numeric(cbind(1, X_matrix) %*% or_fit$coefficients)
       m1_pred <- switch(glm_spec$link,
-            "logit" = 1 / (1 + exp(-eta_source)),
+            "logit" = logistic(eta_source),
             "identity" = eta_source,
             eta_source)
       m1_pred <- clip_outcome_pred(m1_pred, glm_spec$family)
@@ -498,8 +987,7 @@ estimate_tilted_aipw <- function(data_split, family = "binomial", A_val = 1L,
       # Density ratio weights
       Z_int <- cbind(1, Z_source)
       eta_i <- as.numeric(Z_int %*% alpha)
-      w_i <- exp(-eta_i)
-      w_i <- w_i / mean(w_i)
+      w_i <- .normalize_log_weights(-eta_i, "estimate_tilted_aipw")
 
       # Step 4: AIPW estimate with nuisance-adjusted influence
       aipw_res <- calculate_aipw_influence(as.numeric(y_source), as.numeric(tr_source),
@@ -607,15 +1095,19 @@ estimate_tilted_aipw <- function(data_split, family = "binomial", A_val = 1L,
 
   # Variance: bootstrap (default) over the shared-target influence block plus per-source
   # influence blocks, or the analytic influence-function variance above.
-  boot_blocks <- c(
-    list(list(influence = aggregated_target_if, weight = 1)),
-    lapply(names(source_estimates), function(site) {
+  boot_blocks <- .name_influence_blocks(
+    c(
+      list(list(influence = aggregated_target_if, weight = 1)),
+      lapply(names(source_estimates), function(site) {
       list(influence = source_estimates[[site]]$varphi_ot,
            weight = source_estimates[[site]]$n / total_n)
-    })
+      })
+    ),
+    c("t", names(source_estimates))
   )
   var_res <- .resolve_comparison_variance(
-    analytic_variance = var_total, blocks = boot_blocks, variance_method = variance_method
+    analytic_variance = var_total, blocks = boot_blocks,
+    variance_method = variance_method, n_bootstrap = n_bootstrap
   )
 
   return(list(
@@ -624,11 +1116,13 @@ estimate_tilted_aipw <- function(data_split, family = "binomial", A_val = 1L,
     se = var_res$se,
     method = "tilted_aipw",
     n = total_n,
+    influence_blocks = boot_blocks,
     components = list(
       variance_method = var_res$variance_method,
       variance_analytic = var_res$variance_analytic,
       se_analytic = var_res$se_analytic,
       se_bootstrap = var_res$se_bootstrap,
+      n_bootstrap = var_res$n_bootstrap,
       target_weight = w_target,
       source_weights = w_sources,
       target_variance_component = var_target_component,
@@ -650,15 +1144,28 @@ estimate_tilted_aipw <- function(data_split, family = "binomial", A_val = 1L,
 #'   \code{"min"} (default) selects \code{lambda.min}; \code{"1se"} selects
 #'   \code{lambda.1se}.
 #' @param family GLM family ("binomial", "gaussian", etc.). Default "binomial".
+#' @param A_val Treatment arm, either 0 or 1.
 #' @param variance_method Standard-error method: \code{"bootstrap"} (default) uses the
 #'   multiplier (wild) bootstrap over influence-function blocks; \code{"analytic"} uses
 #'   the method's analytic variance.
+#' @param n_bootstrap Number of multiplier-bootstrap draws when
+#'   \code{variance_method = "bootstrap"}.
+#' @param dr_weights_by_site Optional named list of precomputed source-to-target
+#'   density-ratio weights.
+#' @param dr_site_components Optional reusable site-level weighted-AIPW and
+#'   density-ratio correction components.
+#' @param n_cores Number of independent source density-ratio fits to run in
+#'   parallel when \code{dr_weights_by_site} is not supplied.
 #' @return List with estimate, variance, se
 #' @export
 estimate_federated_dr <- function(data_split, dr_lambda = NULL,
                                   dr_lambda_rule = c("min", "1se"),
                                   A_val = 1L, family = "binomial",
-                                  variance_method = c("bootstrap", "analytic")) {
+                                  variance_method = c("bootstrap", "analytic"),
+                                  n_bootstrap = BOOTSTRAP_REPLICATES_DEFAULT,
+                                  dr_weights_by_site = NULL,
+                                  dr_site_components = NULL,
+                                  n_cores = 1L) {
   variance_method <- match.arg(variance_method)
   dr_lambda_rule <- .match_nuisance_lambda_rule(
     dr_lambda_rule, "estimate_federated_dr", arg = "dr_lambda_rule"
@@ -667,65 +1174,28 @@ estimate_federated_dr <- function(data_split, dr_lambda = NULL,
 
   target_data <- data_split[["t"]]
   source_sites <- setdiff(names(data_split), "t")
-  Z_target <- as.matrix(target_data$Z_site)
   n_target <- target_data$n
-  mean_phi_target <- c(1, colMeans(Z_target))
-  Z_target_int <- cbind(1, Z_target)
-  Z_target_centered <- sweep(Z_target_int, 2, mean_phi_target, "-")
-  
-  site_results <- list()
-  
-  # Target site: standard AIPW
-  target_res <- calculate_weighted_site_aipw(
-    y = target_data$Y, a = target_data$A,
-    X = as.matrix(target_data$W_outcome), weights = NULL, family = family, A_val = A_val
+  dr_weights_by_site <- .resolve_dr_weights_by_site(
+    data_split = data_split,
+    dr_lambda = dr_lambda,
+    dr_lambda_rule = dr_lambda_rule,
+    n_cores = n_cores,
+    dr_weights_by_site = dr_weights_by_site,
+    caller = "estimate_federated_dr"
   )
-  site_results[["t"]] <- list(
-    estimate = target_res$estimate,
-    variance = target_res$variance,
-    n = target_data$n,
-    varphi_ot = target_res$varphi_ot
-  )
+  dr_weight_diagnostics <-
+    .density_ratio_clipping_diagnostics(dr_weights_by_site)
   
-  # Source sites: DR-weighted AIPW
-  for (site in source_sites) {
-    source_data <- data_split[[site]]
-    Z_source <- as.matrix(source_data$Z_site)
-    
-    dr_weights <- calculate_dr_weights(
-      Z_source, Z_target, lambda = dr_lambda, lambda_rule = dr_lambda_rule
-    )
-    
-    source_res <- calculate_weighted_site_aipw(
-      y = source_data$Y, a = source_data$A,
-      X = as.matrix(source_data$W_outcome), weights = dr_weights, family = family, A_val = A_val
-    )
-
-    # First-order correction for density-ratio estimation effect.
-    # Mirrors the score-adjustment structure used in tilted_aipw.
-    n_source <- source_data$n
-    Z_int <- cbind(1, Z_source)
-    Z_int_centered <- sweep(Z_int, 2, mean_phi_target, "-")
-    d_alpha <- max(mean(dr_weights), DIVISION_FLOOR)
-    phi_centered <- source_res$phi - source_res$estimate
-    A_s <- -1 / d_alpha * colMeans(as.numeric(dr_weights) * Z_int_centered * as.numeric(phi_centered))
-    aw_i <- as.numeric(source_data$A == A_val) * as.numeric(dr_weights)
-    M_alpha <- t(Z_int_centered) %*% (Z_int_centered * aw_i) / max(1, n_source)
-    adj_alpha <- solve_with_ridge(M_alpha) %*% A_s
-    infl_alpha_source <- as.numeric(aw_i * (Z_int_centered %*% adj_alpha))
-    target_if_component <- -as.numeric(Z_target_centered %*% adj_alpha)
-    varphi_source <- as.numeric(source_res$varphi_ot) + infl_alpha_source
-    varphi_source <- varphi_source - mean(varphi_source)
-    source_variance <- mean(varphi_source^2) / max(1, n_source)
-    
-    site_results[[site]] <- list(
-      estimate = source_res$estimate,
-      variance = source_variance,
-      n = source_data$n,
-      varphi_ot = varphi_source,
-      target_if_component = target_if_component
-    )
-  }
+  site_results <- .resolve_dr_site_components(
+    data_split = data_split,
+    dr_weights_by_site = dr_weights_by_site,
+    family = family,
+    A_val = A_val,
+    required_sites = c("t", source_sites),
+    n_cores = n_cores,
+    dr_site_components = dr_site_components,
+    caller = "estimate_federated_dr"
+  )
   
   # Filter valid sites and aggregate with IVW
   valid_sites <- names(site_results)[sapply(site_results, function(x) 
@@ -772,15 +1242,20 @@ estimate_federated_dr <- function(data_split, dr_lambda = NULL,
 
   # Variance: bootstrap (default) over the shared-target influence block plus per-source
   # influence blocks (IVW weights), or the analytic influence-function variance above.
-  boot_blocks <- c(
-    list(list(influence = aggregated_target_if, weight = 1)),
-    lapply(setdiff(valid_sites, "t"), function(site) {
+  source_block_sites <- setdiff(valid_sites, "t")
+  boot_blocks <- .name_influence_blocks(
+    c(
+      list(list(influence = aggregated_target_if, weight = 1)),
+      lapply(source_block_sites, function(site) {
       list(influence = site_results[[site]]$varphi_ot,
            weight = weight_by_site[[site]])
-    })
+      })
+    ),
+    c("t", source_block_sites)
   )
   var_res <- .resolve_comparison_variance(
-    analytic_variance = variance, blocks = boot_blocks, variance_method = variance_method
+    analytic_variance = variance, blocks = boot_blocks,
+    variance_method = variance_method, n_bootstrap = n_bootstrap
   )
 
   return(list(
@@ -789,14 +1264,17 @@ estimate_federated_dr <- function(data_split, dr_lambda = NULL,
     se = var_res$se,
     method = "federated_dr",
     n = sum(sapply(site_results[valid_sites], function(x) x$n)),
+    influence_blocks = boot_blocks,
     components = list(
       variance_method = var_res$variance_method,
       variance_analytic = var_res$variance_analytic,
       se_analytic = var_res$se_analytic,
       se_bootstrap = var_res$se_bootstrap,
+      n_bootstrap = var_res$n_bootstrap,
       ivw_weights = weight_by_site,
       var_target_component = var_target_component,
-      var_source_component = var_source_component
+      var_source_component = var_source_component,
+      dr_weight_diagnostics = dr_weight_diagnostics
     )
   ))
 }
@@ -812,15 +1290,28 @@ estimate_federated_dr <- function(data_split, dr_lambda = NULL,
 #'   \code{"min"} (default) selects \code{lambda.min}; \code{"1se"} selects
 #'   \code{lambda.1se}.
 #' @param family GLM family ("binomial", "gaussian", etc.). Default "binomial".
+#' @param A_val Treatment arm, either 0 or 1.
 #' @param variance_method Standard-error method: \code{"bootstrap"} (default) uses the
 #'   multiplier (wild) bootstrap over influence-function blocks; \code{"analytic"} uses
 #'   the method's analytic variance.
+#' @param n_bootstrap Number of multiplier-bootstrap draws when
+#'   \code{variance_method = "bootstrap"}.
+#' @param dr_weights_by_site Optional named list of precomputed source-to-target
+#'   density-ratio weights.
+#' @param dr_site_components Optional reusable site-level weighted-AIPW and
+#'   density-ratio correction components.
+#' @param n_cores Number of independent source density-ratio fits to run in
+#'   parallel when \code{dr_weights_by_site} is not supplied.
 #' @return List with estimate, variance, se
 #' @export
 estimate_pooled_dr <- function(data_split, dr_lambda = NULL,
                                dr_lambda_rule = c("min", "1se"),
                                A_val = 1L, family = "binomial",
-                               variance_method = c("bootstrap", "analytic")) {
+                               variance_method = c("bootstrap", "analytic"),
+                               n_bootstrap = BOOTSTRAP_REPLICATES_DEFAULT,
+                               dr_weights_by_site = NULL,
+                               dr_site_components = NULL,
+                               n_cores = 1L) {
   variance_method <- match.arg(variance_method)
   dr_lambda_rule <- .match_nuisance_lambda_rule(
     dr_lambda_rule, "estimate_pooled_dr", arg = "dr_lambda_rule"
@@ -829,11 +1320,27 @@ estimate_pooled_dr <- function(data_split, dr_lambda = NULL,
 
   target_data <- data_split[["t"]]
   source_sites <- setdiff(names(data_split), "t")
-  Z_target <- as.matrix(target_data$Z_site)
   n_target <- target_data$n
-  mean_phi_target <- c(1, colMeans(Z_target))
-  Z_target_int <- cbind(1, Z_target)
-  Z_target_centered <- sweep(Z_target_int, 2, mean_phi_target, "-")
+  dr_weights_by_site <- .resolve_dr_weights_by_site(
+    data_split = data_split,
+    dr_lambda = dr_lambda,
+    dr_lambda_rule = dr_lambda_rule,
+    n_cores = n_cores,
+    dr_weights_by_site = dr_weights_by_site,
+    caller = "estimate_pooled_dr"
+  )
+  dr_weight_diagnostics <-
+    .density_ratio_clipping_diagnostics(dr_weights_by_site)
+  dr_site_components <- .resolve_dr_site_components(
+    data_split = data_split,
+    dr_weights_by_site = dr_weights_by_site,
+    family = family,
+    A_val = A_val,
+    required_sites = source_sites,
+    n_cores = n_cores,
+    dr_site_components = dr_site_components,
+    caller = "estimate_pooled_dr"
+  )
   
   # Pool all data
   all_y <- target_data$Y
@@ -846,39 +1353,21 @@ estimate_pooled_dr <- function(data_split, dr_lambda = NULL,
   
   for (site in source_sites) {
     source_data <- data_split[[site]]
-    Z_source <- as.matrix(source_data$Z_site)
-    
-    dr_weights <- calculate_dr_weights(
-      Z_source, Z_target, lambda = dr_lambda, lambda_rule = dr_lambda_rule
-    )
-
-    source_res <- calculate_weighted_site_aipw(
-      y = source_data$Y, a = source_data$A,
-      X = as.matrix(source_data$W_outcome), weights = dr_weights, family = family, A_val = A_val
-    )
-
-    # First-order correction for density-ratio estimation uncertainty
-    # (source-side and shared-target components).
+    dr_weights <- dr_weights_by_site[[site]]
+    source_component <- dr_site_components[[site]]
     n_source <- source_data$n
-    Z_int <- cbind(1, Z_source)
-    Z_int_centered <- sweep(Z_int, 2, mean_phi_target, "-")
-    d_alpha <- max(mean(dr_weights), DIVISION_FLOOR)
-    phi_centered <- source_res$phi - source_res$estimate
-    A_s <- -1 / d_alpha * colMeans(as.numeric(dr_weights) * Z_int_centered * as.numeric(phi_centered))
-    aw_i <- as.numeric(source_data$A == A_val) * as.numeric(dr_weights)
-    M_alpha <- t(Z_int_centered) %*% (Z_int_centered * aw_i) / max(1, n_source)
-    adj_alpha <- solve_with_ridge(M_alpha) %*% A_s
-    infl_alpha_source <- as.numeric(aw_i * (Z_int_centered %*% adj_alpha))
-    target_if_component <- -as.numeric(Z_target_centered %*% adj_alpha)
     
     idx_start <- row_cursor + 1L
     idx_end <- row_cursor + n_source
     row_cursor <- idx_end
     source_meta[[site]] <- list(
       idx = idx_start:idx_end,
-      infl_alpha_source = infl_alpha_source,
-      target_if_component = target_if_component,
-      lambda = as.numeric(attr(dr_weights, "lambda_used") %||% dr_lambda %||% NA_real_)
+      infl_alpha_source = source_component$source_if_correction,
+      target_if_component = source_component$target_if_component,
+      lambda = as.numeric(
+        source_component$lambda %||%
+          attr(dr_weights, "lambda_used") %||% dr_lambda %||% NA_real_
+      )
     )
     
     all_y <- c(all_y, source_data$Y)
@@ -915,12 +1404,14 @@ estimate_pooled_dr <- function(data_split, dr_lambda = NULL,
   # Variance: bootstrap (default) over per-site blocks of the stacked influence function
   # (one block per site, weight n_site/N_all so the wild bootstrap reproduces the
   # site-stratified within-group variance above), or that analytic variance.
-  boot_blocks <- lapply(unique(all_sites), function(site) {
+  block_sites <- unique(all_sites)
+  boot_blocks <- .name_influence_blocks(lapply(block_sites, function(site) {
     idx <- which(all_sites == site)
     list(influence = varphi_total[idx], weight = length(idx) / N_all)
-  })
+  }), block_sites)
   var_res <- .resolve_comparison_variance(
-    analytic_variance = final_variance, blocks = boot_blocks, variance_method = variance_method
+    analytic_variance = final_variance, blocks = boot_blocks,
+    variance_method = variance_method, n_bootstrap = n_bootstrap
   )
 
   source_lambdas <- setNames(
@@ -938,16 +1429,19 @@ estimate_pooled_dr <- function(data_split, dr_lambda = NULL,
     method = "pooled_dr",
     n = N_all,
     varphi_ot = varphi_total,
+    influence_blocks = boot_blocks,
     components = list(
       variance_method = var_res$variance_method,
       variance_analytic = var_res$variance_analytic,
       se_analytic = var_res$se_analytic,
       se_bootstrap = var_res$se_bootstrap,
+      n_bootstrap = var_res$n_bootstrap,
       n_target = n_target,
       n_source_total = N_all - n_target,
       mean_weight = mean(all_weights),
       source_lambdas = source_lambdas,
-      variance_wss = wss
+      variance_wss = wss,
+      dr_weight_diagnostics = dr_weight_diagnostics
     )
   ))
 }
@@ -963,67 +1457,268 @@ estimate_pooled_dr <- function(data_split, dr_lambda = NULL,
 #' @param use_crossfit Logical. If TRUE (default), use cross-fitted nuisances.
 #' @param n_folds Number of cross-fitting folds (default uses data-driven value).
 #' @param family GLM family ("binomial", "gaussian", etc.). Default "binomial".
+#' @param A_val Treatment arm, either 0 or 1.
 #' @param variance_method Standard-error method for the comparison baselines
 #'   (\code{sample_size}, \code{inverse_variance}, \code{federated_dr},
 #'   \code{pooled_dr}, \code{tilted_aipw}): \code{"bootstrap"} (default) uses the
 #'   multiplier (wild) bootstrap; \code{"analytic"} uses each method's analytic
 #'   variance. \code{target_only} always uses its analytic influence-function variance.
+#' @param n_bootstrap Number of multiplier-bootstrap draws used when
+#'   \code{variance_method = "bootstrap"}. The production default is 5,000.
+#' @param include_tilted Whether the optional unpenalized tilted-AIPW baseline
+#'   may be included. It is normally disabled in high-dimensional studies.
 #' @return Named list of per-method results. The five comparison baselines additionally
 #'   carry \code{components$variance_method}, \code{components$variance_analytic},
 #'   \code{components$se_analytic}, and \code{components$se_bootstrap}; the
 #'   \code{target_only} benchmark does not. Consumers should read \code{$estimate} and
 #'   \code{$se} uniformly and treat those four \code{components} fields as baseline-only.
+#' @param methods Optional character vector selecting methods to compute. The
+#'   default \code{NULL} computes all available methods (subject to
+#'   \code{include_tilted}). Restricting this vector avoids unnecessary nuisance
+#'   fits in large simulation studies.
+#' @param n_cores Number of cores used to fit the independent site-specific
+#'   AIPW nuisances shared by SS and IVW. Defaults to one.
+#' @param dr_weights_by_site Optional named list of source-to-target
+#'   density-ratio weights shared by Federated-DR and Pooled-DR.
+#' @param dr_site_components Optional precomputed site-level DR components
+#'   shared by Federated-DR and Pooled-DR for the requested treatment arm.
 #' @export
 run_all_comparisons <- function(data_split, use_rcal = FALSE,
                                 use_crossfit = TRUE, n_folds = NULL,
                                 family = "binomial", A_val = 1L,
-                                variance_method = c("bootstrap", "analytic")) {
+                                variance_method = c("bootstrap", "analytic"),
+                                n_bootstrap = BOOTSTRAP_REPLICATES_DEFAULT,
+                                include_tilted = TRUE,
+                                methods = NULL,
+                                n_cores = 1L,
+                                dr_weights_by_site = NULL,
+                                dr_site_components = NULL) {
   variance_method <- match.arg(variance_method)
+  n_bootstrap <- .validate_bootstrap_replicates(
+    n_bootstrap, "run_all_comparisons"
+  )
+  available <- c(
+    "target_only", "sample_size", "inverse_variance",
+    "federated_dr", "pooled_dr", "tilted_aipw"
+  )
+  requested <- if (is.null(methods)) available else unique(as.character(methods))
+  unknown <- setdiff(requested, available)
+  if (length(unknown) > 0L) {
+    stop(sprintf(
+      "run_all_comparisons: unknown method(s): %s.",
+      paste(unknown, collapse = ", ")
+    ))
+  }
+  if (!isTRUE(include_tilted)) {
+    requested <- setdiff(requested, "tilted_aipw")
+  }
 
-  precomputed_site_fits <- .fit_site_aipw_all_sites(
+  site_fit_methods <- c("sample_size", "inverse_variance")
+  precomputed_site_fits <- if (any(requested %in% site_fit_methods)) {
+    .fit_site_aipw_all_sites(
+      data_split = data_split,
+      family = family,
+      use_rcal = use_rcal,
+      use_crossfit = use_crossfit,
+      n_folds = n_folds,
+      A_val = A_val,
+      n_cores = n_cores
+    )
+  } else {
+    NULL
+  }
+  dr_methods <- c("federated_dr", "pooled_dr")
+  shared_dr_weights <- if (any(requested %in% dr_methods)) {
+    .resolve_dr_weights_by_site(
+      data_split = data_split,
+      n_cores = n_cores,
+      dr_weights_by_site = dr_weights_by_site,
+      caller = "run_all_comparisons"
+    )
+  } else {
+    NULL
+  }
+  shared_dr_components <- if (any(requested %in% dr_methods)) {
+    required_dr_sites <- if ("federated_dr" %in% requested) {
+      names(data_split)
+    } else {
+      setdiff(names(data_split), "t")
+    }
+    .resolve_dr_site_components(
+      data_split = data_split,
+      dr_weights_by_site = shared_dr_weights,
+      family = family,
+      A_val = A_val,
+      required_sites = required_dr_sites,
+      n_cores = n_cores,
+      dr_site_components = dr_site_components,
+      caller = "run_all_comparisons"
+    )
+  } else {
+    NULL
+  }
+
+  results <- list()
+  if ("target_only" %in% requested) {
+    target_result <- if (!is.null(precomputed_site_fits[["t"]])) {
+      precomputed_site_fits[["t"]]
+    } else {
+      estimate_target_only(
+        data_split, family, use_rcal = use_rcal,
+        use_crossfit = use_crossfit, n_folds = n_folds, A_val = A_val
+      )
+    }
+    target_result$influence_blocks <- list(
+      t = list(influence = target_result$varphi_ot, weight = 1)
+    )
+    results$target_only <- target_result
+  }
+  if ("sample_size" %in% requested) {
+    results$sample_size <- estimate_sample_size_weighted(
+      data_split, family, use_rcal = use_rcal,
+      use_crossfit = use_crossfit, n_folds = n_folds,
+      A_val = A_val, site_fits = precomputed_site_fits,
+      variance_method = variance_method,
+      n_bootstrap = n_bootstrap
+    )
+  }
+  if ("inverse_variance" %in% requested) {
+    results$inverse_variance <- estimate_inverse_variance_weighted(
+      data_split, family, use_rcal = use_rcal,
+      use_crossfit = use_crossfit, n_folds = n_folds,
+      A_val = A_val, site_fits = precomputed_site_fits,
+      variance_method = variance_method,
+      n_bootstrap = n_bootstrap
+    )
+  }
+  if ("federated_dr" %in% requested) {
+    results$federated_dr <- estimate_federated_dr(
+      data_split, dr_lambda = NULL, A_val = A_val, family = family,
+      variance_method = variance_method,
+      n_bootstrap = n_bootstrap,
+      dr_weights_by_site = shared_dr_weights,
+      dr_site_components = shared_dr_components,
+      n_cores = n_cores
+    )
+  }
+  if ("pooled_dr" %in% requested) {
+    results$pooled_dr <- estimate_pooled_dr(
+      data_split, dr_lambda = NULL, A_val = A_val, family = family,
+      variance_method = variance_method,
+      n_bootstrap = n_bootstrap,
+      dr_weights_by_site = shared_dr_weights,
+      dr_site_components = shared_dr_components,
+      n_cores = n_cores
+    )
+  }
+
+  # Tilted AIPW uses unpenalized MLE nuisances and is degenerate in high
+  # dimension (perfect separation / collinearity makes the MLE GLM fail), so it
+  # is opt-in. The main manuscript omits it; set include_tilted = TRUE to keep it.
+  if ("tilted_aipw" %in% requested) {
+    results$tilted_aipw <- estimate_tilted_aipw(
+      data_split, family, A_val = A_val, variance_method = variance_method,
+      n_bootstrap = n_bootstrap)
+  }
+
+  return(results)
+}
+
+#' Run comparison methods for the target average treatment effect
+#'
+#' Fits the two treatment arms and forms each TATE estimate and standard error
+#' from paired, site-aligned influence-function blocks. This retains the
+#' treatment--control covariance within every site.
+#'
+#' @inheritParams run_all_comparisons
+#' @param mu1_results Optional arm-1 results previously returned by
+#'   \code{run_all_comparisons}; supplying them avoids refitting that arm.
+#' @return Named list of TATE results for the requested methods.
+#' @export
+run_all_comparisons_tate <- function(
+    data_split, use_rcal = FALSE, use_crossfit = TRUE, n_folds = NULL,
+    family = "binomial",
+    variance_method = c("bootstrap", "analytic"),
+    n_bootstrap = BOOTSTRAP_REPLICATES_DEFAULT,
+    include_tilted = TRUE, methods = NULL, mu1_results = NULL,
+    n_cores = 1L, dr_weights_by_site = NULL) {
+  variance_method <- match.arg(variance_method)
+  n_bootstrap <- .validate_bootstrap_replicates(
+    n_bootstrap, "run_all_comparisons_tate"
+  )
+  available <- c(
+    "target_only", "sample_size", "inverse_variance",
+    "federated_dr", "pooled_dr", "tilted_aipw"
+  )
+  requested <- if (is.null(methods)) available else unique(as.character(methods))
+  unknown <- setdiff(requested, available)
+  if (length(unknown) > 0L) {
+    stop(sprintf(
+      "run_all_comparisons_tate: unknown method(s): %s.",
+      paste(unknown, collapse = ", ")
+    ), call. = FALSE)
+  }
+  if (!isTRUE(include_tilted)) {
+    requested <- setdiff(requested, "tilted_aipw")
+  }
+  dr_methods <- c("federated_dr", "pooled_dr")
+  shared_dr_weights <- if (any(requested %in% dr_methods)) {
+    .resolve_dr_weights_by_site(
+      data_split = data_split,
+      n_cores = n_cores,
+      dr_weights_by_site = dr_weights_by_site,
+      caller = "run_all_comparisons_tate"
+    )
+  } else {
+    NULL
+  }
+
+  if (is.null(mu1_results)) {
+    mu1_results <- run_all_comparisons(
+      data_split = data_split,
+      use_rcal = use_rcal,
+      use_crossfit = use_crossfit,
+      n_folds = n_folds,
+      family = family,
+      A_val = 1L,
+      variance_method = variance_method,
+      n_bootstrap = n_bootstrap,
+      include_tilted = include_tilted,
+      methods = requested,
+      n_cores = n_cores,
+      dr_weights_by_site = shared_dr_weights
+    )
+  }
+  missing_mu1 <- setdiff(requested, names(mu1_results))
+  if (length(missing_mu1) > 0L) {
+    stop(sprintf(
+      "run_all_comparisons_tate: mu1_results is missing method(s): %s.",
+      paste(missing_mu1, collapse = ", ")
+    ), call. = FALSE)
+  }
+
+  mu0_results <- run_all_comparisons(
     data_split = data_split,
-    family = family,
     use_rcal = use_rcal,
     use_crossfit = use_crossfit,
     n_folds = n_folds,
-    A_val = A_val
+    family = family,
+    A_val = 0L,
+    variance_method = variance_method,
+    n_bootstrap = n_bootstrap,
+    include_tilted = include_tilted,
+    methods = requested,
+    n_cores = n_cores,
+    dr_weights_by_site = shared_dr_weights
   )
 
-  results <- list(
-    # Target-only (benchmark; analytic influence-function variance)
-    target_only = estimate_target_only(
-      data_split, family, use_rcal = use_rcal,
-      use_crossfit = use_crossfit, n_folds = n_folds, A_val = A_val
-    ),
-
-    # Naive methods (may have bias due to different estimands)
-    sample_size = estimate_sample_size_weighted(
-      data_split, family, use_rcal = use_rcal,
-      use_crossfit = use_crossfit, n_folds = n_folds,
-      A_val = A_val, site_fits = precomputed_site_fits,
-      variance_method = variance_method
-    ),
-    inverse_variance = estimate_inverse_variance_weighted(
-      data_split, family, use_rcal = use_rcal,
-      use_crossfit = use_crossfit, n_folds = n_folds,
-      A_val = A_val, site_fits = precomputed_site_fits,
-      variance_method = variance_method
-    ),
-
-    # DR-corrected methods (theoretically correct, lambda selected via CV)
-    federated_dr = estimate_federated_dr(
-      data_split, dr_lambda = NULL, A_val = A_val, family = family,
-      variance_method = variance_method
-    ),
-    pooled_dr = estimate_pooled_dr(
-      data_split, dr_lambda = NULL, A_val = A_val, family = family,
-      variance_method = variance_method
-    ),
-
-    # Tilted AIPW
-    tilted_aipw = estimate_tilted_aipw(data_split, family, A_val = A_val,
-                                       variance_method = variance_method)
-  )
-
-  return(results)
+  stats::setNames(lapply(requested, function(method) {
+    .combine_comparison_arms(
+      mu1_result = mu1_results[[method]],
+      mu0_result = mu0_results[[method]],
+      method = method,
+      variance_method = variance_method,
+      n_bootstrap = n_bootstrap
+    )
+  }), requested)
 }

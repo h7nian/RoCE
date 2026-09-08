@@ -13,16 +13,12 @@
 #   - Step 4: Per-sample aggregated IF φ̂_{agg,i} on E_k
 #   - Step 5: Group-centered sample-level variance (1/N²)Σ_g Σ_{i∈g}(φ̂_{agg,i} - φ̄_g)²
 #
-#
-#' Aggregate fold-level estimates into a single cross-fitted estimate with
-#' sample-level (DML-style) variance
+#' Compute a site-stratified pseudo-value variance
 #'
-#' This is the final step of Version A aggregation.  It receives UNCENTERED
-#' per-sample IF values from all outer folds (each observation appears exactly
-#' once) and computes both the point estimate and variance from the same
-#' set of values:
-#'   mu_agg = Phi_bar = (1/N) sum Phi_i
-#'   Var    = (1/N^2) sum_g sum_{i in group g} (Phi_i - Phi_bar_g)^2
+#' Given observation-level pseudo-values from all outer folds (each
+#' observation appearing exactly once), compute
+#' \deqn{\operatorname{Var}(\bar\Phi)
+#' =N^{-2}\sum_g\sum_{i\in g}(\Phi_i-\bar\Phi_g)^2,}
 #' where groups are the target and each source site.
 #'
 #' Under the multi-sample (site-stratified) asymptotic regime (fixed sites,
@@ -31,22 +27,86 @@
 #' add an ANOVA between-site term that does not correspond to sampling
 #' variability.
 #'
-#' This keeps a unified estimating-equation workflow: both point estimate and
-#' variance are computed from the same set {Phi_i}.
+#' The caller computes the point estimate as the overall pseudo-value mean;
+#' this helper supplies its matching within-site-centered variance.
 #'
-#' @param fold_aggregated_estimates Vector of fold-specific aggregated estimates
-#' @param all_phi_agg Numeric vector of per-sample aggregated IF values
-#'   (length = N_all, each observation appearing exactly once across all folds)
-#' @param N_all Total sample size across all sites
-#' @param n_t Target site sample size
-#' @param n_source_full Numeric vector of source-site sample sizes (length K)
-#' @param fold_weights Matrix of fold-specific weights (n_folds x K)
-#' @param n_folds Number of cross-fitting folds
-#' @param verbose Print progress
-#' @return List with final_estimate, final_variance, se, ci_lower, ci_upper, average_weights
+#' @param phi Finite numeric vector of observation-level pseudo-values, ordered
+#'   contiguously by site.
+#' @param group_sizes Non-negative integer vector giving the number of entries
+#'   in \code{phi} contributed by each site.
+#' @return The site-stratified variance of the overall pseudo-value mean.
+#' @keywords internal
+.multisite_pseudovalue_variance <- function(phi, group_sizes) {
+  if (!is.numeric(phi) || any(!is.finite(phi))) {
+    stop(".multisite_pseudovalue_variance: phi must be a finite numeric vector.")
+  }
+  if (!is.numeric(group_sizes) || any(!is.finite(group_sizes)) ||
+      any(group_sizes < 0) || any(group_sizes != floor(group_sizes))) {
+    stop(".multisite_pseudovalue_variance: group_sizes must be non-negative integers.")
+  }
+  group_sizes <- as.integer(group_sizes)
+  N_all <- length(phi)
+  if (sum(group_sizes) != N_all) {
+    stop(".multisite_pseudovalue_variance: sum(group_sizes) must equal length(phi).")
+  }
+  if (N_all == 0L) return(0)
+
+  wss <- 0
+  start <- 1L
+  for (g_size in group_sizes) {
+    if (g_size > 0L) {
+      end <- start + g_size - 1L
+      phi_g <- phi[start:end]
+      wss <- wss + stable_sum_kahan((phi_g - mean(phi_g))^2)
+      start <- end + 1L
+    }
+  }
+  max(wss / (N_all^2), 0)
+}
+
+.pseudovalue_assignment_counts <- function(indices, values, size, label) {
+  if (length(size) != 1L || !is.finite(size) || size < 1L ||
+      size != floor(size)) {
+    stop(label, ": destination size must be one positive integer.",
+         call. = FALSE)
+  }
+  if (!is.numeric(indices) || length(indices) != length(values) ||
+      any(!is.finite(indices)) || any(indices != floor(indices)) ||
+      any(indices < 1L) || any(indices > size) ||
+      !is.numeric(values) || any(!is.finite(values))) {
+    stop(
+      label,
+      ": indices and finite pseudo-values must have matching valid lengths.",
+      call. = FALSE
+    )
+  }
+  tabulate(as.integer(indices), nbins = as.integer(size))
+}
+
+.assemble_target_pseudovalues <- function(fold_info, n_t, caller) {
+  target_values <- numeric(n_t)
+  assignment_count <- integer(n_t)
+  for (info in fold_info) {
+    values <- info$varphi_ot + info$fold_target_estimate
+    counts <- .pseudovalue_assignment_counts(
+      info$target_idx, values, n_t, caller
+    )
+    target_values[info$target_idx] <- values
+    assignment_count <- assignment_count + counts
+  }
+  if (any(assignment_count != 1L)) {
+    stop(
+      caller,
+      ": target folds must cover every observation exactly once.",
+      call. = FALSE
+    )
+  }
+  target_values
+}
+
 aggregate_fold_estimates <- function(fold_aggregated_estimates, all_phi_agg,
-                                         N_all, n_t, n_source_full,
-                                         fold_weights, n_folds, verbose) {
+                                     N_all, n_t, n_source_full,
+                                     fold_weights, n_folds, verbose) {
   # =========================================================================
   # UNIFIED ESTIMATING EQUATION (Pitfall 1 fix)
   # =========================================================================
@@ -86,21 +146,7 @@ aggregate_fold_estimates <- function(fold_aggregated_estimates, all_phi_agg,
     stop("Group sizes (n_t + sum(n_source_full)) must equal N_all")
   }
 
-  wss <- 0
-  start <- 1
-  for (g_size in group_sizes) {
-    if (g_size > 0) {
-      end <- start + g_size - 1
-      phi_g <- all_phi_agg[start:end]
-      phi_bar_g <- mean(phi_g)
-      wss <- wss + stable_sum_kahan((phi_g - phi_bar_g)^2)
-      start <- end + 1
-    }
-  }
-  final_variance <- wss / (N_all^2)
-
-  # Ensure non-negative variance
-  final_variance <- max(final_variance, 0)
+  final_variance <- .multisite_pseudovalue_variance(all_phi_agg, group_sizes)
 
   se <- sqrt(final_variance)
   ci_lower <- final_estimate - Z_ALPHA_05 * se
@@ -227,6 +273,120 @@ aggregate_fold_estimates <- function(fold_aggregated_estimates, all_phi_agg,
   )
 }
 
+.centered_second_moment <- function(x) {
+  if (length(x) == 0L) return(0)
+  mean((x - mean(x))^2)
+}
+
+.pool_fold_pairwise_estimates <- function(
+    mu_pred_matrix, delta_matrix, target_fold_sizes, source_fold_sizes) {
+  mu_pred_matrix <- as.matrix(mu_pred_matrix)
+  delta_matrix <- as.matrix(delta_matrix)
+  source_fold_sizes <- as.matrix(source_fold_sizes)
+  target_fold_sizes <- as.numeric(target_fold_sizes)
+  if (!identical(dim(mu_pred_matrix), dim(delta_matrix)) ||
+      !identical(dim(mu_pred_matrix), dim(source_fold_sizes)) ||
+      length(target_fold_sizes) != nrow(mu_pred_matrix) ||
+      any(!is.finite(mu_pred_matrix)) || any(!is.finite(delta_matrix)) ||
+      any(!is.finite(target_fold_sizes)) ||
+      any(!is.finite(source_fold_sizes)) ||
+      any(target_fold_sizes <= 0) || any(source_fold_sizes <= 0)) {
+    stop(paste0(
+      ".pool_fold_pairwise_estimates: component matrices and positive fold ",
+      "sizes must have matching dimensions."
+    ))
+  }
+  vapply(seq_len(ncol(mu_pred_matrix)), function(j) {
+    stats::weighted.mean(mu_pred_matrix[, j], target_fold_sizes) +
+      stats::weighted.mean(delta_matrix[, j], source_fold_sizes[, j])
+  }, numeric(1L))
+}
+
+.combine_tate_fold_info <- function(info1, info0, K) {
+  if (!identical(info1$target_idx, info0$target_idx)) {
+    stop(".combine_tate_fold_info: treated/control target evaluation indices differ.")
+  }
+  if (length(info1$source_idx) != K || length(info0$source_idx) != K) {
+    stop(".combine_tate_fold_info: source index lists do not match K.")
+  }
+  for (j in seq_len(K)) {
+    if (!identical(info1$source_idx[[j]], info0$source_idx[[j]])) {
+      stop(sprintf(
+        ".combine_tate_fold_info: treated/control source evaluation indices differ for source %d.",
+        j
+      ))
+    }
+  }
+
+  varphi_tau <- info1$varphi_ot - info0$varphi_ot
+  zeta_tau <- lapply(seq_len(K), function(j) {
+    info1$zeta_components[[j]] - info0$zeta_components[[j]]
+  })
+  xi_tau <- lapply(seq_len(K), function(j) {
+    info1$xi_components[[j]] - info0$xi_components[[j]]
+  })
+
+  V_t <- vapply(zeta_tau, .centered_second_moment, numeric(1L))
+  V_s <- vapply(xi_tau, .centered_second_moment, numeric(1L))
+  C_ot <- vapply(zeta_tau, function(z) {
+    calculate_covariance_term_cpp(varphi_tau, z)
+  }, numeric(1L))
+
+  list(
+    V_ot = .centered_second_moment(varphi_tau),
+    V_t = V_t,
+    V_s = V_s,
+    C_ot = C_ot,
+    C_cross = .compute_cross_covariance_matrix(zeta_tau, K),
+    fold_target_estimate = info1$fold_target_estimate - info0$fold_target_estimate,
+    fold_source_estimates = info1$fold_source_estimates - info0$fold_source_estimates,
+    mu_pred_ts = info1$mu_pred_ts - info0$mu_pred_ts,
+    delta_ts = info1$delta_ts - info0$delta_ts,
+    varphi_ot = varphi_tau,
+    zeta_components = zeta_tau,
+    xi_components = xi_tau,
+    source_variance_clip_diagnostics = list(
+      treated = info1$source_variance_clip_diagnostics,
+      control = info0$source_variance_clip_diagnostics
+    ),
+    target_idx = info1$target_idx,
+    source_idx = info1$source_idx
+  )
+}
+
+.compute_inner_source_arm_info <- function(
+    source_fold, target_fold, gamma, alpha,
+    M_tau_inference, family_int, link_int, A_val) {
+  correction <- calculate_correction_term_cpp(
+    source_fold$Z_site, source_fold$A, source_fold$Y,
+    gamma, alpha, source_fold$W_outcome, M_tau_inference,
+    family_int, link_int, A_val
+  )
+  delta <- correction$delta_ts
+  mu_pred <- mean(predict_glm_cpp(
+    target_fold$W_outcome, alpha, family_int, link_int
+  ))
+  source_variance <- calculate_source_variance_cpp(
+    source_fold$Z_site, source_fold$A, source_fold$Y,
+    gamma, alpha, delta, source_fold$W_outcome, M_tau_inference,
+    family_int, link_int, A_val
+  )
+  target_variance <- calculate_target_variance_cpp(
+    target_fold$W_outcome, alpha, mu_pred, family_int, link_int
+  )
+
+  list(
+    estimate = mu_pred + delta,
+    mu_pred = mu_pred,
+    delta = delta,
+    xi = source_variance$xi_components,
+    zeta = target_variance$zeta_components,
+    V_s = source_variance$V_s,
+    V_t = target_variance$V_t,
+    clip_diagnostics = source_variance$clip_diagnostics
+  )
+}
+
 .compute_phase1b_inner_fold_info <- function(k1, n_folds, source_sites, K,
                                              fold_results, target_folds,
                                              source_folds, M_tau_inference,
@@ -235,14 +395,6 @@ aggregate_fold_estimates <- function(fold_aggregated_estimates, all_phi_agg,
   n_inner <- length(secondary_folds)
   components <- setNames(vector("list", n_inner), paste0("k2_", secondary_folds))
 
-  V_ot_sum <- 0
-  V_t_sum <- numeric(K)
-  V_s_sum <- numeric(K)
-  C_ot_sum <- numeric(K)
-  C_cross_sum <- matrix(0, nrow = K, ncol = K)
-  target_est_sum <- 0
-  source_est_sum <- numeric(K)
-
   for (k2 in secondary_folds) {
     k2_key <- paste0("k2_", k2)
 
@@ -250,16 +402,18 @@ aggregate_fold_estimates <- function(fold_aggregated_estimates, all_phi_agg,
     varphi_ot_inner <- to_inner$varphi_ot
     V_ot_k2 <- to_inner$V_ot
     target_est_k2 <- to_inner$estimate
-    V_ot_sum <- V_ot_sum + V_ot_k2
-    target_est_sum <- target_est_sum + target_est_k2
 
     target_fold_k2 <- materialize_fold(target_folds, k2)
     V_t_k2 <- numeric(K)
     V_s_k2 <- numeric(K)
     C_ot_k2 <- numeric(K)
     source_est_k2 <- numeric(K)
+    mu_pred_k2 <- numeric(K)
+    delta_k2 <- numeric(K)
     n_s_val_k2 <- numeric(K)
     zeta_list_inner <- vector("list", K)
+    xi_list_inner <- vector("list", K)
+    source_idx_inner <- stats::setNames(vector("list", K), source_sites)
 
     for (i in seq_along(source_sites)) {
       s <- source_sites[i]
@@ -280,48 +434,35 @@ aggregate_fold_estimates <- function(fold_aggregated_estimates, all_phi_agg,
 
       source_fold_k2 <- materialize_fold(source_folds[[s]], k2)
       n_s_val_k2[i] <- source_fold_k2$n
+      source_idx_inner[[s]] <- source_fold_k2$original_idx
 
-      correction_inner <- calculate_correction_term_cpp(
-        source_fold_k2$Z_site, source_fold_k2$A, source_fold_k2$Y,
-        gamma_k2, alpha_k2, source_fold_k2$W_outcome, M_tau_inference,
-        family_int, link_int, A_val
+      arm_info <- .compute_inner_source_arm_info(
+        source_fold = source_fold_k2,
+        target_fold = target_fold_k2,
+        gamma = gamma_k2,
+        alpha = alpha_k2,
+        M_tau_inference = M_tau_inference,
+        family_int = family_int,
+        link_int = link_int,
+        A_val = A_val
       )
-      delta_inner <- correction_inner$delta_ts
-
-      mu_pred_inner <- mean(predict_glm_cpp(
-        target_fold_k2$W_outcome, alpha_k2, family_int, link_int
-      ))
-
-      source_est_k2[i] <- mu_pred_inner + delta_inner
-      source_est_sum[i] <- source_est_sum[i] + source_est_k2[i]
-
-      sv_inner <- calculate_source_variance_cpp(
-        source_fold_k2$Z_site, source_fold_k2$A, source_fold_k2$Y,
-        gamma_k2, alpha_k2, delta_inner,
-        source_fold_k2$W_outcome, M_tau_inference,
-        family_int, link_int, A_val
-      )
-      V_s_k2[i] <- sv_inner$V_s
-      V_s_sum[i] <- V_s_sum[i] + V_s_k2[i]
-
-      tv_inner <- calculate_target_variance_cpp(
-        target_fold_k2$W_outcome, alpha_k2, mu_pred_inner,
-        family_int, link_int
-      )
-      V_t_k2[i] <- tv_inner$V_t
-      V_t_sum[i] <- V_t_sum[i] + V_t_k2[i]
-      zeta_list_inner[[i]] <- tv_inner$zeta_components
-
-      C_ot_k2[i] <- calculate_covariance_term_cpp(
-        varphi_ot_inner, tv_inner$zeta_components
-      )
-      C_ot_sum[i] <- C_ot_sum[i] + C_ot_k2[i]
+      source_est_k2[i] <- arm_info$estimate
+      mu_pred_k2[i] <- arm_info$mu_pred
+      delta_k2[i] <- arm_info$delta
+      V_s_k2[i] <- arm_info$V_s
+      V_t_k2[i] <- arm_info$V_t
+      zeta_list_inner[[i]] <- arm_info$zeta
+      xi_list_inner[[i]] <- arm_info$xi
+      C_ot_k2[i] <- calculate_covariance_term_cpp(varphi_ot_inner, arm_info$zeta)
     }
 
     C_cross_k2 <- .compute_cross_covariance_matrix(zeta_list_inner, K)
-    C_cross_sum <- C_cross_sum + C_cross_k2
 
     components[[k2_key]] <- list(
+      outer_fold = as.integer(k1),
+      inner_fold = as.integer(k2),
+      target_idx = target_fold_k2$original_idx,
+      source_idx = source_idx_inner,
       V_ot = V_ot_k2,
       V_t = V_t_k2,
       V_s = V_s_k2,
@@ -329,21 +470,111 @@ aggregate_fold_estimates <- function(fold_aggregated_estimates, all_phi_agg,
       C_cross = C_cross_k2,
       avg_target_est = target_est_k2,
       avg_source_est = source_est_k2,
+      mu_pred_ts = mu_pred_k2,
+      delta_ts = delta_k2,
       n_t = target_fold_k2$n,
-      n_s = n_s_val_k2
+      n_s = n_s_val_k2,
+      varphi_ot = varphi_ot_inner,
+      zeta_components = zeta_list_inner,
+      xi_components = xi_list_inner
     )
   }
 
-  list(
-    V_ot = V_ot_sum / n_inner,
-    V_t = V_t_sum / n_inner,
-    V_s = V_s_sum / n_inner,
-    C_ot = C_ot_sum / n_inner,
-    C_cross = C_cross_sum / n_inner,
-    avg_target_est = target_est_sum / n_inner,
-    avg_source_est = source_est_sum / n_inner,
-    components = components
+  averaged <- .average_aggregation_components(components)
+  averaged$components <- components
+  averaged
+}
+
+.combine_tate_aggregation_component <- function(component1, component0, K) {
+  required <- c(
+    "avg_target_est", "avg_source_est", "n_t", "n_s",
+    "mu_pred_ts", "delta_ts",
+    "varphi_ot", "zeta_components", "xi_components"
   )
+  for (arm_component in list(component1, component0)) {
+    missing <- required[!vapply(required, function(name) {
+      !is.null(arm_component[[name]])
+    }, logical(1L))]
+    if (length(missing) > 0L) {
+      stop(sprintf(
+        ".combine_tate_aggregation_component: missing field(s): %s.",
+        paste(missing, collapse = ", ")
+      ))
+    }
+  }
+  if (!identical(component1$n_t, component0$n_t) ||
+      !identical(component1$n_s, component0$n_s)) {
+    stop(".combine_tate_aggregation_component: treated/control sample sizes differ.")
+  }
+  index_fields <- c("outer_fold", "inner_fold", "target_idx", "source_idx")
+  missing_indices <- index_fields[!vapply(index_fields, function(field) {
+    !is.null(component1[[field]]) && !is.null(component0[[field]])
+  }, logical(1L))]
+  if (length(missing_indices) > 0L) {
+    stop(sprintf(
+      ".combine_tate_aggregation_component: missing fold index field(s): %s.",
+      paste(missing_indices, collapse = ", ")
+    ))
+  }
+  if (!identical(component1$outer_fold, component0$outer_fold) ||
+      !identical(component1$inner_fold, component0$inner_fold) ||
+      !identical(component1$target_idx, component0$target_idx) ||
+      !identical(component1$source_idx, component0$source_idx)) {
+    stop(paste0(
+      ".combine_tate_aggregation_component: treated/control inner-fold ",
+      "observation indices differ."
+    ))
+  }
+
+  varphi_tau <- component1$varphi_ot - component0$varphi_ot
+  zeta_tau <- lapply(seq_len(K), function(j) {
+    component1$zeta_components[[j]] - component0$zeta_components[[j]]
+  })
+  xi_tau <- lapply(seq_len(K), function(j) {
+    component1$xi_components[[j]] - component0$xi_components[[j]]
+  })
+
+  list(
+    outer_fold = component1$outer_fold,
+    inner_fold = component1$inner_fold,
+    target_idx = component1$target_idx,
+    source_idx = component1$source_idx,
+    V_ot = .centered_second_moment(varphi_tau),
+    V_t = vapply(zeta_tau, .centered_second_moment, numeric(1L)),
+    V_s = vapply(xi_tau, .centered_second_moment, numeric(1L)),
+    C_ot = vapply(zeta_tau, function(zeta) {
+      calculate_covariance_term_cpp(varphi_tau, zeta)
+    }, numeric(1L)),
+    C_cross = .compute_cross_covariance_matrix(zeta_tau, K),
+    avg_target_est = component1$avg_target_est - component0$avg_target_est,
+    avg_source_est = component1$avg_source_est - component0$avg_source_est,
+    mu_pred_ts = component1$mu_pred_ts - component0$mu_pred_ts,
+    delta_ts = component1$delta_ts - component0$delta_ts,
+    n_t = component1$n_t,
+    n_s = component1$n_s,
+    varphi_ot = varphi_tau,
+    zeta_components = zeta_tau,
+    xi_components = xi_tau
+  )
+}
+
+.combine_tate_inner_fold_info <- function(inner_info1, inner_info0, K) {
+  component_names <- names(inner_info1$components)
+  if (!identical(component_names, names(inner_info0$components))) {
+    stop(".combine_tate_inner_fold_info: treated/control inner-fold names differ.")
+  }
+  components <- lapply(component_names, function(name) {
+    .combine_tate_aggregation_component(
+      inner_info1$components[[name]],
+      inner_info0$components[[name]],
+      K
+    )
+  })
+  names(components) <- component_names
+
+  averaged <- .average_aggregation_components(components)
+  averaged$components <- components
+  averaged
 }
 
 .average_aggregation_components <- function(components) {
@@ -351,6 +582,108 @@ aggregate_fold_estimates <- function(fold_aggregated_estimates, all_phi_agg,
     stop(".average_aggregation_components: components must be non-empty.")
   }
 
+  raw_fields <- c(
+    "mu_pred_ts", "delta_ts",
+    "varphi_ot", "zeta_components", "xi_components"
+  )
+  raw_component_presence <- vapply(components, function(component) {
+    all(vapply(raw_fields, function(field) {
+      !is.null(component[[field]])
+    }, logical(1L)))
+  }, logical(1L))
+  any_raw_field <- vapply(components, function(component) {
+    any(raw_fields %in% names(component))
+  }, logical(1L))
+  if (any(any_raw_field) && !all(raw_component_presence)) {
+    stop(paste0(
+      ".average_aggregation_components: raw influence fields must be ",
+      "present for either every component or none."
+    ))
+  }
+  has_raw_components <- all(raw_component_presence)
+
+  if (has_raw_components) {
+    K <- length(components[[1L]]$zeta_components)
+    if (any(vapply(components, function(component) {
+      length(component$n_s) != K ||
+        length(component$avg_source_est) != K ||
+        length(component$mu_pred_ts) != K ||
+        length(component$delta_ts) != K
+    }, logical(1L)))) {
+      stop(".average_aggregation_components: source vectors do not match K.")
+    }
+    n_t <- vapply(components, `[[`, numeric(1L), "n_t")
+    n_s <- do.call(rbind, lapply(components, `[[`, "n_s"))
+    if (ncol(n_s) != K || any(n_t <= 0) || any(n_s <= 0)) {
+      stop(".average_aggregation_components: invalid raw-component sample sizes.")
+    }
+    for (component in components) {
+      if (length(component$varphi_ot) != component$n_t ||
+          length(component$zeta_components) != K ||
+          length(component$xi_components) != K ||
+          any(vapply(component$zeta_components, length, integer(1L)) !=
+                component$n_t) ||
+          any(vapply(component$xi_components, length, integer(1L)) !=
+                component$n_s)) {
+        stop(paste0(
+          ".average_aggregation_components: raw influence components do not ",
+          "match their target/source sample sizes."
+        ))
+      }
+    }
+
+    varphi_ot <- unlist(
+      lapply(components, `[[`, "varphi_ot"), use.names = FALSE
+    )
+    zeta_components <- lapply(seq_len(K), function(j) {
+      unlist(lapply(components, function(component) {
+        component$zeta_components[[j]]
+      }), use.names = FALSE)
+    })
+    xi_components <- lapply(seq_len(K), function(j) {
+      unlist(lapply(components, function(component) {
+        component$xi_components[[j]]
+      }), use.names = FALSE)
+    })
+
+    target_estimates <- vapply(
+      components, `[[`, numeric(1L), "avg_target_est"
+    )
+    mu_pred_ts <- do.call(
+      rbind, lapply(components, `[[`, "mu_pred_ts")
+    )
+    delta_ts <- do.call(
+      rbind, lapply(components, `[[`, "delta_ts")
+    )
+    return(list(
+      V_ot = .centered_second_moment(varphi_ot),
+      V_t = vapply(zeta_components, .centered_second_moment, numeric(1L)),
+      V_s = vapply(xi_components, .centered_second_moment, numeric(1L)),
+      C_ot = vapply(zeta_components, function(zeta) {
+        calculate_covariance_term_cpp(varphi_ot, zeta)
+      }, numeric(1L)),
+      C_cross = .compute_cross_covariance_matrix(zeta_components, K),
+      avg_target_est = stats::weighted.mean(target_estimates, n_t),
+      avg_source_est = .pool_fold_pairwise_estimates(
+        mu_pred_ts, delta_ts, n_t, n_s
+      ),
+      mu_pred_ts = vapply(seq_len(K), function(j) {
+        stats::weighted.mean(mu_pred_ts[, j], n_t)
+      }, numeric(1L)),
+      delta_ts = vapply(seq_len(K), function(j) {
+        stats::weighted.mean(delta_ts[, j], n_s[, j])
+      }, numeric(1L)),
+      n_t = sum(n_t),
+      n_s = colSums(n_s),
+      varphi_ot = varphi_ot,
+      zeta_components = zeta_components,
+      xi_components = xi_components
+    ))
+  }
+
+  # Backward-compatible summary-only path used by lightweight validation
+  # helpers. Production inner-fold components always take the exact raw path
+  # above, which correctly handles fold-size rounding.
   list(
     V_ot = mean(vapply(components, `[[`, numeric(1L), "V_ot")),
     V_t = colMeans(do.call(rbind, lapply(components, `[[`, "V_t"))),
@@ -451,23 +784,54 @@ aggregate_fold_estimates <- function(fold_aggregated_estimates, all_phi_agg,
       warning(sprintf(".aggregation_lambda_grid: lambda_grid values were clipped to [%g, %g].",
                       LAMBDA_MIN, LAMBDA_MAX), call. = FALSE)
     }
+    if (anyDuplicated(clipped)) {
+      stop(
+        paste0(
+          ".aggregation_lambda_grid: lambda_grid values must remain unique ",
+          "after clipping."
+        ),
+        call. = FALSE
+      )
+    }
     return(clipped)
   }
 
-  lambda_max <- .aggregation_lambda_max(component)
-  if (lambda_max <= LAMBDA_MIN) {
-    grid <- LAMBDA_MIN
-  } else {
-    grid <- build_lambda_grid(
-      lambda_max = lambda_max,
-      lambda_min_ratio = LAMBDA_MIN_RATIO_LOW_DIM,
-      nlambda = LAMBDA_GRID_SIZE_STANDARD
-    )
-    grid <- unique(pmax(pmin(grid, LAMBDA_MAX), LAMBDA_MIN))
-  }
-  attr(grid, "lambda_max") <- lambda_max
-  attr(grid, "lambda_min") <- min(grid)
+  # FACE truncated-Wald penalty factor (Han et al. 2023, Remark 9): lambda is the
+  # inverse Wald penalty-activation threshold, not a variance-CV-tuned strength, so the
+  # default "grid" is the single pilot-selected value AGG_WALD_LAMBDA (= 1,
+  # i.e. activate its penalty when the discrepancy t-statistic exceeds 1).
+  # Crossing this threshold need not produce an exact zero. A
+  # variance grid + CV-min is inappropriate here (it would pick the penalty-
+  # inactive region and retain variance-reducing biased sources); see
+  # AGG_WALD_LAMBDA. .aggregation_lambda_max is retained for diagnostics/tests but
+  # unused on this default path. A user-supplied lambda_grid (handled above) still
+  # overrides for sensitivity analysis.
+  grid <- AGG_WALD_LAMBDA
+  attr(grid, "lambda_max") <- AGG_WALD_LAMBDA
+  attr(grid, "lambda_min") <- AGG_WALD_LAMBDA
   grid
+}
+
+.validate_aggregation_lambda_grid <- function(
+    lambda_selection, aggregation_lambda_grid, caller) {
+  if (is.null(aggregation_lambda_grid)) {
+    return(NULL)
+  }
+  if (!(is.character(lambda_selection) &&
+        length(lambda_selection) == 1L &&
+        identical(lambda_selection, "cv"))) {
+    stop(
+      sprintf(
+        "%s: aggregation_lambda_grid is used only when lambda_selection = 'cv'.",
+        caller
+      ),
+      call. = FALSE
+    )
+  }
+  .aggregation_lambda_grid(
+    component = NULL,
+    lambda_grid = aggregation_lambda_grid
+  )
 }
 
 .validation_aggregation_objective <- function(eta, component) {
@@ -478,6 +842,12 @@ aggregate_fold_estimates <- function(fold_aggregated_estimates, all_phi_agg,
     C_cross = component$C_cross, lambda = 0, mu_ot = component$avg_target_est
   )
   n_val <- component$n_t + sum(component$n_s)
+  # FACE Section 3.4: the validation criterion Q(eta) is the PURE validation
+  # variance (N_V * Var) with NO penalty term. The aggregation penalty enters
+  # only the training-fold optimization (eq:agg_penalized_objective); lambda selection picks
+  # the validation-variance-minimizing lambda. Bias detection lives entirely in
+  # the scale-free truncated-Wald penalty FACTOR (Han et al. 2023, Remark 9) used
+  # inside optimize_weights, not in Q -- so Q stays pure variance per the paper.
   n_val * var_term
 }
 
@@ -584,13 +954,28 @@ select_aggregation_lambda_inner_cv <- function(components, verbose = FALSE,
 }
 
 .compute_phase2_weights <- function(n_folds, inner_fold_info, fold_info,
-                                    n_t, n_source_full,
-                                    lambda_selection, crossfit_type, K,
-                                    verbose, lambda_rule = c("min", "1se")) {
+                                    lambda_selection, K,
+                                    verbose, lambda_rule = c("min", "1se"),
+                                    aggregation_lambda_grid = NULL,
+                                    screening_rule = c(
+                                      "soft_penalty", "hard_threshold"
+                                    )) {
   lambda_rule <- match.arg(lambda_rule)
+  screening_rule <- match.arg(screening_rule)
+  aggregation_lambda_grid <- .validate_aggregation_lambda_grid(
+    lambda_selection,
+    aggregation_lambda_grid,
+    ".compute_phase2_weights"
+  )
   fold_aggregated_estimates <- numeric(n_folds)
   fold_weights <- array(0, dim = c(n_folds, K))
   fold_lambdas <- numeric(n_folds)
+  fold_wald_statistics <- array(NA_real_, dim = c(n_folds, K))
+  fold_penalty_coefficients <- array(NA_real_, dim = c(n_folds, K))
+  fold_source_included <- array(TRUE, dim = c(n_folds, K))
+  fold_training_sample_sizes <- vector("list", n_folds)
+  fold_weight_optimizer_iterations <- integer(n_folds)
+  fold_weight_psd_ridge <- numeric(n_folds)
   fold_lambda_info <- vector("list", n_folds)
 
   for (k1 in 1:n_folds) {
@@ -598,13 +983,27 @@ select_aggregation_lambda_inner_cv <- function(components, verbose = FALSE,
 
     inner_v <- inner_fold_info[[k1]]
     variances_k1 <- list(V_ot = inner_v$V_ot, V_t = inner_v$V_t, V_s = inner_v$V_s)
-    n_samples_k1 <- list(n_t = as.numeric(n_t), n_s = as.numeric(n_source_full))
+    n_samples_k1 <- list(
+      n_t = as.numeric(inner_v$n_t),
+      n_s = as.numeric(inner_v$n_s)
+    )
+    if (length(n_samples_k1$n_t) != 1L ||
+        !is.finite(n_samples_k1$n_t) || n_samples_k1$n_t <= 0 ||
+        length(n_samples_k1$n_s) != K ||
+        any(!is.finite(n_samples_k1$n_s)) || any(n_samples_k1$n_s <= 0)) {
+      stop(sprintf(
+        ".compute_phase2_weights: invalid inner-training sample sizes for outer fold %d.",
+        k1
+      ), call. = FALSE)
+    }
+    fold_training_sample_sizes[[k1]] <- n_samples_k1
 
     lambda_reg_k1 <- if (is.character(lambda_selection) &&
                          length(lambda_selection) == 1L &&
                          identical(lambda_selection, "cv")) {
       select_aggregation_lambda_inner_cv(
         inner_v$components, verbose = FALSE,
+        lambda_grid = aggregation_lambda_grid,
         lambda_rule = lambda_rule
       )
     } else if (is.numeric(lambda_selection) &&
@@ -621,6 +1020,18 @@ select_aggregation_lambda_inner_cv <- function(components, verbose = FALSE,
            call. = FALSE)
     }
     fold_lambdas[k1] <- lambda_reg_k1
+    discrepancy_variance <- inner_v$V_ot / n_samples_k1$n_t +
+      inner_v$V_t / n_samples_k1$n_t +
+      inner_v$V_s / n_samples_k1$n_s -
+      2 * inner_v$C_ot / n_samples_k1$n_t
+    discrepancy_se <- sqrt(pmax(discrepancy_variance, VARIANCE_MIN))
+    fold_wald_statistics[k1, ] <-
+      abs(inner_v$avg_target_est - inner_v$avg_source_est) /
+      discrepancy_se
+    fold_penalty_coefficients[k1, ] <- pmax(
+      lambda_reg_k1 * fold_wald_statistics[k1, ] - 1,
+      0
+    )
     fold_lambda_info[[k1]] <- list(
       lambda_used = as.numeric(lambda_reg_k1),
       lambda_min = as.numeric(attr(lambda_reg_k1, "lambda_min") %||% lambda_reg_k1),
@@ -633,10 +1044,69 @@ select_aggregation_lambda_inner_cv <- function(components, verbose = FALSE,
       lambda_rule = attr(lambda_reg_k1, "lambda_rule") %||% "fixed"
     )
 
-    eta_k1 <- optimize_weights(
-      inner_v$avg_source_est, variances_k1, inner_v$C_ot, n_samples_k1,
-      lambda_reg_k1, inner_v$avg_target_est, inner_v$C_cross, clip_weights = FALSE
-    )
+    if (identical(screening_rule, "hard_threshold")) {
+      if (!is.finite(lambda_reg_k1) || lambda_reg_k1 <= 0) {
+        stop(
+          paste0(
+            ".compute_phase2_weights: hard_threshold requires a strictly ",
+            "positive aggregation lambda."
+          ),
+          call. = FALSE
+        )
+      }
+      included <- fold_wald_statistics[k1, ] <= 1 / lambda_reg_k1
+      fold_source_included[k1, ] <- included
+      eta_k1 <- numeric(K)
+      optimizer_iterations <- 1L
+      optimizer_psd_ridge <- 0
+      if (any(included)) {
+        included_indices <- which(included)
+        included_cross <- inner_v$C_cross[
+          included_indices, included_indices, drop = FALSE
+        ]
+        included_weights <- optimize_weights(
+          inner_v$avg_source_est[included_indices],
+          list(
+            V_ot = variances_k1$V_ot,
+            V_t = variances_k1$V_t[included_indices],
+            V_s = variances_k1$V_s[included_indices]
+          ),
+          inner_v$C_ot[included_indices],
+          list(
+            n_t = n_samples_k1$n_t,
+            n_s = n_samples_k1$n_s[included_indices]
+          ),
+          lambda = 0,
+          mu_ot = inner_v$avg_target_est,
+          C_cross = included_cross,
+          clip_weights = FALSE
+        )
+        eta_k1[included_indices] <- included_weights
+        optimizer_iterations <-
+          as.integer(attr(included_weights, "optimizer_iterations"))
+        optimizer_psd_ridge <- as.numeric(attr(included_weights, "psd_ridge"))
+      }
+      attr(eta_k1, "optimizer_iterations") <- optimizer_iterations
+      attr(eta_k1, "psd_ridge") <- optimizer_psd_ridge
+    } else {
+      eta_k1 <- optimize_weights(
+        inner_v$avg_source_est, variances_k1, inner_v$C_ot, n_samples_k1,
+        lambda_reg_k1, inner_v$avg_target_est, inner_v$C_cross,
+        clip_weights = FALSE
+      )
+    }
+    fold_weight_optimizer_iterations[k1] <-
+      as.integer(attr(eta_k1, "optimizer_iterations"))
+    fold_weight_psd_ridge[k1] <- as.numeric(attr(eta_k1, "psd_ridge"))
+    if (!is.finite(fold_weight_optimizer_iterations[k1]) ||
+        fold_weight_optimizer_iterations[k1] < 1L ||
+        !is.finite(fold_weight_psd_ridge[k1]) ||
+        fold_weight_psd_ridge[k1] < 0) {
+      stop(sprintf(
+        ".compute_phase2_weights: invalid optimizer diagnostics for outer fold %d.",
+        k1
+      ), call. = FALSE)
+    }
     fold_weights[k1, ] <- eta_k1
 
     fold_aggregated_estimates[k1] <- calculate_aggregated_estimate_cpp(
@@ -655,6 +1125,12 @@ select_aggregation_lambda_inner_cv <- function(components, verbose = FALSE,
     fold_weights = fold_weights,
     fold_aggregated_estimates = fold_aggregated_estimates,
     fold_lambdas = fold_lambdas,
+    fold_wald_statistics = fold_wald_statistics,
+    fold_penalty_coefficients = fold_penalty_coefficients,
+    fold_source_included = fold_source_included,
+    fold_training_sample_sizes = fold_training_sample_sizes,
+    fold_weight_optimizer_iterations = fold_weight_optimizer_iterations,
+    fold_weight_psd_ridge = fold_weight_psd_ridge,
     fold_lambda_info = fold_lambda_info
   )
 }
@@ -662,12 +1138,16 @@ select_aggregation_lambda_inner_cv <- function(components, verbose = FALSE,
 .empty_clip_diagnostics <- function() {
   list(
     n_obs = 0L,
+    logit_truncated = 0L,
+    logit_truncation_fraction = 0,
     weight_min_clipped = 0L,
     weight_max_clipped = 0L,
     ratio_min_clipped = 0L,
     ratio_max_clipped = 0L,
     max_abs_logit = 0,
     max_raw_weight = 0,
+    any_truncated = FALSE,
+    any_safety_clipped = FALSE,
     any_clipped = FALSE
   )
 }
@@ -675,7 +1155,8 @@ select_aggregation_lambda_inner_cv <- function(components, verbose = FALSE,
 .add_clip_diagnostics <- function(acc, diag) {
   if (is.null(diag)) return(acc)
 
-  for (nm in c("n_obs", "weight_min_clipped", "weight_max_clipped",
+  for (nm in c("n_obs", "logit_truncated",
+               "weight_min_clipped", "weight_max_clipped",
                "ratio_min_clipped", "ratio_max_clipped")) {
     acc[[nm]] <- as.integer(acc[[nm]]) + as.integer(diag[[nm]] %||% 0L)
   }
@@ -688,8 +1169,16 @@ select_aggregation_lambda_inner_cv <- function(components, verbose = FALSE,
                             as.numeric(diag$max_abs_logit  %||% 0))
   acc$max_raw_weight <- max(acc$max_raw_weight,
                             as.numeric(diag$max_raw_weight %||% 0))
-  acc$any_clipped <- (acc$weight_min_clipped + acc$weight_max_clipped +
-                        acc$ratio_min_clipped + acc$ratio_max_clipped) > 0L
+  acc$logit_truncation_fraction <- if (acc$n_obs > 0L) {
+    acc$logit_truncated / acc$n_obs
+  } else {
+    0
+  }
+  acc$any_truncated <- acc$logit_truncated > 0L
+  acc$any_safety_clipped <-
+    (acc$weight_min_clipped + acc$weight_max_clipped +
+       acc$ratio_min_clipped + acc$ratio_max_clipped) > 0L
+  acc$any_clipped <- acc$any_truncated || acc$any_safety_clipped
   acc
 }
 
@@ -710,6 +1199,30 @@ select_aggregation_lambda_inner_cv <- function(components, verbose = FALSE,
   list(total = total, by_source = by_source)
 }
 
+.combine_tate_clip_diagnostics <- function(mu1_result, mu0_result) {
+  arm_diagnostics <- list(
+    treated = mu1_result$clip_diagnostics,
+    control = mu0_result$clip_diagnostics
+  )
+  source_sites <- union(
+    names(arm_diagnostics$treated$by_source),
+    names(arm_diagnostics$control$by_source)
+  )
+  by_source <- setNames(vector("list", length(source_sites)), source_sites)
+  total <- .empty_clip_diagnostics()
+  for (source in source_sites) {
+    source_total <- .empty_clip_diagnostics()
+    for (arm in arm_diagnostics) {
+      source_total <- .add_clip_diagnostics(
+        source_total, arm$by_source[[source]]
+      )
+    }
+    by_source[[source]] <- source_total
+    total <- .add_clip_diagnostics(total, source_total)
+  }
+  list(total = total, by_source = by_source, by_arm = arm_diagnostics)
+}
+
 .compute_phase3_all_phi <- function(n_folds, fold_weights, fold_info,
                                     n_t, n_source_full, N_all,
                                     source_sites, K, verbose) {
@@ -717,6 +1230,10 @@ select_aggregation_lambda_inner_cv <- function(components, verbose = FALSE,
 
   phi_target <- numeric(n_t)
   phi_source <- lapply(seq_along(source_sites), function(j) numeric(n_source_full[j]))
+  target_assignment_count <- integer(n_t)
+  source_assignment_count <- lapply(
+    n_source_full, function(n_source) integer(n_source)
+  )
 
   for (k1 in 1:n_folds) {
     eta_k1 <- fold_weights[k1, ]
@@ -728,12 +1245,32 @@ select_aggregation_lambda_inner_cv <- function(components, verbose = FALSE,
     for (j in seq_len(K)) {
       psi_target <- psi_target + eta_k1[j] * (info$zeta_components[[j]] + info$mu_pred_ts[j])
     }
+    target_assignment_count <- target_assignment_count +
+      .pseudovalue_assignment_counts(
+        info$target_idx, psi_target, n_t,
+        ".compute_phase3_all_phi target"
+      )
     phi_target[info$target_idx] <- (N_all / n_t) * psi_target
 
     for (j in seq_len(K)) {
       psi_source_j <- eta_k1[j] * (info$xi_components[[j]] + info$delta_ts[j])
+      source_assignment_count[[j]] <- source_assignment_count[[j]] +
+        .pseudovalue_assignment_counts(
+          info$source_idx[[j]], psi_source_j, n_source_full[j],
+          sprintf(".compute_phase3_all_phi source %s", source_sites[[j]])
+        )
       phi_source[[j]][info$source_idx[[j]]] <- (N_all / n_source_full[j]) * psi_source_j
     }
+  }
+
+  if (any(target_assignment_count != 1L) ||
+      any(vapply(source_assignment_count, function(counts) {
+        any(counts != 1L)
+      }, logical(1L)))) {
+    stop(
+      ".compute_phase3_all_phi: folds must cover every site observation exactly once.",
+      call. = FALSE
+    )
   }
 
   all_phi_agg <- c(phi_target, unlist(phi_source))
@@ -745,26 +1282,26 @@ select_aggregation_lambda_inner_cv <- function(components, verbose = FALSE,
 #'
 #' Implements the Version A aggregation scheme:
 #'
-#' **Phase 1:** For each outer fold k, compute per-sample IF components
+#' \strong{Phase 1:} For each outer fold k, compute per-sample IF components
 #'   (varphi_ot, zeta, xi) and variance components (V_ot, V_t, V_s, C_ot,
 #'   C_cross) on evaluation fold E_k using out-of-fold nuisances theta^{(-k)}.
 #'
-#' **Phase 1b:** Inner-fold variance components (Version A Step 2). For each
+#' \strong{Phase 1b:} Inner-fold variance components (Version A Step 2). For each
 #'   outer fold k, estimate the variance--covariance components for weight
 #'   optimisation via inner M-fold cross-fitting within the training set T_k.
 #'   The inner folds coincide with the secondary folds (M = K_f - 1).
 #'
-#' **Phase 2:** Inner-fold weight estimation (Version A Step 3). For each fold k,
+#' \strong{Phase 2:} Inner-fold weight estimation (Version A Step 3). For each fold k,
 #'   eta^{(-k)} is estimated using variance components from Phase 1b. This
 #'   ensures weights are independent of E_k, enabling valid sample-level DML
 #'   variance estimation.
 #'
-#' **Phase 3:** Per-sample UNCENTERED IF. For each observation i in E_k,
+#' \strong{Phase 3:} Per-sample UNCENTERED IF. For each observation i in E_k,
 #'   compute the uncentered scaled IF Phi_i using fold-specific weights
 #'   eta^{(-k)} and out-of-fold nuisances. The point estimate is then
 #'   mu_agg = Phi_bar = (1/N) sum Phi_i.
 #'
-#' **Phase 4:** Sample-level (site-stratified) variance:
+#' \strong{Phase 4:} Sample-level (site-stratified) variance:
 #'   Var = (1/N^2) sum_g sum_{i in g} (Phi_i - Phi_bar_g)^2.
 #'
 #' @param data_split List of site data (from split_data_by_site)
@@ -776,10 +1313,21 @@ select_aggregation_lambda_inner_cv <- function(components, verbose = FALSE,
 #' @param fold_results List of per-fold estimation results
 #' @param n_folds Number of cross-fitting folds
 #' @param M_tau Truncation parameter for calibrated losses (training)
-#' @param M_tau_inference Truncation parameter for inference (default Inf = no truncation)
+#' @param M_tau_inference Truncation radius for inference (default
+#'   \code{M_TAU_INFERENCE_DEFAULT} = 5; a single SMMAL-style radius for fitting
+#'   and inference, applied to the density-ratio linear predictor in the
+#'   correction term and source variance)
 #' @param lambda_selection Lambda selection method ("cv" or numeric)
+#' @param lambda_rule Nuisance-model CV selection rule: \code{"min"} or
+#'   \code{"1se"}.
+#' @param aggregation_lambda_grid Optional positive numeric vector of
+#'   truncated-Wald multipliers used only when
+#'   \code{lambda_selection = "cv"}. Candidate weights are trained and scored
+#'   strictly within the outer-training sample.
 #' @param verbose Logical; print progress
-#' @param final_target_estimate Scalar; cross-fitted target-only estimate
+#' @param final_target_estimate Scalar fold-average target-only estimate,
+#'   retained as a diagnostic. The returned target-only point estimate and
+#'   variance are computed from observation-level cross-fitted pseudo-values.
 #' @param target_estimates Vector of per-fold target estimates
 #' @param source_estimates Named numeric vector of source estimates
 #' @param source_estimates_matrix Fold-by-source matrix of source estimates
@@ -787,6 +1335,7 @@ select_aggregation_lambda_inner_cv <- function(components, verbose = FALSE,
 #' @param algorithm_label Character; algorithm name for the result list
 #' @param family_int Integer code for GLM family (0=gaussian, 1=binomial)
 #' @param link_int Integer code for link function (0=identity, 1=logit)
+#' @param A_val Treatment arm, either 0 or 1.
 #' @return List matching the return value of the crossfit algorithms
 #' @export
 calculate_crossfit_aggregation <- function(data_split, target_data, source_sites, K,
@@ -800,9 +1349,12 @@ calculate_crossfit_aggregation <- function(data_split, target_data, source_sites
                                          source_estimates_matrix,
                                          crossfit_type, algorithm_label,
                                          family_int = 1L, link_int = 1L,
-                                         A_val = 1L) {
+                                         A_val = 1L,
+                                         aggregation_lambda_grid = NULL) {
   lambda_rule <- match.arg(lambda_rule)
   n_t <- target_data$n
+  source_estimates_matrix <- as.matrix(source_estimates_matrix)
+  colnames(source_estimates_matrix) <- source_sites
 
   # Total sample size across all sites
   n_source_full <- vapply(source_sites, function(s) data_split[[s]]$n, numeric(1L))
@@ -885,24 +1437,36 @@ calculate_crossfit_aggregation <- function(data_split, target_data, source_sites
   # For the weight optimization objective, we use:
   #   - Variance components (V_ot, V_t, V_s, C_ot, C_cross): inner-fold avg
   #   - Point estimates (mu_ot, mu_ts) for penalty: inner-fold avg
-  #   - Sample sizes: FULL sizes (n_t, n_sj) for overall variance optimization
+  #   - Sample sizes: sizes in T_{k1}, because both the source--target
+  #     discrepancy and its standard error are learned inside T_{k1}. With
+  #     balanced folds, multiplying every site size by the same training
+  #     fraction leaves N * Var(eta) unchanged, while correctly studentizing
+  #     the training-fold discrepancy.
   # ===========================================================================
   phase2_res <- .compute_phase2_weights(
     n_folds = n_folds,
     inner_fold_info = inner_fold_info,
     fold_info = fold_info,
-    n_t = n_t,
-    n_source_full = n_source_full,
     lambda_selection = lambda_selection,
-    crossfit_type = crossfit_type,
     K = K,
     verbose = verbose,
-    lambda_rule = lambda_rule
+    lambda_rule = lambda_rule,
+    aggregation_lambda_grid = aggregation_lambda_grid
   )
   fold_weights <- phase2_res$fold_weights
   fold_aggregated_estimates <- phase2_res$fold_aggregated_estimates
   fold_lambdas <- phase2_res$fold_lambdas
+  fold_wald_statistics <- phase2_res$fold_wald_statistics
+  fold_penalty_coefficients <- phase2_res$fold_penalty_coefficients
+  fold_training_sample_sizes <- phase2_res$fold_training_sample_sizes
+  fold_weight_optimizer_iterations <-
+    phase2_res$fold_weight_optimizer_iterations
+  fold_weight_psd_ridge <- phase2_res$fold_weight_psd_ridge
   fold_lambda_info <- phase2_res$fold_lambda_info
+
+  colnames(fold_weights) <- source_sites
+  colnames(fold_wald_statistics) <- source_sites
+  colnames(fold_penalty_coefficients) <- source_sites
 
   average_weights <- colMeans(fold_weights)
 
@@ -967,8 +1531,9 @@ calculate_crossfit_aggregation <- function(data_split, target_data, source_sites
   ci_lower <- final_agg$ci_lower
   ci_upper <- final_agg$ci_upper
   weights <- final_agg$average_weights
+  names(weights) <- source_sites
   clip_diagnostics <- .summarize_correction_clipping(fold_results, source_sites)
-  if (isTRUE(clip_diagnostics$total$any_clipped)) {
+  if (isTRUE(clip_diagnostics$total$any_safety_clipped)) {
     warning(sprintf(
       "Inference clipping was triggered: weight_min=%d, weight_max=%d, ratio_min=%d, ratio_max=%d. Inspect result$clip_diagnostics.",
       clip_diagnostics$total$weight_min_clipped,
@@ -993,7 +1558,19 @@ calculate_crossfit_aggregation <- function(data_split, target_data, source_sites
     V_s = do.call(rbind, lapply(inner_fold_info, function(x) x$V_s)),
     C_ot = do.call(rbind, lapply(inner_fold_info, function(x) x$C_ot)),
     avg_target_est = vapply(inner_fold_info, function(x) x$avg_target_est, numeric(1L)),
-    avg_source_est = do.call(rbind, lapply(inner_fold_info, function(x) x$avg_source_est))
+    avg_source_est = do.call(rbind, lapply(inner_fold_info, function(x) x$avg_source_est)),
+    mu_pred_ts = do.call(rbind, lapply(inner_fold_info, function(x) x$mu_pred_ts)),
+    delta_ts = do.call(rbind, lapply(inner_fold_info, function(x) x$delta_ts)),
+    n_t = vapply(inner_fold_info, function(x) x$n_t, numeric(1L)),
+    n_s = do.call(rbind, lapply(inner_fold_info, function(x) x$n_s))
+  )
+  colnames(phase1b_summary$avg_source_est) <- source_sites
+  target_only_phi <- .assemble_target_pseudovalues(
+    fold_info, n_t, "calculate_crossfit_aggregation"
+  )
+  target_only_estimate <- mean(target_only_phi)
+  target_only_variance <- .multisite_pseudovalue_variance(
+    target_only_phi, as.integer(n_t)
   )
 
   results <- list(
@@ -1003,15 +1580,24 @@ calculate_crossfit_aggregation <- function(data_split, target_data, source_sites
     ci_lower = ci_lower,
     ci_upper = ci_upper,
     target_only = list(
-      estimate = final_target_estimate,
-      se = sd(target_estimates) / sqrt(n_folds)
+      estimate = target_only_estimate,
+      se = sqrt(target_only_variance),
+      variance = target_only_variance,
+      fold_average_estimate = final_target_estimate
     ),
     source_estimates = source_estimates,
     weights = weights,
     fold_weights = fold_weights,
     fold_lambdas = fold_lambdas,
+    fold_wald_statistics = fold_wald_statistics,
+    fold_penalty_coefficients = fold_penalty_coefficients,
+    fold_training_sample_sizes = fold_training_sample_sizes,
+    fold_weight_optimizer_iterations = fold_weight_optimizer_iterations,
+    fold_weight_psd_ridge = fold_weight_psd_ridge,
     fold_lambda_info = fold_lambda_info,
     fold_aggregated_estimates = fold_aggregated_estimates,
+    aggregation_lambda_selection = lambda_selection,
+    aggregation_lambda_grid = aggregation_lambda_grid,
     aggregation_lambda_rule = lambda_rule,
     clip_diagnostics = clip_diagnostics,
     n_sites = K + 1,
@@ -1020,10 +1606,18 @@ calculate_crossfit_aggregation <- function(data_split, target_data, source_sites
     all_phi_agg = all_phi_agg,
     intermediates = list(
       target_estimates = target_estimates,
+      target_only_phi = target_only_phi,
       source_estimates_matrix = source_estimates_matrix,
+      fold_info = fold_info,
+      inner_fold_info = inner_fold_info,
       phase1 = phase1_summary,
       phase1b = phase1b_summary,
       fold_lambdas = fold_lambdas,
+      fold_wald_statistics = fold_wald_statistics,
+      fold_penalty_coefficients = fold_penalty_coefficients,
+      fold_training_sample_sizes = fold_training_sample_sizes,
+      fold_weight_optimizer_iterations = fold_weight_optimizer_iterations,
+      fold_weight_psd_ridge = fold_weight_psd_ridge,
       fold_lambda_info = fold_lambda_info,
       fold_weights = fold_weights,
       fold_aggregated_estimates = fold_aggregated_estimates,
@@ -1042,4 +1636,234 @@ calculate_crossfit_aggregation <- function(data_split, target_data, source_sites
   }
 
   return(results)
+}
+
+#' TATE aggregation from arm-specific cross-fitted nuisance fits
+#'
+#' Combines treated- and control-arm cross-fitting results before aggregation.
+#' A single source-weight vector is learned by minimizing the estimated
+#' variance of the TATE contrast, so all treated/control covariance terms enter
+#' both the weight objective and the final Wald variance.
+#'
+#' @param data_split Site-stratified data list.
+#' @param mu1_result Result returned by \code{run_crossfit(..., A_val = 1)}.
+#' @param mu0_result Result returned by \code{run_crossfit(..., A_val = 0)}.
+#' @param lambda_selection Aggregation Wald-penalty factor. The default
+#'   \code{AGG_WALD_LAMBDA = 1} is the pilot-selected cutoff \eqn{c=1}
+#'   specified in \code{main.tex}; \code{"cv"} remains available for
+#'   sensitivity analyses.
+#' @param lambda_rule Aggregation inner-validation rule.
+#' @param aggregation_lambda_grid Optional positive numeric vector of
+#'   truncated-Wald multipliers used only when
+#'   \code{lambda_selection = "cv"}.
+#' @param screening_rule Source-screening rule. \code{"soft_penalty"} uses
+#'   the manuscript's truncated-Wald L1 penalty. \code{"hard_threshold"} is
+#'   an explicit diagnostic that excludes sources above the foldwise Wald
+#'   cutoff before variance minimization.
+#' @param verbose Print progress.
+#' @return A RoCE result list for the TATE estimator.
+#' @export
+calculate_tate_crossfit_aggregation <- function(
+    data_split, mu1_result, mu0_result,
+    lambda_selection = AGG_WALD_LAMBDA,
+    lambda_rule = c("min", "1se"),
+    verbose = TRUE,
+    aggregation_lambda_grid = NULL,
+    screening_rule = c("soft_penalty", "hard_threshold")) {
+  lambda_rule <- match.arg(lambda_rule)
+  screening_rule <- match.arg(screening_rule)
+  required_intermediates <- c("fold_info", "inner_fold_info")
+  for (arm_result in list(mu1_result, mu0_result)) {
+    missing <- required_intermediates[!vapply(required_intermediates, function(name) {
+      !is.null(arm_result$intermediates[[name]])
+    }, logical(1L))]
+    if (length(missing) > 0L) {
+      stop(sprintf(
+        "calculate_tate_crossfit_aggregation: arm result is missing aggregation intermediate(s): %s.",
+        paste(missing, collapse = ", ")
+      ))
+    }
+  }
+
+  n_folds <- mu1_result$n_folds
+  if (!identical(as.integer(n_folds), as.integer(mu0_result$n_folds)) ||
+      length(mu1_result$intermediates$fold_info) !=
+        length(mu0_result$intermediates$fold_info)) {
+    stop("calculate_tate_crossfit_aggregation: treated/control results use different fold counts.")
+  }
+  target_data <- data_split[["t"]]
+  source_sites <- setdiff(names(data_split), "t")
+  K <- length(source_sites)
+  n_t <- target_data$n
+  n_source_full <- vapply(source_sites, function(s) data_split[[s]]$n, numeric(1L))
+  N_all <- n_t + sum(n_source_full)
+
+  fold_info <- vector("list", n_folds)
+  inner_fold_info <- vector("list", n_folds)
+  for (k1 in seq_len(n_folds)) {
+    log_info(verbose, "      TATE Phase 1: fold k1=%d/%d", k1, n_folds)
+    fold_info[[k1]] <- .combine_tate_fold_info(
+      mu1_result$intermediates$fold_info[[k1]],
+      mu0_result$intermediates$fold_info[[k1]],
+      K
+    )
+
+    log_info(verbose, "      TATE Phase 1b: fold k1=%d/%d", k1, n_folds)
+    inner_fold_info[[k1]] <- .combine_tate_inner_fold_info(
+      mu1_result$intermediates$inner_fold_info[[k1]],
+      mu0_result$intermediates$inner_fold_info[[k1]],
+      K
+    )
+  }
+
+  phase2 <- .compute_phase2_weights(
+    n_folds = n_folds,
+    inner_fold_info = inner_fold_info,
+    fold_info = fold_info,
+    lambda_selection = lambda_selection,
+    K = K,
+    verbose = verbose,
+    lambda_rule = lambda_rule,
+    aggregation_lambda_grid = aggregation_lambda_grid,
+    screening_rule = screening_rule
+  )
+  colnames(phase2$fold_weights) <- source_sites
+  colnames(phase2$fold_wald_statistics) <- source_sites
+  colnames(phase2$fold_penalty_coefficients) <- source_sites
+  colnames(phase2$fold_source_included) <- source_sites
+
+  all_phi_tau <- .compute_phase3_all_phi(
+    n_folds = n_folds,
+    fold_weights = phase2$fold_weights,
+    fold_info = fold_info,
+    n_t = n_t,
+    n_source_full = n_source_full,
+    N_all = N_all,
+    source_sites = source_sites,
+    K = K,
+    verbose = verbose
+  )
+  final <- aggregate_fold_estimates(
+    phase2$fold_aggregated_estimates, all_phi_tau,
+    N_all, n_t, n_source_full,
+    phase2$fold_weights, n_folds, verbose
+  )
+
+  target_tau_raw <- .assemble_target_pseudovalues(
+    fold_info, n_t, "calculate_tate_crossfit_aggregation"
+  )
+  target_tau_est <- mean(target_tau_raw)
+  target_tau_var <- .multisite_pseudovalue_variance(
+    target_tau_raw, as.integer(n_t)
+  )
+  target_estimates <- vapply(
+    fold_info, function(x) x$fold_target_estimate, numeric(1L)
+  )
+  source_estimates_matrix <- do.call(
+    rbind, lapply(fold_info, function(x) x$fold_source_estimates)
+  )
+  colnames(source_estimates_matrix) <- source_sites
+  target_fold_sizes <- vapply(
+    fold_info, function(info) length(info$target_idx), numeric(1L)
+  )
+  source_fold_sizes <- do.call(rbind, lapply(fold_info, function(info) {
+    vapply(info$source_idx, length, numeric(1L))
+  }))
+  source_estimates <- stats::setNames(
+    .pool_fold_pairwise_estimates(
+      do.call(rbind, lapply(fold_info, `[[`, "mu_pred_ts")),
+      do.call(rbind, lapply(fold_info, `[[`, "delta_ts")),
+      target_fold_sizes,
+      source_fold_sizes
+    ),
+    source_sites
+  )
+  clip_diagnostics <- .combine_tate_clip_diagnostics(
+    mu1_result, mu0_result
+  )
+
+  phase1_summary <- list(
+    V_ot = vapply(fold_info, `[[`, numeric(1L), "V_ot"),
+    V_t = do.call(rbind, lapply(fold_info, `[[`, "V_t")),
+    V_s = do.call(rbind, lapply(fold_info, `[[`, "V_s")),
+    C_ot = do.call(rbind, lapply(fold_info, `[[`, "C_ot")),
+    C_cross = lapply(fold_info, `[[`, "C_cross"),
+    fold_target_estimate = target_estimates,
+    fold_source_estimates = source_estimates_matrix,
+    mu_pred_ts = do.call(rbind, lapply(fold_info, `[[`, "mu_pred_ts")),
+    delta_ts = do.call(rbind, lapply(fold_info, `[[`, "delta_ts"))
+  )
+  phase1b_summary <- list(
+    V_ot = vapply(inner_fold_info, `[[`, numeric(1L), "V_ot"),
+    V_t = do.call(rbind, lapply(inner_fold_info, `[[`, "V_t")),
+    V_s = do.call(rbind, lapply(inner_fold_info, `[[`, "V_s")),
+    C_ot = do.call(rbind, lapply(inner_fold_info, `[[`, "C_ot")),
+    C_cross = lapply(inner_fold_info, `[[`, "C_cross"),
+    avg_target_est = vapply(inner_fold_info, `[[`, numeric(1L), "avg_target_est"),
+    avg_source_est = do.call(rbind, lapply(inner_fold_info, `[[`, "avg_source_est")),
+    mu_pred_ts = do.call(rbind, lapply(inner_fold_info, `[[`, "mu_pred_ts")),
+    delta_ts = do.call(rbind, lapply(inner_fold_info, `[[`, "delta_ts")),
+    n_t = vapply(inner_fold_info, `[[`, numeric(1L), "n_t"),
+    n_s = do.call(rbind, lapply(inner_fold_info, `[[`, "n_s"))
+  )
+  colnames(phase1b_summary$avg_source_est) <- source_sites
+
+  list(
+    estimate = final$final_estimate,
+    se = final$se,
+    variance = final$final_variance,
+    ci_lower = final$ci_lower,
+    ci_upper = final$ci_upper,
+    target_only = list(
+      estimate = target_tau_est,
+      se = sqrt(target_tau_var),
+      variance = target_tau_var
+    ),
+    source_estimates = source_estimates,
+    weights = stats::setNames(final$average_weights, source_sites),
+    fold_weights = phase2$fold_weights,
+    fold_lambdas = phase2$fold_lambdas,
+    fold_wald_statistics = phase2$fold_wald_statistics,
+    fold_penalty_coefficients = phase2$fold_penalty_coefficients,
+    fold_source_included = phase2$fold_source_included,
+    fold_training_sample_sizes = phase2$fold_training_sample_sizes,
+    fold_weight_optimizer_iterations = phase2$fold_weight_optimizer_iterations,
+    fold_weight_psd_ridge = phase2$fold_weight_psd_ridge,
+    fold_lambda_info = phase2$fold_lambda_info,
+    fold_aggregated_estimates = phase2$fold_aggregated_estimates,
+    aggregation_lambda_selection = lambda_selection,
+    aggregation_lambda_grid = aggregation_lambda_grid,
+    aggregation_lambda_rule = lambda_rule,
+    aggregation_screening_rule = screening_rule,
+    clip_diagnostics = clip_diagnostics,
+    n_sites = K + 1L,
+    n_folds = n_folds,
+    N_all = N_all,
+    all_phi_agg = all_phi_tau,
+    all_phi_tau = all_phi_tau,
+    estimand = "TATE",
+    method = "direct_tate_two_layer_crossfit",
+    arm_results = list(mu1 = mu1_result, mu0 = mu0_result),
+    intermediates = list(
+      target_estimates = target_estimates,
+      target_only_phi = target_tau_raw,
+      source_estimates_matrix = source_estimates_matrix,
+      fold_info = fold_info,
+      inner_fold_info = inner_fold_info,
+      phase1 = phase1_summary,
+      phase1b = phase1b_summary,
+      fold_lambdas = phase2$fold_lambdas,
+      fold_wald_statistics = phase2$fold_wald_statistics,
+      fold_penalty_coefficients = phase2$fold_penalty_coefficients,
+      fold_source_included = phase2$fold_source_included,
+      fold_training_sample_sizes = phase2$fold_training_sample_sizes,
+      fold_weight_optimizer_iterations = phase2$fold_weight_optimizer_iterations,
+      fold_weight_psd_ridge = phase2$fold_weight_psd_ridge,
+      fold_lambda_info = phase2$fold_lambda_info,
+      fold_weights = phase2$fold_weights,
+      fold_aggregated_estimates = phase2$fold_aggregated_estimates,
+      clip_diagnostics = clip_diagnostics,
+      sample_sizes = list(n_t = n_t, n_source = n_source_full, N_all = N_all)
+    )
+  )
 }

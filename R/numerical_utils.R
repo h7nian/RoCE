@@ -1,7 +1,7 @@
 # numerical_utils.R - Pure numerical and mathematical utility functions
 #
 # This file contains helper functions for numerical operations used throughout
-# the FACE-HD algorithm. All functions are pure (no side effects) and focused
+# the RoCE algorithm. All functions are pure (no side effects) and focused
 # on mathematical transformations.
 #
 # Contents:
@@ -33,8 +33,8 @@
 #' @note When standard deviation is zero (all values identical), only centers
 #'   the data without scaling to avoid division by zero.
 #' @examples
-#' scale_center(1:5)
-#' scale_center(matrix(1:12, nrow = 3))
+#' RoCE:::scale_center(1:5)
+#' RoCE:::scale_center(matrix(1:12, nrow = 3))
 scale_center <- function(x) {
   if (is.matrix(x)) {
     return(apply(x, 2, function(col) {
@@ -56,7 +56,7 @@ scale_center <- function(x) {
 #' @param upper Upper bound (default 2.5).
 #' @return Vector with values clipped to [lower, upper].
 #' @examples
-#' clip_to_range(c(-5, 0, 5), -2, 2)  # Returns c(-2, 0, 2)
+#' RoCE:::clip_to_range(c(-5, 0, 5), -2, 2)  # Returns c(-2, 0, 2)
 clip_to_range <- function(x, lower = -2.5, upper = 2.5) {
   pmax(pmin(x, upper), lower)
 }
@@ -66,7 +66,7 @@ clip_to_range <- function(x, lower = -2.5, upper = 2.5) {
 #' @param x Numeric vector.
 #' @return Normalized vector with ||x||_2 = 1, or original if norm is zero.
 #' @examples
-#' normalize_to_unit(c(3, 4))  # Returns c(0.6, 0.8)
+#' RoCE:::normalize_to_unit(c(3, 4))  # Returns c(0.6, 0.8)
 normalize_to_unit <- function(x) {
   norm_x <- sqrt(sum(x^2))
   if (norm_x > 0) {
@@ -74,6 +74,36 @@ normalize_to_unit <- function(x) {
   } else {
     x
   }
+}
+
+#' Normalize log weights without exponential overflow
+#'
+#' @param log_weights Finite log weights.
+#' @param caller Calling function name used in validation errors.
+#' @return Positive finite weights with arithmetic mean one.
+#' @keywords internal
+.normalize_log_weights <- function(
+    log_weights, caller = ".normalize_log_weights") {
+  log_weights <- as.numeric(log_weights)
+  if (length(log_weights) == 0L || any(!is.finite(log_weights))) {
+    stop(caller, ": log weights must be a nonempty finite vector.",
+         call. = FALSE)
+  }
+  shifted_log_weights <- pmax(
+    log_weights - max(log_weights), log(.Machine$double.xmin)
+  )
+  shifted_weights <- exp(shifted_log_weights)
+  mean_weight <- mean(shifted_weights)
+  if (!is.finite(mean_weight) || mean_weight <= 0) {
+    stop(caller, ": exponential weights could not be normalized.",
+         call. = FALSE)
+  }
+  normalized <- shifted_weights / mean_weight
+  if (any(!is.finite(normalized)) || any(normalized <= 0)) {
+    stop(caller, ": normalized exponential weights are not positive finite.",
+         call. = FALSE)
+  }
+  normalized
 }
 
 #' Clip propensity scores to [PROP_SCORE_LOWER, PROP_SCORE_UPPER]
@@ -84,7 +114,7 @@ normalize_to_unit <- function(x) {
 #' @param ps Numeric vector of propensity scores.
 #' @return Vector clipped to [PROP_SCORE_LOWER, PROP_SCORE_UPPER].
 #' @examples
-#' clip_propensity(c(0, 0.5, 1))  # Returns c(0.01, 0.5, 0.99)
+#' RoCE:::clip_propensity(c(0, 0.5, 1))  # Returns c(0.01, 0.5, 0.99)
 clip_propensity <- function(ps) {
   pmax(pmin(ps, PROP_SCORE_UPPER), PROP_SCORE_LOWER)
 }
@@ -99,8 +129,8 @@ clip_propensity <- function(ps) {
 #' @param family GLM family string. Default "binomial".
 #' @return Vector with family-appropriate clipping applied.
 #' @examples
-#' clip_outcome_pred(c(0, 0.5, 1))              # binomial: c(0.001, 0.5, 0.999)
-#' clip_outcome_pred(c(-2, 0, 5), "gaussian")   # unchanged: c(-2, 0, 5)
+#' RoCE:::clip_outcome_pred(c(0, 0.5, 1))
+#' RoCE:::clip_outcome_pred(c(-2, 0, 5), "gaussian")
 clip_outcome_pred <- function(pred, family = "binomial") {
   switch(tolower(family),
     "binomial" = pmax(pmin(pred, OUTCOME_PRED_UPPER), OUTCOME_PRED_LOWER),
@@ -116,16 +146,16 @@ clip_outcome_pred <- function(pred, family = "binomial") {
 #' Logistic (sigmoid) function with numerical stability
 #'
 #' R reference implementation. For performance-critical code paths, prefer the
-#' C++ version \code{logistic_cpp()} / \code{logistic_vec_cpp()} in utils.hpp.
+#' C++ version \code{logistic_cpp()} / \code{logistic_vec_cpp()} in utils.h.
 #'
 #' @param x Numeric value or vector.
 #' @return Logistic transformation: 1 / (1 + exp(-x)).
 #' @note Values are clipped to [-LOGISTIC_CLIP, LOGISTIC_CLIP] before computation
 #'   to prevent overflow. LOGISTIC_CLIP is defined in R/constants.R and must match
-#'   C++ NumericalConstants::ETA_CLIP_MAX in numerical_constants.hpp.
+#'   C++ NumericalConstants::ETA_CLIP_MAX in numerical_constants.h.
 #' @examples
-#' logistic(0)    # Returns 0.5
-#' logistic(c(-10, 0, 10))
+#' RoCE:::logistic(0)    # Returns 0.5
+#' RoCE:::logistic(c(-10, 0, 10))
 logistic <- function(x) {
   # Clip to prevent numerical overflow
   x <- pmax(pmin(x, LOGISTIC_CLIP), -LOGISTIC_CLIP)
@@ -142,8 +172,8 @@ logistic <- function(x) {
 #' @param epsilon Small positive floor value (default EPSILON_DEFAULT).
 #' @return log(max(x, epsilon)).
 #' @examples
-#' safe_log(0)       # Returns log(EPSILON_DEFAULT) instead of -Inf
-#' safe_log(c(0, 1, exp(1)))
+#' RoCE:::safe_log(0)
+#' RoCE:::safe_log(c(0, 1, exp(1)))
 safe_log <- function(x, epsilon = EPSILON_DEFAULT) {
   return(log(pmax(x, epsilon)))
 }
@@ -157,8 +187,8 @@ safe_log <- function(x, epsilon = EPSILON_DEFAULT) {
 #' @param min_var Minimum allowed variance (default EPSILON_DEFAULT).
 #' @return Variance of x, floored at min_var.
 #' @examples
-#' safe_var(5)          # Returns EPSILON_DEFAULT (single value)
-#' safe_var(c(1, 2, 3)) # Returns var(c(1, 2, 3))
+#' RoCE:::safe_var(5)
+#' RoCE:::safe_var(c(1, 2, 3))
 safe_var <- function(x, min_var = EPSILON_DEFAULT) {
   if (length(x) <= 1) {
     return(min_var)
@@ -175,13 +205,13 @@ safe_var <- function(x, min_var = EPSILON_DEFAULT) {
 #' Numerically stable sum via compensated summation (Neumaier)
 #'
 #' Useful for long reductions where naive summation may accumulate rounding error.
-#' Returns the same mathematical quantity as \\code{sum(x)} but with improved
+#' Returns the same mathematical quantity as \code{sum(x)} but with improved
 #' floating-point stability.
 #'
 #' @param x Numeric vector.
-#' @return Stable sum of all elements in \\code{x}.
+#' @return Stable sum of all elements in \code{x}.
 #' @examples
-#' stable_sum_kahan(c(1e16, 1, -1e16))
+#' RoCE:::stable_sum_kahan(c(1e16, 1, -1e16))
 stable_sum_kahan <- function(x) {
   if (!length(x)) return(0)
   s <- 0
@@ -209,9 +239,9 @@ stable_sum_kahan <- function(x) {
 #' @param min_folds Minimum number of folds (default 4 for cv.glmnet validity).
 #' @return Integer number of CV folds.
 #' @examples
-#' get_cv_fold_count(100)         # Returns 5
-#' get_cv_fold_count(8)           # Returns 4
-#' get_cv_fold_count(100, min_per_fold = 10) # Returns 5
+#' RoCE:::get_cv_fold_count(100)
+#' RoCE:::get_cv_fold_count(8)
+#' RoCE:::get_cv_fold_count(100, min_per_fold = 10)
 get_cv_fold_count <- function(n, min_per_fold = 5, max_folds = N_CV_FOLDS_LAMBDA, min_folds = 4) {
   n <- as.integer(n)
   if (is.na(n) || n <= 0) return(as.integer(min_folds))
@@ -241,6 +271,12 @@ build_lambda_grid <- function(lambda_max, lambda_min_ratio = 1e-4,
                               nlambda = LAMBDA_GRID_SIZE_STANDARD) {
   stopifnot(is.numeric(lambda_max), length(lambda_max) == 1,
             is.finite(lambda_max), lambda_max > 0)
+  if (length(nlambda) != 1L || !is.numeric(nlambda) || is.na(nlambda) ||
+      !is.finite(nlambda) || nlambda < 2L ||
+      abs(nlambda - round(nlambda)) > sqrt(.Machine$double.eps)) {
+    stop("build_lambda_grid: nlambda must be an integer >= 2.", call. = FALSE)
+  }
+  nlambda <- as.integer(nlambda)
   lmin <- lambda_max * max(lambda_min_ratio, .Machine$double.eps)
   exp(seq(log(lambda_max), log(lmin), length.out = nlambda))
 }
@@ -440,8 +476,9 @@ compute_lambda_max_outcome <- function(W_outcome, Y, A, gamma_s,
   if (calibrated) {
     g_val <- pmin(pmax(g_val, -M_tau), M_tau)
   }
-  weights <- exp(-g_val)
-  weights <- pmin(pmax(weights, WEIGHT_MIN), WEIGHT_MAX)
+  log_weight_bounds <- log(c(WEIGHT_MIN, WEIGHT_MAX))
+  weights <- exp(pmin(pmax(-g_val, log_weight_bounds[[1L]]),
+                      log_weight_bounds[[2L]]))
 
   weight_sum <- sum(weights)
   if (!is.finite(weight_sum) || weight_sum <= 0) {
@@ -472,8 +509,8 @@ compute_lambda_max_outcome <- function(W_outcome, Y, A, gamma_s,
 #' @param weights Optional weights (default NULL for unweighted).
 #' @return Weighted mean of x.
 #' @examples
-#' empirical_expectation(1:5)           # Returns 3
-#' empirical_expectation(1:3, c(1,2,1)) # Returns 2
+#' RoCE:::empirical_expectation(1:5)
+#' RoCE:::empirical_expectation(1:3, c(1, 2, 1))
 empirical_expectation <- function(x, weights = NULL) {
   if (is.null(weights)) {
     mean(x)
@@ -497,8 +534,8 @@ empirical_expectation <- function(x, weights = NULL) {
 #' @param ... Values interpolated into \code{fmt}.
 #' @return Invisible NULL.
 #' @examples
-#' log_info(TRUE, "Processing fold %d/%d\n", 1, 5)
-#' log_info(FALSE, "This is suppressed\n")
+#' RoCE:::log_info(TRUE, "Processing one fold")
+#' RoCE:::log_info(FALSE, "This is suppressed")
 log_info <- function(verbose, fmt, ...) {
   if (isTRUE(verbose)) cat(sprintf(fmt, ...))
   invisible(NULL)
@@ -519,7 +556,7 @@ log_info <- function(verbose, fmt, ...) {
 #' @return The result of evaluating \code{expr}.
 #' @examples
 #' set.seed(42); runif(1)  # 0.9148...
-#' with_seed(99, rnorm(3)) # deterministic under seed 99
+#' RoCE:::with_seed(99, rnorm(3)) # deterministic under seed 99
 #' runif(1)                 # continues from seed 42 stream
 with_seed <- function(seed, expr) {
   # Save current RNG state

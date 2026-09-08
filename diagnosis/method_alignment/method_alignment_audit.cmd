@@ -28,7 +28,7 @@ export MKL_NUM_THREADS=1
 export BLIS_NUM_THREADS=1
 
 echo "======================================================"
-echo " FACE-HD Method Alignment Audit"
+echo " RoCE Method Alignment Audit"
 echo "======================================================"
 echo " Repo:       $(pwd)"
 echo " Output:     ${METHOD_AUDIT_OUTPUT_ROOT}"

@@ -8,7 +8,7 @@
 # =============================================================================
 # Uses true (known) outcome parameters and density ratio parameters
 # to form a DR estimator.  Aggregation follows the same optimal-weight
-# framework as the cross-fitting estimators (eq:final_opt in main.tex),
+# framework as the cross-fitting estimators (eq:agg_penalized_objective in main.tex),
 # with the full quadratic variance formula that accounts for:
 #   (a) target-side variance V_{t,s_j} of each source-assisted estimate,
 #   (b) covariance C_{ot,s_j} between target-only and source-assisted,

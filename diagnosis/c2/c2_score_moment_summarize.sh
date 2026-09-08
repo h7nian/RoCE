@@ -47,7 +47,7 @@ SBATCH_CMD=(
 )
 
 echo "======================================================"
-echo " FACE-HD C2 Score/Moment Summary Submission"
+echo " RoCE C2 Score/Moment Summary Submission"
 echo "======================================================"
 echo " Repo:        ${REPO_DIR}"
 echo " Output root: ${OUTPUT_ROOT}"

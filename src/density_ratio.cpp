@@ -9,8 +9,31 @@
 //   - select_lambda_cv_calibrated_density_ratio_cpp:   CV for calibrated γ
 // ============================================================================
 
-#include "optimization.hpp"
-#include "cv_utils.hpp"
+#include "optimization.h"
+#include "cv_utils.h"
+
+namespace {
+
+// Keep the final-iteration stopping diagnostics alongside every density-ratio
+// fit.  A bare converged/iterations flag cannot distinguish a fit that missed
+// the tolerance by a few percent from one that is genuinely stalled.  The R
+// layer propagates these scalar diagnostics to the per-setting simulation QC.
+List density_ratio_fit_result(const VectorXd& gamma, bool converged,
+                              int iterations, double max_update,
+                              double convergence_threshold,
+                              int line_search_failures = 0) {
+    return List::create(
+        Named("gamma") = gamma,
+        Named("converged") = converged,
+        Named("iterations") = iterations,
+        Named("max_update") = max_update,
+        Named("convergence_threshold") = convergence_threshold,
+        Named("line_search_failures") = line_search_failures,
+        Named("max_abs_coefficient") = gamma.lpNorm<Eigen::Infinity>()
+    );
+}
+
+}  // namespace
 
 // ============================================================================
 // NAMING CONVENTION NOTE (C++ ←→ R mapping)
@@ -113,79 +136,16 @@ List fit_unified_density_ratio_cpp(const MatrixXd& Z_site, const VectorXd& A_sou
         psi_prime_precomputed(i) = std::abs(GLMUtils::response_derivative(eta_i, link));
     }
     
-    // Main iteration loop for density ratio estimation:
-    // untruncated refined form (calibrated=false) or eq:gamma_calibrated_loss (calibrated=true).
-    for (int iter = 0; iter < max_iter; iter++) {
-        VectorXd gamma_old = gamma;
-        
-        // Compute g = Z_site_treated * gamma once per outer iteration (O(n_treated * p)),
-        // then update incrementally after each coordinate change (O(n_treated) per coordinate).
-        // This reduces total complexity from O(n_treated * p²) to O(n_treated * p) per iteration.
-        VectorXd g_vec = Z_site_treated * gamma;
-        
-        // Coordinate descent: update γ_j one by one
-        for (int j = 0; j < p_site; j++) {
-            // First term: mean_grad_psi[j] represents
-            // E_t[h'(W(X)^T alpha_init) * Z_tilde_j(X)], matching γ's basis.
-            double grad_j = mean_grad_psi(j);
-            
-            // Second term: -Ẽ_{s_j}[I(A=1) φ_site(X)_j exp(-φ_site(X)^T γ) ψ'(η)]
-            // where η = φ_outcome(X)^T α (using W_outcome features)
-            // NOTE: ψ'(η_i) is pre-computed since it depends only on alpha_init (constant)
-            StableAccumulator grad_acc;
-            StableAccumulator hess_acc;
-            for (int i = 0; i < n_treated; i++) {
-                // exp(-φ_site(X)^T γ) uses Z_site features — read from incremental g_vec
-                double current_g = std::max(NumericalConstants::ETA_CLIP_MIN, std::min(NumericalConstants::ETA_CLIP_MAX, g_vec(i)));
-                double exp_neg_g = std::exp(-current_g);
-                
-                if (std::isnan(exp_neg_g) || std::isinf(exp_neg_g)) {
-                    throw std::runtime_error("fit_unified_density_ratio_cpp: non-finite density-ratio weight encountered after logit clipping.");
-                }
-                exp_neg_g = std::max(NumericalConstants::WEIGHT_MIN, std::min(NumericalConstants::WEIGHT_MAX, exp_neg_g));
-                
-                // Use pre-computed ψ'(η_i) — avoids VectorXd allocation and dot product per (j,i)
-                double psi_prime_i = psi_prime_precomputed(i);
-                
-                // φ_site(X)_j from Z_site features
-                double phi_ij = Z_site_treated(i, j);
-                grad_acc.add(-phi_ij * exp_neg_g * psi_prime_i / n);
-                // Hessian diagonal: H_jj = Ẽ[φ_j² exp(-g) ψ'] / n
-                hess_acc.add(phi_ij * phi_ij * exp_neg_g * psi_prime_i / n);
-            }
-            grad_j += grad_acc.value();
-            double hess_j = hess_acc.value();
-            
-            // Hessian-based step size (matching CV function density_ratio_cd_update)
-            hess_j = std::max(hess_j, NumericalConstants::HESSIAN_FLOOR);
-            double step_size_hessian = 1.0 / hess_j;
-            // Cap with adaptive step for safety (prevents huge steps early on)
-            double step_size_adaptive = compute_adaptive_step_size(std::abs(grad_j), iter);
-            double step_size = std::min(step_size_hessian, step_size_adaptive * 10.0);
-            step_size = std::max(step_size, NumericalConstants::STEP_SIZE_FLOOR);
-            
-            // Proximal gradient update with soft-thresholding (no penalty on intercept)
-            double old_gamma_j = gamma(j);
-            gamma(j) = sanitize_param(proximal_update(gamma(j), grad_j, step_size, lambda, j));
-            
-            // Incremental g update: O(n_treated) instead of recomputing O(n_treated * p)
-            double delta_j = gamma(j) - old_gamma_j;
-            if (delta_j != 0.0) {
-                g_vec += delta_j * Z_site_treated.col(j);
-            }
-        }
-        
-        // Check convergence (L∞ norm — consistent with outcome model and check_convergence_cpp)
-        if (check_convergence_cpp(gamma_old, gamma, tol)) {
-            return List::create(Named("gamma") = gamma,
-                               Named("converged") = true,
-                               Named("iterations") = iter + 1);
-        }
-    }
-    
-    return List::create(Named("gamma") = gamma,
-                       Named("converged") = false,
-                       Named("iterations") = max_iter);
+    std::vector<bool> active(p_site, true);
+    CVUtils::DensityRatioCDResult fit = CVUtils::density_ratio_cd_update(
+        gamma, active, Z_site_treated, psi_prime_precomputed,
+        static_cast<double>(n_treated) / n, mean_grad_psi, lambda,
+        tol, max_iter, false
+    );
+    return density_ratio_fit_result(
+        gamma, fit.converged, fit.iterations, fit.max_update,
+        fit.convergence_threshold, fit.line_search_failures
+    );
 }
 
 // C++ version of INITIAL density ratio estimation (γ_init)
@@ -214,9 +174,9 @@ List fit_initial_density_ratio_cpp(const MatrixXd& Z_site, const VectorXd& A_sou
     auto treated_idx = filter_treated_indices(A_source, A_val);
     
     if (treated_idx.empty()) {
-        return List::create(Named("gamma") = VectorXd::Zero(p),
-                           Named("converged") = false,
-                           Named("iterations") = 0);
+        return density_ratio_fit_result(
+            VectorXd::Zero(p), false, 0, NA_REAL, NA_REAL
+        );
     }
     
     int n_treated = treated_idx.size();
@@ -225,75 +185,17 @@ List fit_initial_density_ratio_cpp(const MatrixXd& Z_site, const VectorXd& A_sou
     // Initialize gamma: warm-start from previous solution if provided
     VectorXd gamma = (warm_start.size() == p) ? warm_start : VectorXd::Zero(p);
     
-    // Main iteration loop for INITIAL density ratio estimation
-    // Following eq:gamma_init in main.tex: NO ψ' term, only mean_phi and exp(-g)
-    // FIXED: Use n (total sample size) for normalization, not n_treated
-    // This matches the theory: Ẽ_{s_j}[I(A=1) f(X)] = (1/n_s) Σ I(A_i=1) f(X_i)
-    for (int iter = 0; iter < max_iter; iter++) {
-        VectorXd gamma_old = gamma;
-        
-        // Compute g = X_treated * gamma once per outer iteration (O(n_treated * p)),
-        // then update incrementally after each coordinate change (O(n_treated) per coordinate).
-        // This reduces total complexity from O(n_treated * p²) to O(n_treated * p) per iteration.
-        VectorXd g_vec = X_treated * gamma;
-        
-        // Coordinate descent: update γ_j one by one
-        for (int j = 0; j < p; j++) {
-            // First term: Ẽ_t[φ(X)]_j = mean_phi[j]
-            double grad_j = mean_phi(j);
-            StableAccumulator grad_acc;
-            StableAccumulator hess_acc;
-            
-            // Second term: -Ẽ_{s_j}[I(A=1) φ(X)_j exp(-φ(X)^T γ)]
-            // NO ψ' term here - this is the key difference from refined loss
-            // NOTE: Divide by n (total samples) not n_treated to match theory
-            for (int i = 0; i < n_treated; i++) {
-                double current_g = std::max(NumericalConstants::ETA_CLIP_MIN, std::min(NumericalConstants::ETA_CLIP_MAX, g_vec(i)));
-                double exp_neg_g = std::exp(-current_g);
-                
-                if (std::isnan(exp_neg_g) || std::isinf(exp_neg_g)) {
-                    exp_neg_g = 1.0;
-                }
-                exp_neg_g = std::max(NumericalConstants::WEIGHT_MIN, std::min(NumericalConstants::WEIGHT_MAX, exp_neg_g));
-                
-                double phi_ij = X_treated(i, j);
-                grad_acc.add(-phi_ij * exp_neg_g / n);  // /n (total sample size) matches Ẽ_{s_j} convention
-                // Hessian diagonal: H_jj = Ẽ[φ_j² exp(-g)] / n
-                hess_acc.add(phi_ij * phi_ij * exp_neg_g / n);
-            }
-            grad_j += grad_acc.value();
-            double hess_j = hess_acc.value();
-            
-            // Hessian-based step size (matching CV function density_ratio_cd_update)
-            hess_j = std::max(hess_j, NumericalConstants::HESSIAN_FLOOR);
-            double step_size_hessian = 1.0 / hess_j;
-            // Cap with adaptive step for safety (prevents huge steps early on)
-            double step_size_adaptive = compute_adaptive_step_size(std::abs(grad_j), iter);
-            double step_size = std::min(step_size_hessian, step_size_adaptive * 10.0);
-            step_size = std::max(step_size, NumericalConstants::STEP_SIZE_FLOOR);
-            
-            // Proximal gradient update with soft-thresholding (no penalty on intercept)
-            double old_gamma_j = gamma(j);
-            gamma(j) = sanitize_param(proximal_update(gamma(j), grad_j, step_size, lambda, j));
-            
-            // Incremental g update: O(n_treated) instead of recomputing O(n_treated * p)
-            double delta_j = gamma(j) - old_gamma_j;
-            if (delta_j != 0.0) {
-                g_vec += delta_j * X_treated.col(j);
-            }
-        }
-        
-        // Check convergence (L∞ norm — consistent with outcome model and check_convergence_cpp)
-        if (check_convergence_cpp(gamma_old, gamma, tol)) {
-            return List::create(Named("gamma") = gamma,
-                               Named("converged") = true,
-                               Named("iterations") = iter + 1);
-        }
-    }
-    
-    return List::create(Named("gamma") = gamma,
-                       Named("converged") = false,
-                       Named("iterations") = max_iter);
+    VectorXd psi_prime = VectorXd::Ones(n_treated);
+    std::vector<bool> active(p, true);
+    CVUtils::DensityRatioCDResult fit = CVUtils::density_ratio_cd_update(
+        gamma, active, X_treated, psi_prime,
+        static_cast<double>(n_treated) / n, mean_phi, lambda,
+        tol, max_iter, false
+    );
+    return density_ratio_fit_result(
+        gamma, fit.converged, fit.iterations, fit.max_update,
+        fit.convergence_threshold, fit.line_search_failures
+    );
 }
 
 // ============================================================================
@@ -306,7 +208,8 @@ List select_lambda_cv_density_ratio_cpp(const MatrixXd& Z_site, const VectorXd& 
                                        const VectorXd& lambda_grid, int n_folds,
                                        int max_iter, double tol,
                                        int A_val,
-                                       int family_int, int link_int) {
+                                       int family_int, int link_int,
+                                       Rcpp::Nullable<Rcpp::NumericVector> cv_fold_id = R_NilValue) {
     
     int n = Z_site.rows();
     int n_lambda = lambda_grid.size();
@@ -321,6 +224,7 @@ List select_lambda_cv_density_ratio_cpp(const MatrixXd& Z_site, const VectorXd& 
     if (n_treated < n_folds) {
         throw std::runtime_error("select_lambda_cv_density_ratio_cpp: not enough A_val observations for requested CV folds.");
     }
+    auto folds = CVUtils::create_fold_splits(n_treated, n_folds, cv_fold_id);
 
     // Pre-compute treated data with intercept
     MatrixXd X_treated_int = prepend_intercept(subset_rows(Z_site, treated_idx));
@@ -332,8 +236,6 @@ List select_lambda_cv_density_ratio_cpp(const MatrixXd& Z_site, const VectorXd& 
         double eta_alpha = X_treated_int.row(i).dot(alpha_init);
         psi_prime_all(i) = std::abs(GLMUtils::response_derivative(eta_alpha, link));
     }
-
-    auto folds = CVUtils::create_fold_splits(n_treated, n_folds);
 
     // Pre-allocate fold data
     std::vector<MatrixXd> X_train_folds(n_folds), X_val_folds(n_folds);
@@ -348,30 +250,56 @@ List select_lambda_cv_density_ratio_cpp(const MatrixXd& Z_site, const VectorXd& 
     // CV loop: outer=fold, inner=lambda (warm start across lambda path)
     MatrixXd fold_scores(n_lambda, n_folds);
     fold_scores.fill(INFINITY);
+    std::vector<int> path_tail_skipped(n_folds, 0);
 
+    const int cv_threads = CVUtils::nuisance_cv_thread_count(n_folds);
+    ROCE_PARALLELIZE_CV_FOLDS(cv_threads)
     for (int fold = 0; fold < n_folds; fold++) {
         if (folds.train[fold].empty() || folds.val[fold].empty()) continue;
 
         VectorXd gamma = VectorXd::Zero(p);
         std::vector<bool> active(p, true);
+        int consecutive_failures = 0;
 
         for (int li = 0; li < n_lambda; li++) {
             int lambda_idx = lambda_order[li];
             double lambda = lambda_grid(lambda_idx);
             double cv_tol = std::max(tol, NumericalConstants::CV_TOL_FLOOR);
             int cv_max_iter = std::min(max_iter, NumericalConstants::CV_MAX_ITER);
+            VectorXd gamma_before = gamma;
 
-            CVUtils::density_ratio_cd_update(gamma, active, X_train_folds[fold],
-                                             pp_train[fold], n, mean_grad_psi,
-                                             lambda, cv_tol, cv_max_iter);
-
-            fold_scores(lambda_idx, fold) = CVUtils::density_ratio_val_loss(
-                gamma, mean_grad_psi, X_val_folds[fold], pp_val[fold],
-                static_cast<double>(n_treated) / n);
+            CVUtils::DensityRatioCDResult fit =
+                CVUtils::density_ratio_cd_update(
+                    gamma, active, X_train_folds[fold], pp_train[fold],
+                    static_cast<double>(n_treated) / n, mean_grad_psi,
+                    lambda, cv_tol, cv_max_iter
+                );
+            if (fit.converged) {
+                consecutive_failures = 0;
+                fold_scores(lambda_idx, fold) = CVUtils::density_ratio_val_loss(
+                    gamma, mean_grad_psi, X_val_folds[fold], pp_val[fold],
+                    static_cast<double>(n_treated) / n);
+            } else {
+                // Never warm-start the next candidate from an unconverged
+                // solution.  The +Inf score records this candidate as invalid.
+                gamma = gamma_before;
+                std::fill(active.begin(), active.end(), true);
+                path_tail_skipped[fold] = CVUtils::cv_path_tail_after_failure(
+                    consecutive_failures, li, n_lambda
+                );
+                if (path_tail_skipped[fold] > 0) break;
+            }
         }
     }
 
-    return CVUtils::aggregate_cv_results(fold_scores, lambda_grid, n_lambda, n_folds);
+    int skipped_fold_fits = std::accumulate(
+        path_tail_skipped.begin(), path_tail_skipped.end(), 0
+    );
+    return CVUtils::append_explicit_fold_audit(
+        CVUtils::aggregate_cv_results(
+            fold_scores, lambda_grid, n_lambda, n_folds, skipped_fold_fits
+        ), folds, cv_fold_id
+    );
 }
 
 // ============================================================================
@@ -385,7 +313,8 @@ List select_lambda_cv_initial_density_ratio_cpp(const MatrixXd& Z_site, const Ve
                                                 const VectorXd& mean_phi,
                                                 const VectorXd& lambda_grid, int n_folds,
                                                 int max_iter, double tol,
-                                                int A_val = 1) {
+                                                int A_val = 1,
+                                                Rcpp::Nullable<Rcpp::NumericVector> cv_fold_id = R_NilValue) {
     
     int n = Z_site.rows();
     int n_lambda = lambda_grid.size();
@@ -400,14 +329,13 @@ List select_lambda_cv_initial_density_ratio_cpp(const MatrixXd& Z_site, const Ve
     if (n_treated < n_folds) {
         throw std::runtime_error("select_lambda_cv_initial_density_ratio_cpp: not enough A_val observations for requested CV folds.");
     }
+    auto folds = CVUtils::create_fold_splits(n_treated, n_folds, cv_fold_id);
 
     // Pre-compute treated data with intercept
     MatrixXd X_treated_int = prepend_intercept(subset_rows(Z_site, treated_idx));
 
     // For initial density ratio, ψ'(·) ≡ 1 (no outcome model dependency)
     VectorXd psi_prime_all = VectorXd::Ones(n_treated);
-
-    auto folds = CVUtils::create_fold_splits(n_treated, n_folds);
 
     // Pre-allocate fold data
     std::vector<MatrixXd> X_train_folds(n_folds), X_val_folds(n_folds);
@@ -422,30 +350,54 @@ List select_lambda_cv_initial_density_ratio_cpp(const MatrixXd& Z_site, const Ve
     // CV loop: outer=fold, inner=lambda (warm start across lambda path)
     MatrixXd fold_scores(n_lambda, n_folds);
     fold_scores.fill(INFINITY);
+    std::vector<int> path_tail_skipped(n_folds, 0);
 
+    const int cv_threads = CVUtils::nuisance_cv_thread_count(n_folds);
+    ROCE_PARALLELIZE_CV_FOLDS(cv_threads)
     for (int fold = 0; fold < n_folds; fold++) {
         if (folds.train[fold].empty() || folds.val[fold].empty()) continue;
 
         VectorXd gamma = VectorXd::Zero(p);
         std::vector<bool> active(p, true);
+        int consecutive_failures = 0;
 
         for (int li = 0; li < n_lambda; li++) {
             int lambda_idx = lambda_order[li];
             double lambda = lambda_grid(lambda_idx);
             double cv_tol = std::max(tol, NumericalConstants::CV_TOL_FLOOR);
             int cv_max_iter = std::min(max_iter, NumericalConstants::CV_MAX_ITER);
+            VectorXd gamma_before = gamma;
 
-            CVUtils::density_ratio_cd_update(gamma, active, X_train_folds[fold],
-                                             pp_train[fold], n, mean_phi,
-                                             lambda, cv_tol, cv_max_iter);
-
-            fold_scores(lambda_idx, fold) = CVUtils::density_ratio_val_loss(
-                gamma, mean_phi, X_val_folds[fold], pp_val[fold],
-                static_cast<double>(n_treated) / n);
+            CVUtils::DensityRatioCDResult fit =
+                CVUtils::density_ratio_cd_update(
+                    gamma, active, X_train_folds[fold], pp_train[fold],
+                    static_cast<double>(n_treated) / n, mean_phi,
+                    lambda, cv_tol, cv_max_iter
+                );
+            if (fit.converged) {
+                consecutive_failures = 0;
+                fold_scores(lambda_idx, fold) = CVUtils::density_ratio_val_loss(
+                    gamma, mean_phi, X_val_folds[fold], pp_val[fold],
+                    static_cast<double>(n_treated) / n);
+            } else {
+                gamma = gamma_before;
+                std::fill(active.begin(), active.end(), true);
+                path_tail_skipped[fold] = CVUtils::cv_path_tail_after_failure(
+                    consecutive_failures, li, n_lambda
+                );
+                if (path_tail_skipped[fold] > 0) break;
+            }
         }
     }
 
-    return CVUtils::aggregate_cv_results(fold_scores, lambda_grid, n_lambda, n_folds);
+    int skipped_fold_fits = std::accumulate(
+        path_tail_skipped.begin(), path_tail_skipped.end(), 0
+    );
+    return CVUtils::append_explicit_fold_audit(
+        CVUtils::aggregate_cv_results(
+            fold_scores, lambda_grid, n_lambda, n_folds, skipped_fold_fits
+        ), folds, cv_fold_id
+    );
 }
 
 // ============================================================================
@@ -459,7 +411,8 @@ List select_lambda_cv_calibrated_density_ratio_cpp(const MatrixXd& Z_site, const
                                                    int max_iter, double tol, double M_tau,
                                                    const MatrixXd& W_outcome,
                                                    int A_val,
-                                                   int family_int, int link_int) {
+                                                   int family_int, int link_int,
+                                                   Rcpp::Nullable<Rcpp::NumericVector> cv_fold_id = R_NilValue) {
     
     int n = Z_site.rows();
     int n_lambda = lambda_grid.size();
@@ -478,6 +431,7 @@ List select_lambda_cv_calibrated_density_ratio_cpp(const MatrixXd& Z_site, const
     if (n_treated < n_folds) {
         throw std::runtime_error("select_lambda_cv_calibrated_density_ratio_cpp: not enough A_val observations for requested CV folds.");
     }
+    auto folds = CVUtils::create_fold_splits(n_treated, n_folds, cv_fold_id);
 
     // Prepare site features with intercept
     MatrixXd Z_site_int = prepend_intercept(subset_rows(Z_site, treated_idx));
@@ -492,8 +446,6 @@ List select_lambda_cv_calibrated_density_ratio_cpp(const MatrixXd& Z_site, const
         psi_prime_all(i) = std::abs(GLMUtils::response_derivative(eta_truncated, link));
     }
 
-    auto folds = CVUtils::create_fold_splits(n_treated, n_folds);
-
     // Pre-allocate fold data
     std::vector<MatrixXd> X_train_folds(n_folds), X_val_folds(n_folds);
     std::vector<VectorXd> pp_train(n_folds), pp_val(n_folds);
@@ -507,28 +459,52 @@ List select_lambda_cv_calibrated_density_ratio_cpp(const MatrixXd& Z_site, const
     // CV loop
     MatrixXd fold_scores(n_lambda, n_folds);
     fold_scores.fill(INFINITY);
+    std::vector<int> path_tail_skipped(n_folds, 0);
 
+    const int cv_threads = CVUtils::nuisance_cv_thread_count(n_folds);
+    ROCE_PARALLELIZE_CV_FOLDS(cv_threads)
     for (int fold = 0; fold < n_folds; fold++) {
         if (folds.train[fold].empty() || folds.val[fold].empty()) continue;
 
         VectorXd gamma = VectorXd::Zero(p_site);
         std::vector<bool> active(p_site, true);
+        int consecutive_failures = 0;
 
         for (int li = 0; li < n_lambda; li++) {
             int lambda_idx = lambda_order[li];
             double lambda = lambda_grid(lambda_idx);
             double cv_tol = std::max(tol, NumericalConstants::CV_TOL_FLOOR);
             int cv_max_iter = std::min(max_iter, NumericalConstants::CV_MAX_ITER);
+            VectorXd gamma_before = gamma;
 
-            CVUtils::density_ratio_cd_update(gamma, active, X_train_folds[fold],
-                                             pp_train[fold], n, mean_grad_psi,
-                                             lambda, cv_tol, cv_max_iter);
-
-            fold_scores(lambda_idx, fold) = CVUtils::density_ratio_val_loss(
-                gamma, mean_grad_psi, X_val_folds[fold], pp_val[fold],
-                static_cast<double>(n_treated) / n);
+            CVUtils::DensityRatioCDResult fit =
+                CVUtils::density_ratio_cd_update(
+                    gamma, active, X_train_folds[fold], pp_train[fold],
+                    static_cast<double>(n_treated) / n, mean_grad_psi,
+                    lambda, cv_tol, cv_max_iter
+                );
+            if (fit.converged) {
+                consecutive_failures = 0;
+                fold_scores(lambda_idx, fold) = CVUtils::density_ratio_val_loss(
+                    gamma, mean_grad_psi, X_val_folds[fold], pp_val[fold],
+                    static_cast<double>(n_treated) / n);
+            } else {
+                gamma = gamma_before;
+                std::fill(active.begin(), active.end(), true);
+                path_tail_skipped[fold] = CVUtils::cv_path_tail_after_failure(
+                    consecutive_failures, li, n_lambda
+                );
+                if (path_tail_skipped[fold] > 0) break;
+            }
         }
     }
 
-    return CVUtils::aggregate_cv_results(fold_scores, lambda_grid, n_lambda, n_folds);
+    int skipped_fold_fits = std::accumulate(
+        path_tail_skipped.begin(), path_tail_skipped.end(), 0
+    );
+    return CVUtils::append_explicit_fold_audit(
+        CVUtils::aggregate_cv_results(
+            fold_scores, lambda_grid, n_lambda, n_folds, skipped_fold_fits
+        ), folds, cv_fold_id
+    );
 }

@@ -1,6 +1,6 @@
 #!/usr/bin/env Rscript
 # Diagnosis-only probe: FACE-paper DGP (dgp_type = "face") at calibrated, modest
-# per-site sample sizes, to check whether FACE-HD attains valid coverage in-regime
+# per-site sample sizes, to check whether RoCE attains valid coverage in-regime
 # and whether the cross-fitting fold count (kf) still matters under the current
 # fold-summed calibration.
 #
@@ -24,7 +24,7 @@ n_deviated    <- if (length(args) >= 3L) as.integer(args[[3L]]) else 0L
 stopifnot(is.finite(kf), kf >= 3L, is.finite(ate_deviation),
           ate_deviation >= 0, n_deviated >= 0L)
 
-suppressPackageStartupMessages(library(FACEHD))
+suppressPackageStartupMessages(library(RoCE))
 
 n_cores <- as.integer(Sys.getenv("SLURM_CPUS_PER_TASK", "1"))
 if (is.na(n_cores) || n_cores < 1L) n_cores <- 1L

@@ -15,7 +15,7 @@ mkdir -p diagnosis/c2/dr_cv_scale_patch_probe/log diagnosis/c2/dr_cv_scale_patch
 export C2_RBAL_OUTPUT_ROOT="${C2_RBAL_OUTPUT_ROOT:-diagnosis/c2/dr_cv_scale_patch_probe}"
 
 echo "======================================================"
-echo " FACE-HD C2 DR-CV Scale Patch Summary"
+echo " RoCE C2 DR-CV Scale Patch Summary"
 echo "======================================================"
 echo " Output root: ${C2_RBAL_OUTPUT_ROOT}"
 echo " Start:       $(date)"

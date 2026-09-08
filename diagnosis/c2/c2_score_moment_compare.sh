@@ -48,7 +48,7 @@ SBATCH_CMD=(
 )
 
 echo "======================================================"
-echo " FACE-HD C2 Score/Moment Compare Submission"
+echo " RoCE C2 Score/Moment Compare Submission"
 echo "======================================================"
 echo " Repo:       ${REPO_DIR}"
 echo " Base:       ${BASE_ROOT}"

@@ -1,4 +1,4 @@
-# realdata.R - FACE-HD Real-Data Experiment (Right-Heart Catheterization)
+# realdata.R - RoCE Real-Data Experiment (Right-Heart Catheterization)
 #
 # =============================================================================
 # TARGET ESTIMAND
@@ -9,7 +9,7 @@
 #
 # Pipeline (parallel in spirit to main.R):
 #   1. Parse args.
-#   2. Load installed FACEHD package (devtools::load_all fallback for dev).
+#   2. Load installed RoCE package (devtools::load_all fallback for dev).
 #   3. Run the end-to-end RHC experiment via run_rhc_experiment().
 #   4. Persist artefacts under results/real_data/:
 #        - <setting>.rds              full result list
@@ -92,30 +92,30 @@ site_recode_arg <- if (!nzchar(site_preset_arg)) {
 # Hardcoded presets (rather than user-supplied code) keep the command-line
 # surface declarative and reviewable.
 #
-# FACEHD is loaded below (via library(FACEHD)), so we cannot yet reference
+# RoCE is loaded below (via library(RoCE)), so we cannot yet reference
 # phi_rhc_bspline by its bare name. Use the fully-qualified namespace
-# accessor instead; this also makes the dependency on FACEHD explicit.
+# accessor instead; this also makes the dependency on RoCE explicit.
 phi_preset_arg <- Sys.getenv("PHI", "identity")
 phi_fun <- switch(
   phi_preset_arg,
   "identity" = base::identity,
-  "bspline"  = FACEHD::phi_rhc_bspline,
+  "bspline"  = RoCE::phi_rhc_bspline,
   stop(sprintf("Unknown PHI = '%s' (known: identity, bspline)", phi_preset_arg))
 )
 
 # ============================================================================
-# Load FACEHD Package (mirrors main.R)
+# Load RoCE Package (mirrors main.R)
 # ============================================================================
 # quietly = FALSE so the actual loadNamespace error (e.g. ABI mismatch from a
 # wrong R module version) surfaces in the log instead of silently falling to
 # the misleading "neither found" branch.
-if (requireNamespace("FACEHD", quietly = FALSE)) {
-  library(FACEHD)
+if (requireNamespace("RoCE", quietly = FALSE)) {
+  library(RoCE)
 } else if (requireNamespace("devtools", quietly = FALSE)) {
-  cat("FACEHD not installed; loading via devtools::load_all()...\n")
+  cat("RoCE not installed; loading via devtools::load_all()...\n")
   devtools::load_all(".")
 } else {
-  stop("Neither installed FACEHD package nor devtools found. ",
+  stop("Neither installed RoCE package nor devtools found. ",
        "Install the package with: R CMD INSTALL .")
 }
 
@@ -151,7 +151,7 @@ weights_pdf   <- file.path(results_dir, paste0(setting_id, "_weights.pdf"))
 pairwise_pdf  <- file.path(results_dir, paste0(setting_id, "_pairwise.pdf"))
 
 cat(sprintf("==============================================\n"))
-cat(sprintf("FACE-HD Real-Data Experiment: RHC\n"))
+cat(sprintf("RoCE Real-Data Experiment: RHC\n"))
 cat(sprintf("==============================================\n"))
 cat(sprintf("Job ID:        %s\n", job_id))
 cat(sprintf("Setting ID:    %s\n", setting_id))
@@ -212,7 +212,7 @@ cat(sprintf("[OK] CSV tables written to %s\n", results_dir))
 # Summary printed to log so SLURM stdout captures the numeric headline.
 cat("\n=== Methods table ===\n")
 print(result$methods, digits = 4, row.names = FALSE)
-cat("\n=== FACE-HD aggregation weights ===\n")
+cat("\n=== RoCE aggregation weights ===\n")
 print(weights_df, digits = 4, row.names = FALSE)
 
 # ============================================================================
@@ -226,9 +226,9 @@ if (!has_ggplot2) {
 } else {
   forest <- plot_forest_methods(
     result$methods,
-    title    = sprintf("RHC: %s — method comparison (K = %d)", outcome_arg, K_arg),
-    subtitle = sprintf("Target site = %s", result$metadata$target_site),
-    xlab     = "Treatment effect estimate (potential-outcome mean)"
+    title    = NULL,
+    subtitle = NULL,
+    xlab     = "Potential-outcome mean"
   )
   save_plot(forest, forest_pdf, width = 7, height = 4.5)
   cat(sprintf("[OK] Forest plot: %s\n", forest_pdf))
@@ -237,7 +237,7 @@ if (!has_ggplot2) {
     weights      = result$weights,
     source_labels = source_labels,
     penalty_d2   = result$metadata$pairwise_d_sq,
-    title        = "FACE-HD aggregation weights",
+    title        = "RoCE aggregation weights",
     subtitle     = sprintf("Zero weights = selection penalty dominated by (%s gap)^2", outcome_arg)
   )
   save_plot(weights_plot, weights_pdf, width = 7, height = 4.0)

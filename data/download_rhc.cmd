@@ -7,12 +7,12 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=2g
-#SBATCH --job-name=FACEHD_rhc_dl
+#SBATCH --job-name=ROCE_rhc_dl
 #SBATCH -p msismall,amdsmall,agsmall
 #SBATCH --nice=5
 
 # ============================================================================
-# FACE-HD RHC Public Dataset Download
+# RoCE RHC Public Dataset Download
 # ============================================================================
 # Fetches the Right-Heart Catheterization teaching dataset (Connors et al.
 # 1996) from Frank Harrell's hbiostat.org mirror into the package's
@@ -29,7 +29,7 @@ DEST_PATH="inst/extdata/rhc.csv"
 mkdir -p "$(dirname "${DEST_PATH}")" log
 
 echo "=============================================="
-echo "FACE-HD RHC Download Job"
+echo "RoCE RHC Download Job"
 echo "=============================================="
 echo "Job ID:      ${SLURM_JOB_ID}"
 echo "Source:      ${SRC_URL}"

@@ -43,12 +43,12 @@ cat(sprintf("[verify_kf3] n=%d K=%d p=%d config=%s shift=%g K_f=%d n_sims=%d\n",
             n_total, K, p, config, shift, n_folds, n_sims))
 
 suppressPackageStartupMessages({
-  if (requireNamespace("FACEHD", quietly = FALSE)) {
-    library(FACEHD)
+  if (requireNamespace("RoCE", quietly = FALSE)) {
+    library(RoCE)
   } else if (requireNamespace("devtools", quietly = FALSE)) {
     devtools::load_all(".")
   } else {
-    stop("Neither FACEHD nor devtools available.")
+    stop("Neither RoCE nor devtools available.")
   }
 })
 
@@ -100,7 +100,7 @@ results <- run_simulation_study(
   verbose_every   = 50L,
   parallel_strategy = "outer_priority",
   estimate_ate    = FALSE,
-  dgp_type        = "facehd"
+  dgp_type        = "roce"
 )
 elapsed <- as.numeric(difftime(Sys.time(), t0, units = "mins"))
 cat(sprintf("[verify_kf3] simulation elapsed = %.2f min\n", elapsed))
