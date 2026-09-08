@@ -218,7 +218,7 @@ on the candidate) hit the 3 h limit inside `test-comparison-bootstrap-variance.R
 candidate source had been copied before the test-fixture fixes of #0005 §5 landed. Resubmitted
 as phase `tests` of the same script (rebuilds the candidate from the current tree + patch, runs
 only step 4 and R CMD check) with a 10 h limit: job recorded below.
-(e), (f): PENDING.
+(e), (f): PENDING — job 18576245.
 
 ### 6. Decision + rationale
 PENDING
