@@ -589,3 +589,54 @@ test_that("get_face_ps_parameters handles varying p", {
   expect_true(params10$alpha2[1] != 0)
   expect_true(all(params10$alpha2[2:10] == 0))
 })
+
+test_that("the both-arms deviation shifts only the deviated source, in both arms", {
+  generate <- function(...) {
+    set.seed(5)
+    generate_face_data(300, K = 2, p = 10, config = "C1", outcome_type = "binary",
+                       n_deviated_sites = 1L, ...)
+  }
+  null_data <- generate(ate_deviation = 0)
+  treated_arm <- generate(ate_deviation = 1.5)
+  both_arms <- generate(ate_deviation = 1.5, deviation_mechanism = "both_arms")
+
+  expect_identical(both_arms$deviation_mechanism, "both_arms")
+  expect_identical(treated_arm$deviation_mechanism, "treated_arm")
+  expect_null(treated_arm$outcome_shift_map)
+  expect_identical(both_arms$outcome_shift_map, c(t = 0, s1 = 1.5, s2 = 0))
+  expect_identical(both_arms$ate_map, null_data$ate_map)
+  expect_identical(treated_arm$ate_map[["s1"]], null_data$ate_map[["s1"]] + 1.5)
+  # The target-population truth never depends on a source deviation.
+  for (field in c("X", "A", "mu1_true", "mu0_true")) {
+    expect_identical(both_arms[[field]], null_data[[field]])
+    expect_identical(treated_arm[[field]], null_data[[field]])
+  }
+  unchanged <- null_data$R != "s1"
+  deviated <- !unchanged
+  for (arm in c("Y_1", "Y_0")) {
+    expect_identical(both_arms[[arm]][unchanged], null_data[[arm]][unchanged])
+    expect_identical(treated_arm[[arm]][unchanged], null_data[[arm]][unchanged])
+    expect_false(identical(both_arms[[arm]][deviated], null_data[[arm]][deviated]))
+  }
+  expect_identical(treated_arm$Y_0[deviated], null_data$Y_0[deviated])
+  expect_false(identical(treated_arm$Y_1[deviated], null_data$Y_1[deviated]))
+  # A shared shift raises both arms' risks at the deviated source.
+  expect_gt(mean(both_arms$Y_0[deviated]), mean(null_data$Y_0[deviated]))
+  expect_gt(mean(both_arms$Y_1[deviated]), mean(null_data$Y_1[deviated]))
+
+  expect_error(
+    generate_simulation_data(
+      n_total = 60, K = 1, p = 3, config = "C1", dgp_type = "roce",
+      estimand_type = "sample", deviation_mechanism = "both_arms"
+    ),
+    "applies only to dgp_type = 'face'"
+  )
+  expect_error(generate(ate_deviation = 1, deviation_mechanism = "shared"), "arg")
+  # Forwarded defaults must not trip the roce guard (drivers forward them).
+  roce_data <- generate_simulation_data(
+    n_total = 60, K = 1, p = 3, config = "C1", dgp_type = "roce",
+    estimand_type = "sample", deviation_mechanism = "treated_arm",
+    misspecification_strength = FACE_MISSPECIFICATION_STRENGTH
+  )
+  expect_identical(roce_data$dgp_type, "roce")
+})

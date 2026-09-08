@@ -612,6 +612,9 @@ calculate_superpopulation_truth <- function(p, K = 3, config,
 #'   under the FACE DGP. It is a mean shift for Gaussian outcomes and a
 #'   log-odds shift for binary outcomes, not generally the induced marginal
 #'   TATE difference.
+#' @param deviation_mechanism \code{"treated_arm"} (default) or
+#'   \code{"both_arms"}: how the deviated sources deviate under the FACE DGP
+#'   (see \code{\link{generate_face_data}}).
 #' @param n_deviated_sites Number of leading deviated source sites under the
 #'   FACE DGP.
 #' @param effect_mod_strength Source-only treatment-effect-modification strength
@@ -662,6 +665,7 @@ generate_simulation_data <- function(n_total = NULL, K = 3, p = 4, config = "C1"
                                    dgp_type = "face",
                                    ate_deviation   = 0.0,
                                    n_deviated_sites = 0L,
+                                   deviation_mechanism = "treated_arm",
                                    # Source-only effect modification (FACE DGP); 0 = standard DGP.
                                    effect_mod_strength = 0,
                                    # Explicit per-site sample sizes (FACE DGP only)
@@ -679,9 +683,15 @@ generate_simulation_data <- function(n_total = NULL, K = 3, p = 4, config = "C1"
          "for dgp_type = 'face'; the roce DGP sets site sizes via site_allocation.",
          call. = FALSE)
   }
-  if (!missing(misspecification_strength) && dgp_type != "face") {
+  # Value-based guards (not missing()): drivers forward these arguments
+  # unconditionally, and the roce DGP must reject only a non-default request.
+  if (dgp_type != "face" &&
+      !isTRUE(all.equal(misspecification_strength, FACE_MISSPECIFICATION_STRENGTH))) {
     stop("misspecification_strength applies only to dgp_type = 'face'.",
          call. = FALSE)
+  }
+  if (dgp_type != "face" && !identical(deviation_mechanism, "treated_arm")) {
+    stop("deviation_mechanism applies only to dgp_type = 'face'.", call. = FALSE)
   }
   # In per-site mode, derive a concrete n_total (and K) so the centralized
   # validation and result bookkeeping see values consistent with the allocation.
@@ -723,6 +733,7 @@ generate_simulation_data <- function(n_total = NULL, K = 3, p = 4, config = "C1"
         outcome_type     = outcome_type,
         ate_deviation    = ate_deviation,
         n_deviated_sites = as.integer(n_deviated_sites),
+        deviation_mechanism = deviation_mechanism,
         effect_mod_strength = effect_mod_strength,
         n_target         = n_target,
         n_source_sizes   = n_source_sizes,

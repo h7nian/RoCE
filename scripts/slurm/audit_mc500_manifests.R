@@ -16,6 +16,23 @@ expected_bootstrap <- if (length(args) >= 3L) {
 } else {
   5000L
 }
+# Manifest family under audit (HISTORY #0009): the negative-transfer family
+# (treated-arm deviation, C1-C3, with its diagnostic manifests) or the
+# shared-shift family (both-arm deviation, C1 only, no diagnostic manifests).
+family_name <- if (length(args) >= 4L) args[[4L]] else "main"
+family <- switch(
+  family_name,
+  main = list(
+    experiment = "negative_transfer", configs = c("C1", "C2", "C3"),
+    deviation_mechanism = "treated_arm", audit_diagnostics = TRUE
+  ),
+  shared_shift = list(
+    experiment = "shared_shift", configs = "C1",
+    deviation_mechanism = "both_arms", audit_diagnostics = FALSE
+  ),
+  stop("family must be main or shared_shift.", call. = FALSE)
+)
+n_configs <- length(family$configs)
 expected_primary_cutoff <- suppressWarnings(as.numeric(Sys.getenv(
   "ROCE_PRIMARY_CUTOFF", "1"
 )))
@@ -86,15 +103,20 @@ main <- read_manifest("manifest_main.csv")
 required_main <- c(
   "task_id", "experiment", "sim_id", "config", "p", "K", "rho",
   "cutoff", "n_site", "n_folds", "nlambda_init", "n_bootstrap",
-  "M_tau", "M_tau_inference", "methods"
+  "M_tau", "M_tau_inference", "methods", "deviation_mechanism"
 )
 assert_true(
   all(required_main %in% names(main)),
   "main manifest is missing required columns."
 )
 assert_true(
-  nrow(main) == 3L * 3L * 6L * expected_replications,
+  nrow(main) == n_configs * 3L * 6L * expected_replications,
   "main manifest has the wrong row count."
+)
+assert_true(
+  all(main$experiment == family$experiment) &&
+    all(main$deviation_mechanism == family$deviation_mechanism),
+  "main manifest experiment or deviation mechanism does not match the family."
 )
 assert_true(
   identical(as.integer(main$task_id), seq_len(nrow(main))) &&
@@ -103,7 +125,7 @@ assert_true(
 )
 assert_true(
   all(main$p == 100L) &&
-    setequal(main$config, c("C1", "C2", "C3")) &&
+    setequal(main$config, family$configs) &&
     setequal(as.integer(main$K), c(2L, 4L, 8L)) &&
     setequal(main$rho, c(0, 0.5, 1, 1.5, 2, 2.5)) &&
     all(abs(main$cutoff - expected_primary_cutoff) <= 1e-12) &&
@@ -116,7 +138,10 @@ assert_true(
 main_setting_count <- assert_replication_grid(
   main, c("config", "p", "K", "rho", "cutoff"), "main manifest"
 )
-assert_true(main_setting_count == 54L, "main manifest must contain 54 settings.")
+assert_true(
+  main_setting_count == n_configs * 18L,
+  sprintf("main manifest must contain %d settings.", n_configs * 18L)
+)
 
 split_parts <- lapply(c(2L, 4L, 8L), function(source_count) {
   split_manifest <- read_manifest(sprintf("manifest_main_K%d.csv", source_count))
@@ -139,12 +164,14 @@ rho_groups <- read_manifest("manifest_main_rho_groups.csv")
 required_group <- c(
   "group_task_id", "experiment", "sim_id", "config", "p", "K",
   "cutoff", "n_site", "n_folds", "nlambda_init", "n_bootstrap",
-  "M_tau", "M_tau_inference", "methods", "rho_values",
-  "primary_task_ids"
+  "M_tau", "M_tau_inference", "methods", "deviation_mechanism",
+  "rho_values", "primary_task_ids"
 )
 assert_true(
   all(required_group %in% names(rho_groups)) &&
-    nrow(rho_groups) == 3L * 3L * expected_replications &&
+    nrow(rho_groups) == n_configs * 3L * expected_replications &&
+    all(rho_groups$experiment == family$experiment) &&
+    all(rho_groups$deviation_mechanism == family$deviation_mechanism) &&
     identical(
       as.integer(rho_groups$group_task_id), seq_len(nrow(rho_groups))
     ) && all(rho_groups$p == 100L) &&
@@ -186,6 +213,7 @@ for (group_index in seq_len(nrow(rho_groups))) {
   )
 }
 
+if (family$audit_diagnostics) {
 smoke <- read_manifest("manifest_smoke_single.csv")
 assert_true(
   nrow(smoke) == 1L && smoke$p == 100L && smoke$config == "C3" &&
@@ -258,25 +286,34 @@ assert_true(
     "settings; M_fit=5 sensitivities come from primary-task sidecars."
   )
 )
+}
 
 summary <- data.frame(
-  manifest = c("main", "main_K2", "main_K4", "main_K8", "rho_groups",
-               "smoke", "cutoff", "truncation"),
+  manifest = c("main", "main_K2", "main_K4", "main_K8", "rho_groups"),
   tasks = c(
-    nrow(main), vapply(split_parts, nrow, integer(1L)), nrow(rho_groups),
-    nrow(smoke), nrow(cutoff), nrow(truncation)
+    nrow(main), vapply(split_parts, nrow, integer(1L)), nrow(rho_groups)
   ),
-  settings = c(54L, 18L, 18L, 18L, 9L, 1L, 2L, 4L),
-  replications_per_setting = c(
-    rep(expected_replications, 5L), 1L,
-    expected_replications, expected_replications
-  ),
-  bootstrap_draws = c(
-    rep(expected_bootstrap, 6L), NA_integer_, expected_bootstrap
-  ),
-  primary_cutoff = rep(expected_primary_cutoff, 8L),
+  settings = n_configs * c(18L, 6L, 6L, 6L, 3L),
+  replications_per_setting = rep(expected_replications, 5L),
+  bootstrap_draws = rep(expected_bootstrap, 5L),
+  primary_cutoff = rep(expected_primary_cutoff, 5L),
   stringsAsFactors = FALSE
 )
+if (family$audit_diagnostics) {
+  summary <- rbind(summary, data.frame(
+    manifest = c("smoke", "cutoff", "truncation"),
+    tasks = c(nrow(smoke), nrow(cutoff), nrow(truncation)),
+    settings = c(1L, 2L, 4L),
+    replications_per_setting = c(
+      1L, expected_replications, expected_replications
+    ),
+    bootstrap_draws = c(expected_bootstrap, NA_integer_, expected_bootstrap),
+    primary_cutoff = rep(expected_primary_cutoff, 3L),
+    stringsAsFactors = FALSE
+  ))
+}
+summary$family <- family_name
+summary$deviation_mechanism <- family$deviation_mechanism
 utils::write.csv(
   summary, file.path(manifest_root, "manifest_audit_summary.csv"),
   row.names = FALSE
@@ -284,6 +321,9 @@ utils::write.csv(
 
 manifest_gate <- c(
   "manifest_audit=passed",
+  paste0("family=", family_name),
+  paste0("experiment=", family$experiment),
+  paste0("deviation_mechanism=", family$deviation_mechanism),
   paste0("replications_per_setting=", expected_replications),
   paste0("bootstrap_draws=", expected_bootstrap),
   "p=100",
@@ -342,4 +382,4 @@ if (!file.rename(manifest_gate_temporary, manifest_gate_path)) {
   stop("failed to atomically write the manifest audit gate.", call. = FALSE)
 }
 print(summary, row.names = FALSE)
-message("all MC500/B5000 manifest audits passed")
+message("all MC500/B5000 manifest audits passed for family ", family_name)

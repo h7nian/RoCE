@@ -22,6 +22,24 @@
   )
 }
 
+# Frozen production method-row set of one replicate (HISTORY #0009): the
+# treated-mean rows, the arm-wise diagnostic, the primary common-weight TATE,
+# the gated sensitivity/diagnostic rules, and the TATE benchmarks. Audits and
+# tests compare a task's rows against this set.
+.tate_production_method_rows <- function(include_hard_threshold = FALSE,
+                                         include_quadratic_bias = TRUE) {
+  c(
+    "one_round_crossfit", "target_only", "sample_size", "inverse_variance",
+    "federated_dr", "pooled_dr",
+    "one_round_crossfit_ate_armwise", "one_round_crossfit_ate",
+    if (isTRUE(include_quadratic_bias)) "one_round_crossfit_ate_quadratic_bias",
+    if (isTRUE(include_hard_threshold)) "one_round_crossfit_ate_hard_threshold",
+    .tate_benchmark_methods()
+  )
+}
+
+.face_deviation_mechanisms <- function() c("treated_arm", "both_arms")
+
 .direct_tate_aggregation_diagnostic_columns <- function() {
   c(
     "target_anchor_weight", "mean_abs_source_weight",
@@ -39,8 +57,8 @@
 .validate_face_production_scientific_metadata <- function(results) {
   required <- c(
     "dgp_type", "outcome_family", "heterogeneity_type", "estimand_type",
-    "config", "rho", "p", "K", "n_site", "n_folds", "estimand_scope",
-    "method"
+    "config", "rho", "deviation_mechanism", "p", "K", "n_site", "n_folds",
+    "estimand_scope", "method"
   )
   missing <- setdiff(required, names(results))
   if (length(missing) > 0L) {
@@ -59,13 +77,19 @@
     stop("FACE production numeric design metadata have invalid storage.",
          call. = FALSE)
   }
+  mechanism <- as.character(results$deviation_mechanism)
   expected_heterogeneity <- vapply(
-    results$rho,
-    function(rho) {
-      if (!is.finite(rho) || rho < 0) return(NA_character_)
+    seq_len(nrow(results)),
+    function(i) {
+      rho <- results$rho[[i]]
+      if (!is.finite(rho) || rho < 0 ||
+          !mechanism[[i]] %in% .face_deviation_mechanisms()) {
+        return(NA_character_)
+      }
       .face_heterogeneity_type(
         ate_deviation = rho,
-        n_deviated_sites = as.integer(rho > 0)
+        n_deviated_sites = as.integer(rho > 0),
+        deviation_mechanism = mechanism[[i]]
       )
     },
     character(1L)
@@ -84,14 +108,15 @@
     results$outcome_family == "binomial" &
     results$estimand_type == "superpopulation" &
     results$estimand_scope == expected_scope &
+    !is.na(expected_heterogeneity) &
     results$heterogeneity_type == expected_heterogeneity
   if (!all(valid)) {
     stop(
       paste0(
         "FACE production scientific metadata must use the audited p=100 ",
         "design grid, the binary FACE DGP, the superpopulation estimand, ",
-        "method-consistent estimand scopes, and rho-consistent ",
-        "heterogeneity labels."
+        "method-consistent estimand scopes, a known deviation mechanism, ",
+        "and rho-consistent heterogeneity labels."
       ),
       call. = FALSE
     )

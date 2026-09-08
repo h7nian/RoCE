@@ -448,3 +448,104 @@ covered by the quadratic FD test's unit-mass identity.
 
 ### 6. Decision + rationale
 PENDING
+
+<a id="0009"></a>
+## 0009 — 2026-09-07 — Freeze the production row schema and add the shared-shift scenario  [MIGRATION]
+
+> commit: (pending; branch `entry-0009`, worktree /scratch.global/zhan9381/FACE-HD-0009)
+> previous related: [#0005](#0005), [#0006](#0006), [#0007](#0007) (landing candidate f7436de3); user decision 2026-09-07 (add a two-arm shared-shift scenario; 500 replications)
+> stage: 2 (package + production tooling)
+> method.tex section: `docs/main.tex` sec:simulations (design paragraph: shared-shift experiment)
+
+### 1. Symptom / motivation
+Production restarts from fresh manifests once #0005–#0007 land. Before that, (i) the
+per-replicate method-row set must be frozen in one place (audits and scripts enumerated it
+in more than twenty places); (ii) the negative-transfer experiment moves only the treated arm
+of the deviated source (`ate_map`), so the outcome-model heterogeneity that the density-ratio
+calibration cannot absorb is never exercised; the user asked for a second, both-arm scenario.
+
+### 2. Theoretical analysis
+Shared shift: at the deviated source, Pr{Y(a)=1 | X, R=s_1} = expit{g(X) + rho + Delta a}
+with Delta unchanged. The source's conditional risk difference changes only through the
+curvature of expit, so its TATE differs from the target's while the treatment log-odds and
+the covariate law are unchanged; the target-population truth is unaffected (it depends on
+`base_ate` only). Reuse across rho: both arms of the deviated source change, so the
+positive-rho update must refit both arms of the changed sources (target and informative
+sources are reused unchanged); the treated-arm mechanism keeps the control-arm reuse.
+
+### 3. Decomposition
+- Paper first: `docs/main.tex` sec:simulations design paragraph (shared-shift experiment).
+- DGP: `generate_face_data(deviation_mechanism = c("treated_arm", "both_arms"))`,
+  `build_face_outcome_shift_map()`, `generate_face_outcomes(outcome_shift_map)`; the data
+  list carries `deviation_mechanism` and `outcome_shift_map`; the roce DGP rejects an explicit
+  mechanism.
+- Driver: `run_single_simulation(deviation_mechanism)`, `run_simulation_study(...)`,
+  `.face_heterogeneity_type(..., deviation_mechanism)` with labels
+  `one_shared_shift_source` / `multiple_shared_shift_sources` /
+  `shared_shift_and_effect_modification`; rows record `deviation_mechanism`.
+- Reuse: `.validate_one_round_rho_reuse_data(changed_arms)`,
+  `.refit_one_round_crossfit_sources(changed_arms)`,
+  `.reuse_one_round_tate_across_rho(refit_control_arm)`; `rho_reuse$reused_control_arm`.
+- Schema freeze: `.tate_production_method_rows(include_hard_threshold, include_quadratic_bias)`
+  and `.face_deviation_mechanisms()` in `R/simulation_diagnostics.R`; the checkpoint/smoke
+  audits and the source-diagnostic summary use it; `.validate_face_production_scientific_metadata()`
+  requires `deviation_mechanism` and checks the mechanism-consistent label.
+- Tooling: manifests carry `deviation_mechanism` (appended after `methods`, so the grouped
+  column positions 3/4/6/7 read by the submission script are unchanged); `build_direct_tate_manifest.R` mode `shared_shift` (pre-registered scope: C1,
+  K = 2/4/8, rho grid {0, 0.5, 1, 1.5, 2, 2.5}, both arms); the rho-group builder accepts one
+  grouped experiment per manifest; task runners pass the mechanism; row annotation asserts it;
+  `submit_rho_group_direct_tate.sh` derives the group count from the primary manifest; the
+  checkpoint audit is family-aware; `aggregate_direct_tate.R` groups by mechanism;
+  `audit_mc500_manifests.R` audits one family per root; `prepare_mc500_manifests.sh` builds the
+  shared-shift family under `results/direct_tate_mc500_b5000/shared_shift/`.
+- Tests: both-arm DGP invariants (target truth and non-deviated sites unchanged, both arms
+  move at s_1), heterogeneity labels, reuse validator arms, shared-shift grouped reuse equals
+  the independent fit, frozen row set, validator with both mechanisms.
+
+### 4. Acceptance criteria
+- [ ] (a) shared-shift grouped reuse equals the independent fit on the K=1/p=3 fixture to 1e-12 (all `rho_equivalence_columns`) → ___ [PENDING]
+- [ ] (b) treated-arm grouped reuse unchanged: existing reuse tests pass byte-identically → ___ [PENDING]
+- [ ] (c) full build + testthat from the worktree (`USE_SOURCE=true`): 0 failures, 0 errors → ___ [PENDING]
+- [ ] (d) manifest family build + `audit_mc500_manifests.R` pass for both families in a scratch root (500 replications: 16200 + 5400 tasks, 4500 + 1500 groups) → ___ [PENDING]
+- [ ] (e) smoke task (`manifest_smoke_single.csv`) through `run_direct_tate_task.R` + `audit_direct_tate_smoke.R` with the frozen row set → ___ [PENDING]
+- [ ] (f) substitute Rule 7a review recorded; Rule 24 audit → ___ [PENDING]
+
+Before the n = 10 stage of the shared-shift family: a shared-shift reuse-equivalence run
+(C1, K = 4, rho = 2.5; grouped both-arm reuse vs. an independent fit, the analogue of
+`submit_rho_reuse_equivalence.sh`), and the rho = 0 rows of the two families must be identical
+for the same sim_id (same dataset and fits).
+
+Staged production gates (pre-registered for #0010, per family and per C×K): n = 10
+(implementation: audits pass, no failed replicate, SE/SD within [0.7, 1.4]); n = 50 (coverage of
+RoCE at every rho within 0.95 ± 0.06, i.e. two MC standard errors); n = 100 (go/no-go for 500:
+coverage within 0.95 ± 0.045 at every rho except the pre-declared weak-separation dip at
+rho = 0.5, which is reported, and RoCE RMSE ≤ target-only RMSE at rho = 0 within MC error).
+
+### 7. Review note
+Reviewer verdict: both-arm reuse is exact (the changed source's `process_source_site()` is
+re-run in full under the same work seed; only target-side components are reused, and the
+reference mu0 arm carries the same fields as mu1); the treated-arm path is byte-identical
+(`changed_arms = 1L` reproduces the old check; a NULL shift map adds exactly 0). Findings:
+1. Exactness → no action.
+2. **Regression**: `run_single_simulation()` forwards `deviation_mechanism` unconditionally and
+   the roce-DGP guard used `missing()`, so every roce driver run would have errored (no test
+   drives roce through the driver) → **FIX**: value-based guards for both
+   `deviation_mechanism` and `misspecification_strength`; test added for forwarded defaults.
+3. Treated-arm path identical → no action; the rho = 0 cross-family identity is added to the
+   pre-n = 10 checks (§4) and to the K = 2 unit test.
+4. No test reused an informative source's control arm under both arms (all K = 1) →
+   **FIX**: the shared-shift reuse test now uses K = 2 (s2 reused in both arms); a
+   production-scale shared-shift reuse-equivalence run is pre-registered in §4.
+5. HISTORY wording on the column position → **FIX** (§3).
+6. Rho-group runner's invariant columns lacked `deviation_mechanism` → **FIX**.
+7. Negative-transfer audits/scripts unaffected → no action.
+8. Pre-#0009 raw results fail the audits (required columns) → **DEFER**, intended: production
+   restarts from fresh manifests; old gate files are superseded by the rebuild.
+9. Edge cases handled; `rbinom` early return at prob exactly 0/1 would desynchronize later
+   sites' draws but the reuse validator would stop rather than reuse → noted, no action.
+
+### 5. Validation results (filled after running)
+PENDING
+
+### 6. Decision + rationale
+PENDING

@@ -67,7 +67,7 @@ manifest <- read.csv(manifest_path, stringsAsFactors = FALSE)
 required_manifest_columns <- c(
   "task_id", "experiment", "sim_id", "config", "p", "K", "rho",
   "cutoff", "n_site", "n_folds", "nlambda_init", "n_bootstrap", "M_tau",
-  "M_tau_inference", "methods"
+  "M_tau_inference", "methods", "deviation_mechanism"
 )
 missing_manifest_columns <- setdiff(required_manifest_columns, names(manifest))
 if (length(missing_manifest_columns) > 0L) {
@@ -78,8 +78,18 @@ if (length(missing_manifest_columns) > 0L) {
   )
 }
 
+# One grouped family per manifest: the negative-transfer family
+# (treated-arm deviation) or the shared-shift family (both-arm deviation).
+experiment <- unique(as.character(manifest$experiment))
+deviation_mechanism <- unique(as.character(manifest$deviation_mechanism))
+if (length(experiment) != 1L || length(deviation_mechanism) != 1L ||
+    !experiment %in% c("negative_transfer", "shared_shift") ||
+    !deviation_mechanism %in% RoCE:::.face_deviation_mechanisms()) {
+  stop("manifest must contain one grouped experiment with one deviation mechanism.",
+       call. = FALSE)
+}
 setting <- manifest[
-  manifest$experiment == "negative_transfer" &
+  manifest$experiment == experiment &
     manifest$config == config & manifest$p == 100L &
     manifest$K == source_count & manifest$rho == rho &
     manifest$cutoff == cutoff,
@@ -118,9 +128,10 @@ required_result_columns <- c(
   "task_id", "sim_id", "experiment", "method", "estimand_scope",
   "dgp_type", "outcome_family", "heterogeneity_type", "estimand_type",
   "estimate", "se", "bias", "coverage", "truth", "ci_lower", "ci_upper",
-  "p", "K", "config", "rho", "cutoff", "n_site", "n_folds",
-  "aggregation_lambda", "aggregation_cutoff",
-  "primary_cutoff",
+  "p", "K", "config", "rho", "deviation_mechanism", "cutoff", "n_site",
+  "n_folds", "aggregation_lambda", "aggregation_cutoff",
+  "primary_cutoff", "misspecification_strength",
+  "quadratic_bias_rule_requested", "hard_threshold_diagnostic_requested",
   "nlambda_init", "nuisance_lambda_rule", "n_bootstrap", "M_tau",
   "M_tau_inference",
   "min_site_arm_outcome_cell_n", "min_target_arm_outcome_cell_n",
@@ -143,32 +154,21 @@ if (length(missing_result_columns) > 0L) {
     call. = FALSE
   )
 }
-expected_methods <- c(
-  "one_round_crossfit", "target_only", "sample_size", "inverse_variance",
-  "federated_dr", "pooled_dr", "one_round_crossfit_ate_armwise",
-  "one_round_crossfit_ate", "target_only_ate", "sample_size_ate",
-  "inverse_variance_ate", "federated_dr_ate", "pooled_dr_ate"
-)
-# The quadratic-bias row is requested by default; results written before the
+# Frozen production row set (RoCE:::.tate_production_method_rows). The
+# quadratic-bias row is requested by default; results written before the
 # column existed fail the method-set check below by design.
 quadratic_bias_rule_disabled <-
   "quadratic_bias_rule_requested" %in% names(raw) &&
   all(!is.na(raw$quadratic_bias_rule_requested)) &&
   all(!as.logical(raw$quadratic_bias_rule_requested))
-if (!quadratic_bias_rule_disabled) {
-  expected_methods <- c(
-    expected_methods, "one_round_crossfit_ate_quadratic_bias"
-  )
-}
 hard_threshold_requested <-
   "hard_threshold_diagnostic_requested" %in% names(raw) &&
   all(!is.na(raw$hard_threshold_diagnostic_requested)) &&
   all(as.logical(raw$hard_threshold_diagnostic_requested))
-if (hard_threshold_requested) {
-  expected_methods <- c(
-    expected_methods, "one_round_crossfit_ate_hard_threshold"
-  )
-}
+expected_methods <- RoCE:::.tate_production_method_rows(
+  include_hard_threshold = hard_threshold_requested,
+  include_quadratic_bias = !quadratic_bias_rule_disabled
+)
 
 rows_by_task <- split(raw, raw$task_id)
 valid_method_sets <- vapply(rows_by_task, function(task_rows) {
@@ -216,7 +216,8 @@ expected_workflow_fingerprint <- tolower(trimws(Sys.getenv(
 expected_manifest_fingerprint <- tolower(trimws(Sys.getenv(
   "ROCE_MANIFEST_FINGERPRINT", ""
 )))
-metadata_ok <- all(raw$experiment == "negative_transfer") &&
+metadata_ok <- all(raw$experiment == experiment) &&
+  all(raw$deviation_mechanism == deviation_mechanism) &&
   all(raw$p == 100L) && all(raw$config == config) &&
   all(raw$K == source_count) && all(raw$rho == rho) &&
   all(raw$cutoff == cutoff) &&

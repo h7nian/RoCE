@@ -35,7 +35,9 @@
 }
 
 .face_heterogeneity_type <- function(
-    ate_deviation, n_deviated_sites, effect_mod_strength = 0) {
+    ate_deviation, n_deviated_sites, effect_mod_strength = 0,
+    deviation_mechanism = c("treated_arm", "both_arms")) {
+  deviation_mechanism <- match.arg(deviation_mechanism)
   if (!is.numeric(ate_deviation) || length(ate_deviation) != 1L ||
       !is.finite(ate_deviation) || ate_deviation < 0 ||
       !is.numeric(n_deviated_sites) || length(n_deviated_sites) != 1L ||
@@ -54,19 +56,21 @@
   }
   has_deviation <- ate_deviation > 0 && n_deviated_sites > 0
   has_effect_modification <- effect_mod_strength != 0
+  shared_shift <- identical(deviation_mechanism, "both_arms")
   if (!has_deviation && !has_effect_modification) {
     return("none")
   }
   if (has_deviation && has_effect_modification) {
-    return("deviation_and_effect_modification")
+    return(if (shared_shift) "shared_shift_and_effect_modification"
+           else "deviation_and_effect_modification")
   }
   if (has_effect_modification) {
     return("source_effect_modification")
   }
   if (n_deviated_sites == 1) {
-    return("one_deviated_source")
+    return(if (shared_shift) "one_shared_shift_source" else "one_deviated_source")
   }
-  "multiple_deviated_sources"
+  if (shared_shift) "multiple_shared_shift_sources" else "multiple_deviated_sources"
 }
 
 .abort_with_context <- function(fmt, ...) {
@@ -876,6 +880,10 @@
 #'   compatibility; it is not generally equal to the induced marginal TATE
 #'   difference for binary outcomes.
 #' @param n_deviated_sites Number of leading deviated sources under the FACE DGP.
+#' @param deviation_mechanism \code{"treated_arm"} (default) or
+#'   \code{"both_arms"}: how the deviated sources deviate under the FACE DGP
+#'   (see \code{\link{generate_face_data}}). Under \code{"both_arms"} the
+#'   positive-rho reuse refits both arms of the changed sources.
 #' @param effect_mod_strength Source-only treatment-effect-modification strength
 #'   under the FACE DGP; zero recovers the standard DGP.
 #' @param include_hard_threshold_diagnostic Logical. Also evaluate a diagnostic
@@ -923,6 +931,7 @@ run_single_simulation <- function(sim_id, n_total = 1000, K = 3, p = 4,
                                  dgp_type = "face",
                                  ate_deviation    = 0.0,
                                  n_deviated_sites = 0L,
+                                 deviation_mechanism = c("treated_arm", "both_arms"),
                                  effect_mod_strength = 0,
                                  # Explicit per-site sample sizes (FACE DGP only)
                                  n_target         = NULL,
@@ -936,6 +945,7 @@ run_single_simulation <- function(sim_id, n_total = 1000, K = 3, p = 4,
     nuisance_lambda_rule, "run_single_simulation",
     arg = "nuisance_lambda_rule"
   )
+  deviation_mechanism <- match.arg(deviation_mechanism)
   if (length(include_hard_threshold_diagnostic) != 1L ||
       is.na(include_hard_threshold_diagnostic) ||
       !is.logical(include_hard_threshold_diagnostic)) {
@@ -1022,7 +1032,7 @@ run_single_simulation <- function(sim_id, n_total = 1000, K = 3, p = 4,
   }
   result_heterogeneity_type <- if (identical(dgp_type, "face")) {
     .face_heterogeneity_type(
-      ate_deviation, n_deviated_sites, effect_mod_strength
+      ate_deviation, n_deviated_sites, effect_mod_strength, deviation_mechanism
     )
   } else {
     heterogeneity_type
@@ -1053,6 +1063,7 @@ run_single_simulation <- function(sim_id, n_total = 1000, K = 3, p = 4,
                                    dgp_type         = dgp_type,
                                    ate_deviation    = ate_deviation,
                                    n_deviated_sites = as.integer(n_deviated_sites),
+                                   deviation_mechanism = deviation_mechanism,
                                    effect_mod_strength = effect_mod_strength,
                                    n_target         = n_target,
                                    n_source_sizes   = n_source_sizes,
@@ -1155,12 +1166,15 @@ run_single_simulation <- function(sim_id, n_total = 1000, K = 3, p = 4,
             call. = FALSE
           )
         }
+        # The shared-shift mechanism changes both arms of the deviated
+        # sources, so their control-arm fits are refitted as well.
         .reuse_one_round_tate_across_rho(
           reference_data_split = rho_reuse_reference$data_split,
           data_split = data_split,
           fitted_tate = reference_tate,
           changed_sources = rho_reuse_reference$changed_sources,
           lambda_selection = aggregation_lambda,
+          refit_control_arm = identical(deviation_mechanism, "both_arms"),
           verbose = FALSE,
           n_cores = n_cores_internal
         )
@@ -1774,6 +1788,7 @@ run_single_simulation <- function(sim_id, n_total = 1000, K = 3, p = 4,
     results$hard_threshold_diagnostic_requested <-
       include_hard_threshold_diagnostic
     results$quadratic_bias_rule_requested <- include_quadratic_bias_rule
+    results$deviation_mechanism <- deviation_mechanism
     weight_bootstrap_numeric <- c(
       "variance_weight_relearn_bootstrap", "se_weight_relearn_bootstrap",
       "se_fixed_weight_bootstrap", "weight_uncertainty_ratio",
@@ -2324,11 +2339,13 @@ run_simulation_study <- function(n_sims = 500,
                                 dgp_type = "face",
                                 ate_deviation    = 0.0,
                                 n_deviated_sites = 0L,
+                                deviation_mechanism = c("treated_arm", "both_arms"),
                                 # Explicit per-site sample sizes (FACE DGP only)
                                 n_target         = NULL,
                                 n_source_sizes   = NULL,
                                 nuisance_lambda_rule = c("min", "1se"),
                                 n_weight_bootstrap = 0L) {
+  deviation_mechanism <- match.arg(deviation_mechanism)
 
   parallel_strategy <- match.arg(parallel_strategy)
   nuisance_lambda_rule <- .match_nuisance_lambda_rule(
@@ -2613,6 +2630,7 @@ run_simulation_study <- function(n_sims = 500,
               dgp_type = dgp_type,
               ate_deviation = ate_deviation,
               n_deviated_sites = n_deviated_sites,
+              deviation_mechanism = deviation_mechanism,
               n_target = n_target,
               n_source_sizes = n_source_sizes,
               n_weight_bootstrap = n_weight_bootstrap)
@@ -2689,6 +2707,7 @@ run_simulation_study <- function(n_sims = 500,
             dgp_type = dgp_type,
             ate_deviation = ate_deviation,
             n_deviated_sites = n_deviated_sites,
+            deviation_mechanism = deviation_mechanism,
             n_target = n_target,
             n_source_sizes = n_source_sizes,
             n_weight_bootstrap = n_weight_bootstrap

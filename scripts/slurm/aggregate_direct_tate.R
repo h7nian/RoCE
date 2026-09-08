@@ -94,7 +94,8 @@ write.csv(raw, file.path(summary_directory, "all_raw.csv"), row.names = FALSE)
 
 group_names <- intersect(c(
   "experiment", "dgp_type", "outcome_family", "config", "heterogeneity_type",
-  "estimand_type", "p", "K", "rho", "cutoff", "n_site", "n_folds",
+  "estimand_type", "p", "K", "rho", "deviation_mechanism", "cutoff",
+  "n_site", "n_folds",
   "nlambda_init", "nuisance_lambda_rule", "n_bootstrap", "M_tau",
   "M_tau_inference",
   roce_resource_metadata_columns()

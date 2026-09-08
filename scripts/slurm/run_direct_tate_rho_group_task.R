@@ -72,7 +72,7 @@ if (nrow(primary_rows) != length(expected_rhos) ||
 stable_columns <- c(
   "experiment", "sim_id", "config", "p", "K", "cutoff", "n_site",
   "n_folds", "nlambda_init", "n_bootstrap", "M_tau",
-  "M_tau_inference", "methods"
+  "M_tau_inference", "methods", "deviation_mechanism"
 )
 for (column in stable_columns) {
   if (length(unique(primary_rows[[column]])) != 1L ||
@@ -195,7 +195,8 @@ simulation_args <- list(
   include_hard_threshold_diagnostic =
     include_hard_threshold_diagnostic,
   include_quadratic_bias_rule = include_quadratic_bias_rule,
-  dgp_type = "face"
+  dgp_type = "face",
+  deviation_mechanism = roce_task_deviation_mechanism(group)
 )
 
 message(sprintf(

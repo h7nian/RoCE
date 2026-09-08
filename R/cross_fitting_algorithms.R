@@ -1733,9 +1733,18 @@ run_tate_crossfit <- function(
   result
 }
 
+# `changed_arms` lists the treatment arms whose outcomes may differ at the
+# changed sources: the refitted arm alone under the treated-arm deviation, both
+# arms under the shared-shift deviation (main.tex sec:simulations).
 .validate_one_round_rho_reuse_data <- function(
     reference_data_split, data_split, changed_sources, A_val,
-    caller = ".refit_one_round_crossfit_sources") {
+    changed_arms = A_val, caller = ".refit_one_round_crossfit_sources") {
+  changed_arms <- as.integer(changed_arms)
+  if (length(changed_arms) == 0L || any(!changed_arms %in% c(0L, 1L)) ||
+      !as.integer(A_val) %in% changed_arms) {
+    stop(caller, ": changed_arms must be a subset of {0, 1} containing the refitted arm.",
+         call. = FALSE)
+  }
   if (!is.list(reference_data_split) || !is.list(data_split) ||
       !identical(names(reference_data_split), names(data_split))) {
     stop(caller, ": reference and current site lists must have identical names.",
@@ -1789,13 +1798,13 @@ run_tate_crossfit <- function(
              call. = FALSE)
       }
     } else {
-      unchanged_arm <- current_site$A != as.integer(A_val)
+      unchanged_arm <- !current_site$A %in% changed_arms
       if (!identical(
         reference_site$Y[unchanged_arm], current_site$Y[unchanged_arm]
       )) {
         stop(
           caller, ": source '", site,
-          "' changed outcomes outside the refitted treatment arm.",
+          "' changed outcomes outside the refitted treatment arm(s).",
           call. = FALSE
         )
       }
@@ -1809,6 +1818,7 @@ run_tate_crossfit <- function(
     lambda_selection = fitted_arm$aggregation_lambda_selection,
     lambda_rule = fitted_arm$aggregation_lambda_rule %||% "min",
     aggregation_lambda_grid = fitted_arm$aggregation_lambda_grid %||% NULL,
+    changed_arms = fitted_arm$A_val,
     verbose = FALSE, n_cores = 1L) {
   started_at <- proc.time()[["elapsed"]]
   caller <- ".refit_one_round_crossfit_sources"
@@ -1830,7 +1840,8 @@ run_tate_crossfit <- function(
   }
   A_val <- as.integer(fitted_arm$A_val)
   changed_sources <- .validate_one_round_rho_reuse_data(
-    reference_data_split, data_split, changed_sources, A_val, caller
+    reference_data_split, data_split, changed_sources, A_val,
+    changed_arms = changed_arms, caller = caller
   )
   n_folds <- as.integer(fitted_arm$n_folds)
   current_folds <- build_crossfit_folds(data_split, n_folds)
@@ -1988,10 +1999,14 @@ run_tate_crossfit <- function(
   result
 }
 
+# `refit_control_arm = TRUE` refits the changed sources in both arms (the
+# shared-shift deviation changes Y(1) and Y(0) there); otherwise the control
+# arm is reused unchanged.
 .reuse_one_round_tate_across_rho <- function(
     reference_data_split, data_split, fitted_tate, changed_sources,
     lambda_selection,
     aggregation_lambda_grid = fitted_tate$aggregation_lambda_grid %||% NULL,
+    refit_control_arm = FALSE,
     verbose = FALSE, n_cores = 1L) {
   started_at <- proc.time()[["elapsed"]]
   caller <- ".reuse_one_round_tate_across_rho"
@@ -2001,18 +2016,31 @@ run_tate_crossfit <- function(
     stop(caller, ": fitted_tate must be a reusable one-round TATE fit.",
          call. = FALSE)
   }
-  mu1_result <- .refit_one_round_crossfit_sources(
-    reference_data_split = reference_data_split,
-    data_split = data_split,
-    fitted_arm = fitted_tate$arm_results$mu1,
-    changed_sources = changed_sources,
-    lambda_selection = lambda_selection,
-    lambda_rule = fitted_tate$aggregation_lambda_rule %||% "min",
-    aggregation_lambda_grid = aggregation_lambda_grid,
-    verbose = verbose,
-    n_cores = n_cores
-  )
-  mu0_result <- fitted_tate$arm_results$mu0
+  if (!is.logical(refit_control_arm) || length(refit_control_arm) != 1L ||
+      is.na(refit_control_arm)) {
+    stop(caller, ": refit_control_arm must be TRUE or FALSE.", call. = FALSE)
+  }
+  changed_arms <- if (refit_control_arm) c(0L, 1L) else 1L
+  refit_arm <- function(fitted_arm) {
+    .refit_one_round_crossfit_sources(
+      reference_data_split = reference_data_split,
+      data_split = data_split,
+      fitted_arm = fitted_arm,
+      changed_sources = changed_sources,
+      lambda_selection = lambda_selection,
+      lambda_rule = fitted_tate$aggregation_lambda_rule %||% "min",
+      aggregation_lambda_grid = aggregation_lambda_grid,
+      changed_arms = changed_arms,
+      verbose = verbose,
+      n_cores = n_cores
+    )
+  }
+  mu1_result <- refit_arm(fitted_tate$arm_results$mu1)
+  mu0_result <- if (refit_control_arm) {
+    refit_arm(fitted_tate$arm_results$mu0)
+  } else {
+    fitted_tate$arm_results$mu0
+  }
   result <- calculate_tate_crossfit_aggregation(
     data_split = data_split,
     mu1_result = mu1_result,
@@ -2035,7 +2063,7 @@ run_tate_crossfit <- function(
     total_seconds = .elapsed_process_seconds(started_at),
     mu1 = mu1_result$timing,
     mu0 = mu0_result$timing,
-    reused_control_arm = TRUE
+    reused_control_arm = !refit_control_arm
   )
   result$nuisance_fit_diagnostics <- rbind(
     transform(mu1_result$nuisance_fit_diagnostics, A_val = 1L),
@@ -2045,7 +2073,7 @@ run_tate_crossfit <- function(
   result$rho_reuse <- list(
     reused = TRUE,
     changed_sources = unique(as.character(changed_sources)),
-    reused_control_arm = TRUE
+    reused_control_arm = !refit_control_arm
   )
   result
 }

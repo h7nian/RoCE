@@ -45,19 +45,15 @@ add_check <- function(name, passed, detail) {
   )
 }
 
-expected_methods <- c(
-  "one_round_crossfit", "target_only", "sample_size", "inverse_variance",
-  "federated_dr", "pooled_dr", "one_round_crossfit_ate_armwise",
-  "one_round_crossfit_ate", "one_round_crossfit_ate_quadratic_bias",
-  "target_only_ate", "sample_size_ate",
-  "inverse_variance_ate", "federated_dr_ate", "pooled_dr_ate"
-)
+expected_methods <- RoCE:::.tate_production_method_rows()
 required_columns <- c(
   "sim_id", "method", "estimate", "se", "bias", "coverage", "ci_width",
   "estimand_scope", "truth", "ci_lower", "ci_upper", "config", "p", "K",
   "outcome_family",
-  "rho", "cutoff", "n_site", "n_folds", "aggregation_lambda",
-  "aggregation_cutoff", "primary_cutoff", "nlambda_init",
+  "rho", "deviation_mechanism", "cutoff", "n_site", "n_folds",
+  "aggregation_lambda", "aggregation_cutoff", "primary_cutoff",
+  "misspecification_strength", "quadratic_bias_rule_requested",
+  "hard_threshold_diagnostic_requested", "nlambda_init",
   "nuisance_lambda_rule",
   "n_bootstrap", "M_tau", "M_tau_inference", "target_anchor_nlambda",
   "min_site_arm_outcome_cell_n", "min_target_arm_outcome_cell_n",

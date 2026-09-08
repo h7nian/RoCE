@@ -3,6 +3,17 @@ roce_parse_method_list <- function(methods) {
   trimws(values[nzchar(trimws(values))])
 }
 
+# The manifest's deviation mechanism for one task/group row (HISTORY #0009):
+# required, and restricted to the mechanisms the FACE DGP implements.
+roce_task_deviation_mechanism <- function(task) {
+  mechanism <- as.character(task$deviation_mechanism)
+  if (length(mechanism) != 1L || is.na(mechanism) ||
+      !mechanism %in% RoCE:::.face_deviation_mechanisms()) {
+    stop("manifest row lacks a valid deviation_mechanism.", call. = FALSE)
+  }
+  mechanism
+}
+
 roce_parse_boolean <- function(value, name) {
   normalized <- tolower(trimws(as.character(value)))
   if (length(normalized) != 1L ||
@@ -133,6 +144,7 @@ roce_is_reused_sensitivity_task <- function(
   }
   as.character(task$experiment) %in%
       c("negative_transfer", "single_task_smoke") &&
+    identical(as.character(task$deviation_mechanism), "treated_arm") &&
     identical(as.character(task$config), "C3") &&
     as.integer(task$K) == 4L &&
     as.numeric(task$rho) %in% c(0, 2.5) &&
@@ -209,7 +221,7 @@ roce_annotate_direct_tate_rows <- function(
     }
     invisible(TRUE)
   }
-  for (field in c("sim_id", "p", "K", "config")) {
+  for (field in c("sim_id", "p", "K", "config", "deviation_mechanism")) {
     assert_matches_task(field)
   }
 

@@ -66,4 +66,18 @@ Rscript scripts/slurm/build_direct_tate_manifest.R \
   "${MANIFEST_ROOT}/manifest_truncation_diagnostic.csv" truncation \
   "${N_REPLICATIONS}"
 Rscript scripts/slurm/audit_mc500_manifests.R \
-  "${MANIFEST_ROOT}" "${N_REPLICATIONS}" 5000
+  "${MANIFEST_ROOT}" "${N_REPLICATIONS}" 5000 main
+
+# Shared-shift family (HISTORY #0009): its own root with the same file names,
+# so the grouped submission and checkpoint tooling apply unchanged.
+SHARED_SHIFT_ROOT="${MANIFEST_ROOT}/shared_shift"
+mkdir -p "${SHARED_SHIFT_ROOT}"
+Rscript scripts/slurm/build_direct_tate_manifest.R \
+  "${SHARED_SHIFT_ROOT}/manifest_main.csv" shared_shift "${N_REPLICATIONS}"
+Rscript scripts/slurm/split_direct_tate_manifest_by_k.R \
+  "${SHARED_SHIFT_ROOT}/manifest_main.csv" "${SHARED_SHIFT_ROOT}"
+Rscript scripts/slurm/build_direct_tate_rho_group_manifest.R \
+  "${SHARED_SHIFT_ROOT}/manifest_main.csv" \
+  "${SHARED_SHIFT_ROOT}/manifest_main_rho_groups.csv"
+Rscript scripts/slurm/audit_mc500_manifests.R \
+  "${SHARED_SHIFT_ROOT}" "${N_REPLICATIONS}" 5000 shared_shift

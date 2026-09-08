@@ -217,4 +217,78 @@ test_that("rho reuse rejects changes outside the declared treated source", {
     "changed outcomes outside the refitted treatment arm",
     fixed = TRUE
   )
+  # Under the shared-shift deviation both arms of the changed source may differ.
+  expect_identical(
+    RoCE:::.validate_one_round_rho_reuse_data(
+      reference_split, current_split, "s1", 1L, changed_arms = c(0L, 1L)
+    ),
+    "s1"
+  )
+  expect_error(
+    RoCE:::.validate_one_round_rho_reuse_data(
+      reference_split, current_split, "s1", 1L, changed_arms = 0L
+    ),
+    "containing the refitted arm",
+    fixed = TRUE
+  )
+})
+
+test_that("same-seed FACE shared-shift reuse refits both arms and reproduces an independent fit", {
+  skip_on_cran()
+
+  # K = 2 so that the informative source s2 is reused in both arms while s1
+  # is refitted in both arms.
+  common_args <- list(
+    sim_id = 733L,
+    n_total = 360L,
+    K = 2L,
+    p = 3L,
+    config = "C1",
+    methods = c("one_round_crossfit", "target_only"),
+    verbose = FALSE,
+    n_cores_internal = 1L,
+    nlambda_init = 10L,
+    n_folds = 3L,
+    n_bootstrap = 20L,
+    estimate_ate = TRUE,
+    dgp_type = "face",
+    deviation_mechanism = "both_arms"
+  )
+  grouped <- suppressWarnings(RoCE:::.run_face_rho_group(
+    simulation_args = common_args,
+    rho_values = c(0, 1),
+    changed_sources = "s1",
+    artifact_rhos = 1
+  ))
+  independent <- suppressWarnings(
+    do.call(
+      run_single_simulation,
+      c(common_args, list(ate_deviation = 1, n_deviated_sites = 1L))
+    )
+  )
+  reused <- grouped$results[[2L]]
+  comparison_columns <- rho_equivalence_columns(independent)
+  expect_equal(
+    reused[comparison_columns],
+    independent[comparison_columns],
+    tolerance = 1e-12,
+    ignore_attr = TRUE
+  )
+  expect_true(all(reused$heterogeneity_type == "one_shared_shift_source"))
+  expect_true(all(reused$deviation_mechanism == "both_arms"))
+  reused_fit <- grouped$artifacts[["1"]]$direct_tate_results$one_round_crossfit
+  expect_false(reused_fit$rho_reuse$reused_control_arm)
+  expect_identical(reused_fit$rho_reuse$changed_sources, "s1")
+  expect_identical(reused_fit$arm_results$mu0$rho_reuse$reused_sources, "s2")
+  # The rho = 0 reference is the same dataset under either mechanism.
+  reference <- grouped$results[[1L]]
+  treated_reference <- suppressWarnings(do.call(
+    run_single_simulation,
+    c(common_args[names(common_args) != "deviation_mechanism"],
+      list(ate_deviation = 0, n_deviated_sites = 0L))
+  ))
+  expect_equal(
+    reference[comparison_columns], treated_reference[comparison_columns],
+    tolerance = 1e-12, ignore_attr = TRUE
+  )
 })

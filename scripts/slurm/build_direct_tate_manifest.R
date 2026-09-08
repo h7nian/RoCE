@@ -13,11 +13,12 @@ if (file.exists(output_path)) {
 mode <- if (length(args) >= 2L) args[[2L]] else "smoke"
 n_sims <- if (length(args) >= 3L) as.integer(args[[3L]]) else 500L
 nlambda_init <- if (length(args) >= 4L) as.integer(args[[4L]]) else 100L
-if (!mode %in% c("smoke", "main", "truncation", "nlambda_validation")) {
+if (!mode %in% c("smoke", "main", "shared_shift", "truncation",
+                 "nlambda_validation")) {
   stop(paste0(
-    "mode must be smoke, main, truncation, or nlambda_validation. Use ",
-    "build_direct_tate_cutoff_manifest.R for cutoff sensitivity so each ",
-    "dataset reuses one set of nuisance fits."
+    "mode must be smoke, main, shared_shift, truncation, or ",
+    "nlambda_validation. Use build_direct_tate_cutoff_manifest.R for cutoff ",
+    "sensitivity so each dataset reuses one set of nuisance fits."
   ))
 }
 if (is.na(n_sims) || n_sims < 1L) {
@@ -67,7 +68,8 @@ default_truncation_settings <- data.frame(
 make_grid <- function(experiment, configs, p_values, K_values, rho_values,
                       cutoffs,
                       truncation_settings = default_truncation_settings,
-                      method_specification = methods) {
+                      method_specification = methods,
+                      deviation_mechanism = "treated_arm") {
   required_truncation_columns <- c("M_tau", "M_tau_inference")
   if (!is.data.frame(truncation_settings) ||
       nrow(truncation_settings) < 1L ||
@@ -97,6 +99,10 @@ make_grid <- function(experiment, configs, p_values, K_values, rho_values,
     truncation_settings$M_tau_inference[grid$truncation_index]
   grid$truncation_index <- NULL
   grid$methods <- method_specification
+  # How the deviated source deviates (R/data_generation_face.R): the treated
+  # log-odds shift of the negative-transfer experiment or the shared shift of
+  # both arms (main.tex sec:simulations, shared-shift experiment).
+  grid$deviation_mechanism <- deviation_mechanism
   grid
 }
 
@@ -119,6 +125,19 @@ if (mode == "main") {
     K_values = c(2L, 4L, 8L),
     rho_values = c(0, 0.5, 1, 1.5, 2, 2.5),
     cutoffs = primary_cutoff
+  )
+}
+if (mode == "shared_shift") {
+  # Pre-registered scope (HISTORY #0009): C1 only, all three source counts,
+  # the same rho grid read as a shared log-odds shift of both arms of s1.
+  parts[[length(parts) + 1L]] <- make_grid(
+    experiment = "shared_shift",
+    configs = "C1",
+    p_values = 100L,
+    K_values = c(2L, 4L, 8L),
+    rho_values = c(0, 0.5, 1, 1.5, 2, 2.5),
+    cutoffs = primary_cutoff,
+    deviation_mechanism = "both_arms"
   )
 }
 if (mode == "truncation") {
@@ -179,7 +198,8 @@ manifest <- manifest[
   c(
     "task_id", "experiment", "sim_id", "config", "p", "K",
     "rho", "cutoff", "n_site", "n_folds", "nlambda_init",
-    "n_bootstrap", "M_tau", "M_tau_inference", "methods"
+    "n_bootstrap", "M_tau", "M_tau_inference", "methods",
+    "deviation_mechanism"
   )
 ]
 dir.create(dirname(output_path), recursive = TRUE, showWarnings = FALSE)

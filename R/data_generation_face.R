@@ -218,6 +218,27 @@ build_face_ate_map <- function(K, ate_deviation = 0.0, n_deviated = 0L,
   c(ate_map, source_ates)
 }
 
+#' Site-specific shared outcome shift of the FACE paper DGP
+#'
+#' The shared-shift deviation mechanism (main.tex sec:simulations): the leading
+#' \code{n_deviated} sources move both potential-outcome arms by
+#' \code{outcome_shift} on the outcome linear-predictor scale (log-odds for the
+#' binary outcome), leaving the treatment shift \code{base_ate} unchanged.
+#'
+#' @param K             Number of source sites.
+#' @param outcome_shift Additive shift of both arms at the deviated sources.
+#' @param n_deviated    Number of leading source sites that deviate.
+#' @return Named numeric vector mapping site label to outcome shift (zero for
+#'   the target and the informative sources).
+build_face_outcome_shift_map <- function(K, outcome_shift = 0.0, n_deviated = 0L) {
+  shifts <- rep(0, K)
+  if (n_deviated > 0L) {
+    shifts[seq_len(min(n_deviated, K))] <- outcome_shift
+  }
+  names(shifts) <- paste0("s", seq_len(K))
+  c("t" = 0, shifts)
+}
+
 #' Reference population of the FACE paper DGP
 #'
 #' One deterministic draw of the target covariate law (\code{n_ref} units,
@@ -366,6 +387,10 @@ face_binary_logit <- function(eta, calib) {
 #' @param misspecification_strength Mixing weight of the transformed
 #'   coordinates in the true outcome predictor (0 recovers the quadratic
 #'   mechanism).
+#' @param outcome_shift_map Optional named numeric vector from
+#'   \code{build_face_outcome_shift_map()}: an additive shift of both
+#'   potential-outcome arms on the linear-predictor scale (added to the
+#'   calibrated logit for binary outcomes). \code{NULL} applies no shift.
 #' @return Numeric vector of outcomes (length n).
 generate_face_outcomes <- function(X, A, R, beta_lin, beta_sq, ate_map,
                                          kappa        = FACE_KAPPA,
@@ -375,10 +400,14 @@ generate_face_outcomes <- function(X, A, R, beta_lin, beta_sq, ate_map,
                                          effect_mod_strength = 0,
                                          em_direction = NULL,
                                          X_dagger = NULL,
-                                         misspecification_strength = 0) {
+                                         misspecification_strength = 0,
+                                         outcome_shift_map = NULL) {
   eta        <- .face_mixed_predictor(X, X_dagger, beta_lin, beta_sq, kappa,
                                       misspecification_strength)
   delta      <- ate_map[R]  # site-specific treatment shift, same length as R
+  # Shared shift of both arms (deviation_mechanism = "both_arms"); zero when
+  # no map is supplied.
+  shift      <- if (is.null(outcome_shift_map)) 0 else unname(outcome_shift_map[R])
 
   # Source-only effect modification. A covariate-dependent treatment-effect term
   # is added for source sites only and centered on the target covariate location
@@ -404,10 +433,10 @@ generate_face_outcomes <- function(X, A, R, beta_lin, beta_sq, ate_map,
       stop("binary outcomes require 'binary_calib' from get_face_binary_calibration().",
            call. = FALSE)
     }
-    prob <- logistic(face_binary_logit(eta, binary_calib) + tau * A)
+    prob <- logistic(face_binary_logit(eta, binary_calib) + shift + tau * A)
     rbinom(length(A), 1L, prob)
   } else {
-    eta + tau * A + rnorm(length(A), 0, noise_sd)
+    eta + shift + tau * A + rnorm(length(A), 0, noise_sd)
   }
 }
 
@@ -532,8 +561,17 @@ resolve_face_site_sizes <- function(n_total = NULL, n_target = NULL,
 #' @param config           Configuration string: "C1", "C2", "C3", or "C4".
 #' @param estimand_type    "superpopulation" (fixed truth) or "sample" (realized truth).
 #' @param outcome_type     "continuous" (default) or "binary".
-#' @param ate_deviation    ATE deviation for non-informative source sites (default 0).
-#' @param n_deviated_sites Number of leading source sites with deviated ATE (default 0L).
+#' @param ate_deviation    Deviation magnitude of the non-informative source
+#'                         sites (default 0): a treatment log-odds shift under
+#'                         \code{deviation_mechanism = "treated_arm"}, a shift
+#'                         of both potential-outcome arms under
+#'                         \code{"both_arms"}.
+#' @param n_deviated_sites Number of leading source sites that deviate (default 0L).
+#' @param deviation_mechanism \code{"treated_arm"} (default; the deviated
+#'   sources use treatment shift \code{base + ate_deviation}) or
+#'   \code{"both_arms"} (the deviated sources keep the treatment shift and move
+#'   both arms by \code{ate_deviation}; main.tex sec:simulations, shared-shift
+#'   experiment).
 #' @param effect_mod_strength Source-only effect-modification strength; zero
 #'   recovers the standard FACE DGP.
 #' @param n_target         Optional target-site sample size for explicit per-site
@@ -556,10 +594,12 @@ generate_face_data <- function(n_total = NULL, K = 3, p = 4, config = "C1",
                                      outcome_type     = "continuous",
                                      ate_deviation    = 0.0,
                                      n_deviated_sites = 0L,
+                                     deviation_mechanism = c("treated_arm", "both_arms"),
                                      effect_mod_strength = 0,
                                      n_target         = NULL,
                                      n_source_sizes   = NULL,
                                      misspecification_strength = FACE_MISSPECIFICATION_STRENGTH) {
+  deviation_mechanism <- match.arg(deviation_mechanism)
   # ---- 1. Resolve per-site sample sizes. Equal split across K + 1 sites by
   #         default (FACE-paper convention); explicit per-site sizes when both
   #         n_target and n_source_sizes are supplied. ----
@@ -605,8 +645,15 @@ generate_face_data <- function(n_total = NULL, K = 3, p = 4, config = "C1",
   is_binary    <- outcome_type == "binary"
   base_ate     <- if (is_binary) FACE_BINARY_ATE_TARGET else FACE_ATE_TARGET
   binary_calib <- reference$calibration
-  ate_map      <- build_face_ate_map(K, ate_deviation, n_deviated_sites,
-                                     base_ate = base_ate)
+  # Deviation mechanism: the treated-arm shift enters the treatment-shift map,
+  # the shared shift enters both arms through the outcome-shift map.
+  treated_arm  <- identical(deviation_mechanism, "treated_arm")
+  ate_map      <- build_face_ate_map(
+    K, if (treated_arm) ate_deviation else 0, n_deviated_sites, base_ate = base_ate
+  )
+  outcome_shift_map <- if (treated_arm) NULL else {
+    build_face_outcome_shift_map(K, ate_deviation, n_deviated_sites)
+  }
 
   # Generate both potential outcomes first, then select the observed outcome.
   # This enforces consistency exactly: Y_i = A_i Y_i(1) + (1-A_i)Y_i(0).
@@ -619,7 +666,8 @@ generate_face_data <- function(n_total = NULL, K = 3, p = 4, config = "C1",
                            binary_calib = binary_calib,
                            effect_mod_strength = effect_mod_strength,
                            X_dagger = X_dagger,
-                           misspecification_strength = strengths$outcome)
+                           misspecification_strength = strengths$outcome,
+                           outcome_shift_map = outcome_shift_map)
   }
   Y_1 <- draw_outcomes(rep(1L, n_total))
   Y_0 <- draw_outcomes(rep(0L, n_total))
@@ -677,6 +725,8 @@ generate_face_data <- function(n_total = NULL, K = 3, p = 4, config = "C1",
     # these are conditional log-odds shifts, not marginal risk-difference ATEs.
     ate_map      = ate_map,
     treatment_shift_map = ate_map,
+    outcome_shift_map = outcome_shift_map,
+    deviation_mechanism = deviation_mechanism,
     config       = config,
     misspecification_strength = if (any(unlist(strengths) > 0)) misspecification_strength else 0,
     Z_site       = basis,

@@ -178,16 +178,9 @@ required_result_columns <- c(
 if (length(setdiff(required_result_columns, names(results))) > 0L) {
   stop("task results are missing audit metadata.", call. = FALSE)
 }
-base_methods <- c(
-  "one_round_crossfit", "target_only", "sample_size", "inverse_variance",
-  "federated_dr", "pooled_dr", "one_round_crossfit_ate_armwise",
-  "one_round_crossfit_ate", "one_round_crossfit_ate_quadratic_bias",
-  "target_only_ate", "sample_size_ate",
-  "inverse_variance_ate", "federated_dr_ate", "pooled_dr_ate"
+expected_methods <- RoCE:::.tate_production_method_rows(
+  include_hard_threshold = expect_hard
 )
-expected_methods <- c(base_methods, if (expect_hard) {
-  "one_round_crossfit_ate_hard_threshold"
-})
 rows_by_task <- split(results, results$task_id)
 method_sets_ok <- length(rows_by_task) == length(expected_task_ids) &&
   all(vapply(rows_by_task, function(rows) {

@@ -12,6 +12,7 @@ make_diagnostic_fixture <- function(n = 200L, method = "target_only_ate") {
     p = 100L,
     K = 2L,
     rho = 0,
+    deviation_mechanism = "treated_arm",
     cutoff = 2,
     n_site = 1000L,
     n_folds = 5L,
@@ -27,6 +28,34 @@ make_diagnostic_fixture <- function(n = 200L, method = "target_only_ate") {
     stringsAsFactors = FALSE
   )
 }
+
+test_that("the production method-row set is frozen", {
+  expect_identical(
+    RoCE:::.tate_production_method_rows(),
+    c(
+      "one_round_crossfit", "target_only", "sample_size", "inverse_variance",
+      "federated_dr", "pooled_dr",
+      "one_round_crossfit_ate_armwise", "one_round_crossfit_ate",
+      "one_round_crossfit_ate_quadratic_bias",
+      "target_only_ate", "sample_size_ate", "inverse_variance_ate",
+      "federated_dr_ate", "pooled_dr_ate"
+    )
+  )
+  expect_identical(
+    setdiff(
+      RoCE:::.tate_production_method_rows(include_hard_threshold = TRUE),
+      RoCE:::.tate_production_method_rows()
+    ),
+    "one_round_crossfit_ate_hard_threshold"
+  )
+  expect_false(
+    "one_round_crossfit_ate_quadratic_bias" %in%
+      RoCE:::.tate_production_method_rows(include_quadratic_bias = FALSE)
+  )
+  expect_true(all(RoCE:::.is_tate_method(
+    grep("_ate", RoCE:::.tate_production_method_rows(TRUE), value = TRUE)
+  )))
+})
 
 test_that("TATE method classification includes diagnostic aggregation rules", {
   expect_true(all(.is_tate_method(c(
@@ -455,6 +484,22 @@ test_that("production scientific metadata enforces the audited p=100 design", {
   expect_invisible(
     RoCE:::.validate_face_production_scientific_metadata(fixture)
   )
+  fixture$deviation_mechanism <- "both_arms"
+  expect_error(
+    RoCE:::.validate_face_production_scientific_metadata(fixture),
+    "rho-consistent"
+  )
+  fixture$heterogeneity_type <- "one_shared_shift_source"
+  expect_invisible(
+    RoCE:::.validate_face_production_scientific_metadata(fixture)
+  )
+  fixture$deviation_mechanism <- "shared"
+  expect_error(
+    RoCE:::.validate_face_production_scientific_metadata(fixture),
+    "deviation mechanism"
+  )
+  fixture$deviation_mechanism <- "treated_arm"
+  fixture$heterogeneity_type <- "one_deviated_source"
   fixture$p <- 50L
   expect_error(
     RoCE:::.validate_face_production_scientific_metadata(fixture),

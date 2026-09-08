@@ -937,7 +937,16 @@ $0.4$ to $1.2$. Outcomes satisfy
 The target and informative sources use $\Delta_r=1$. In the negative-transfer
 experiment below, source $s_1$ instead uses $\Delta_{s_1}=1+\rho$. Thus
 $\rho$ is a source-specific log-odds shift; the reported TATE is the target
-risk difference, not the log-odds coefficient.
+risk difference, not the log-odds coefficient. The shared-shift experiment
+keeps $\Delta_{s_1}=1$ but moves both potential-outcome arms of $s_1$,
+$\Pr\{Y(a)=1\mid\boldsymbol X,R=s_1\}
+=\operatorname{expit}\{g(\boldsymbol X)+\rho+a\}$, so the source's
+conditional risk difference changes only through the curvature of
+$\operatorname{expit}$: its outcome models differ from the target's in both
+arms while the treatment log-odds and the covariate law are unchanged. This is
+outcome-model heterogeneity that the density-ratio calibration cannot absorb,
+and it is the second deviation mechanism under which the aggregation must
+protect the target.
 
 Both nuisance models use the same working feature map in every configuration,
 $\phi(\boldsymbol X)=[\boldsymbol X-\kappa\boldsymbol 1,\boldsymbol X^{\circ2}]$,

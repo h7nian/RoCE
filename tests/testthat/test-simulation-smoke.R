@@ -196,6 +196,7 @@ test_that("simulation treatment-arm scheduling does not change TATE results", {
   )]))))
   expect_identical(quadratic$weight_layer_kink_cells, 0)
   expect_true(all(sequential$quadratic_bias_rule_requested))
+  expect_true(all(sequential$deviation_mechanism == "treated_arm"))
   expect_true(all(is.finite(unlist(hard[c(
     "face_initial_dr_nonconverged",
     "face_calibrated_dr_nonconverged",
@@ -223,6 +224,22 @@ test_that("FACE heterogeneity labels follow the generated deviation", {
     "deviation_and_effect_modification"
   )
   expect_error(RoCE:::.face_heterogeneity_type(-1, 1L), "non-negative")
+  expect_identical(
+    RoCE:::.face_heterogeneity_type(1.5, 1L, deviation_mechanism = "both_arms"),
+    "one_shared_shift_source"
+  )
+  expect_identical(
+    RoCE:::.face_heterogeneity_type(1.5, 2L, deviation_mechanism = "both_arms"),
+    "multiple_shared_shift_sources"
+  )
+  expect_identical(
+    RoCE:::.face_heterogeneity_type(1.5, 1L, 0.5, deviation_mechanism = "both_arms"),
+    "shared_shift_and_effect_modification"
+  )
+  expect_identical(
+    RoCE:::.face_heterogeneity_type(0, 1L, deviation_mechanism = "both_arms"),
+    "none"
+  )
 })
 test_that("hard-threshold diagnostic flag is strictly logical", {
   expect_error(

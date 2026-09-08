@@ -153,8 +153,12 @@ for gate_file_pair in \
 done
 
 N_GROUPS="$(awk 'END { print NR - 1 }' "${GROUP_MANIFEST}")"
-if [[ "${N_GROUPS}" -ne 4500 ]]; then
-  echo "group manifest must contain exactly 4500 p=100 seed-setting jobs." >&2
+# Every grouped job covers the six rho values of one seed-setting, so the
+# primary manifest must be exactly six times the group manifest (4500 groups
+# for the negative-transfer family, 1500 for the shared-shift family).
+N_PRIMARY="$(awk 'END { print NR - 1 }' "${PRIMARY_MANIFEST}")"
+if [[ "${N_GROUPS}" -lt 1 || $((N_GROUPS * 6)) -ne "${N_PRIMARY}" ]]; then
+  echo "group manifest (${N_GROUPS} rows) must partition the primary manifest (${N_PRIMARY} rows) into six-rho groups." >&2
   exit 1
 fi
 COMMIT_ROOT="${OUTPUT_ROOT}/rho_group_commits"
@@ -185,7 +189,7 @@ if [[ "${BATCH_SIZE}" -gt 5 || "${MAX_CONCURRENT}" -gt 2 ]]; then
   exit 1
 fi
 if [[ "${BATCH_START}" -gt "${N_GROUPS}" ]]; then
-  echo "batch start exceeds the 4500-row grouped manifest." >&2
+  echo "batch start exceeds the ${N_GROUPS}-row grouped manifest." >&2
   exit 1
 fi
 if [[ "${BATCH_START}" -ne "${FIRST_MISSING}" ]]; then

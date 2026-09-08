@@ -180,7 +180,8 @@ simulation_args <- list(
   parallel_treatment_arms = parallel_treatment_arms,
   dgp_type = "face",
   ate_deviation = as.numeric(task$rho),
-  n_deviated_sites = if (as.numeric(task$rho) > 0) 1L else 0L
+  n_deviated_sites = if (as.numeric(task$rho) > 0) 1L else 0L,
+  deviation_mechanism = roce_task_deviation_mechanism(task)
 )
 if (sensitivity_expected) {
   if (!exists(

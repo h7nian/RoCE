@@ -16,20 +16,26 @@ if (file.exists(output_path)) {
 }
 primary <- read.csv(primary_path, stringsAsFactors = FALSE)
 rho_grid <- c(0, 0.5, 1, 1.5, 2, 2.5)
+# deviation_mechanism stays last so the grouped column positions read by
+# submit_rho_group_direct_tate.sh are unchanged.
 required <- c(
   "task_id", "experiment", "sim_id", "config", "p", "K", "rho",
   "cutoff", "n_site", "n_folds", "nlambda_init", "n_bootstrap", "M_tau",
-  "M_tau_inference", "methods"
+  "M_tau_inference", "methods", "deviation_mechanism"
 )
 missing <- setdiff(required, names(primary))
 if (length(missing) > 0L) {
   stop("primary manifest is missing: ", paste(missing, collapse = ", "),
        call. = FALSE)
 }
+grouped_experiments <- c("negative_transfer", "shared_shift")
 if (nrow(primary) == 0L || any(primary$p != 100L) ||
-    any(primary$experiment != "negative_transfer")) {
-  stop("rho grouping is restricted to the p=100 negative-transfer manifest.",
-       call. = FALSE)
+    length(unique(primary$experiment)) != 1L ||
+    !primary$experiment[[1L]] %in% grouped_experiments) {
+  stop(
+    "rho grouping is restricted to one p=100 negative-transfer or ",
+    "shared-shift manifest.", call. = FALSE
+  )
 }
 
 group_key <- interaction(
