@@ -299,7 +299,7 @@ landing. Findings and handling:
 
 ### 5. Validation results (filled after running)
 PENDING — test job 18550689 (`./test.sh`), package replay job 18550690 (depends on the test job), submitted 2026-09-07 after the substitute review fixes and the unit-mass length fix (first full run 18546449 failed: inner records index the full site, the mass vector was sized by the inner training sample). The test job also covers #0006.
-2026-09-08: job 18550689 built and ran the full suite (tree f7436de3: #0005 + #0006 + #0007); the only errors were the ten tests of `test-slurm-atomic-output.R`, which read `repo_root` from the helper's own environment (not visible after `load_all()`; pre-existing since the a03e3b5f snapshot, unrelated to these entries). Fixed in `helper-load.R` (commit 63809d41, `repo_root` exposed on the attached helper environment). The summary reporter had capped its listing at ten failures; the full list (test.cmd now prints every failure) also contained two `test-tate-aggregation.R` assertions of the pre-#0005 identity `variance == pseudo-value variance` (now asserted on `variance_fixed_weights`, with the decomposition identity added) and three `test-weight-layer-variance.R` fixture errors (binary outcomes under the gaussian family gave constant-y folds; the fixtures now generate continuous outcomes; the indefinite-matrix check was rebuilt through `C_ot`). Commit 1ed81858; resubmitted as test job 18565508 with replay 18565509, DGP reproduction 18565510, quadratic replay 18565511 dependent on it.
+2026-09-08: job 18550689 built and ran the full suite (tree f7436de3: #0005 + #0006 + #0007); the only errors were the ten tests of `test-slurm-atomic-output.R`, which read `repo_root` from the helper's own environment (not visible after `load_all()`; pre-existing since the a03e3b5f snapshot, unrelated to these entries). Fixed in `helper-load.R` (commit 63809d41, `repo_root` exposed on the attached helper environment). The summary reporter had capped its listing at ten failures; the full list (test.cmd now prints every failure) also contained two `test-tate-aggregation.R` assertions of the pre-#0005 identity `variance == pseudo-value variance` (now asserted on `variance_fixed_weights`, with the decomposition identity added) and three `test-weight-layer-variance.R` fixture errors (binary outcomes under the gaussian family gave constant-y folds; the fixtures now generate continuous outcomes; the indefinite-matrix check was rebuilt through `C_ot`). Commit 1ed81858; resubmitted as test job 18565508 with replay 18565509, DGP reproduction 18565510, quadratic replay 18565511 dependent on it. Run 18565508 left one over-tight tolerance (quadratic coordinate-descent cross-check, 3e-8 relative; fixed in d184c5eb). **Run 18573008 (tree d184c5eb): all tests passed, 0 failures, 0 errors, exit 0.** Replay 18573009, DGP reproduction 18573010 and quadratic replay 18573011 run against the library installed by that job.
 
 ### 6. Decision + rationale
 PENDING
@@ -373,7 +373,9 @@ independently. Findings and handling:
    prototype, transient).
 
 ### 5. Validation results (filled after running)
-PENDING — test job 18550689 (`./test.sh`), package reproduction array 18550691 (`diagnosis/dgp_common_basis/run_dgp_common_basis.sh`, 4 configurations, depends on the test job), submitted 2026-09-07.
+Full test suite: run 18573008 (tree d184c5eb) passed with 0 failures, 0 errors (see #0005 §5 for
+the fixture fixes on the way there; none touched the DGP). Four-configuration package
+reproduction: job 18573010 (array 1–4, dependent on 18573008) — PENDING. — test job 18550689 (`./test.sh`), package reproduction array 18550691 (`diagnosis/dgp_common_basis/run_dgp_common_basis.sh`, 4 configurations, depends on the test job), submitted 2026-09-07.
 
 ### 6. Decision + rationale
 PENDING
@@ -417,7 +419,7 @@ weight-layer derivative has no kink and uses the penalty curvature plus the
 - [ ] (a) normal-equation residual ≤ 1e-12 relative on every inner fold of the test fixture (and ≤ 1e-6 at run time inside the solver); discrepancy-free case equals the exact unpenalized solve `solve(Q, -l)` to 1e-10 and `optimize_weights(lambda = 0)` to 1e-6 (its coordinate descent stops at `WEIGHT_OPT_TOL = 1e-8`, which left a 3e-8 relative gap in run 18565508; amended after the substitute review and that run) → ___ [PENDING]
 - [ ] (b) finite-difference check of the quadratic weight layer: |numerical − analytical| ≤ 1e-8·max(1, |analytical|) → ___ [PENDING]
 - [ ] (c) 100-seed replay: estimates and weight-layer SEs equal the prototype's candidate rows to ≤ 1e-8 → ___ [PENDING]
-- [ ] (d) full build + testthat: 0 failures, 0 errors → ___ [PENDING]
+- [x] (d) full build + testthat: 0 failures, 0 errors → run 18573008 (tree d184c5eb), exit 0 [PASS]
 - [ ] (e) substitute Rule 7a review recorded; Rule 24 audit → ___ [PENDING]
 
 ### 7. Review note
