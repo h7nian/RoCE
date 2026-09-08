@@ -1,2 +1,0 @@
-"n_total","K","p","config","method","n_success","bias_mean","bias_sd","rmse","se_mean","coverage","ci_width_mean","bias_over_se","se_over_emp_sd","normal_coverage_with_bias","normal_coverage_centered"
-500,2,10,"C2","target_only",1,-0.00644749364712982,NA,0.00644749364712982,0.0518964417087567,1,0.203430313349891,0.124237682485308,NA,NA,NA

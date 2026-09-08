@@ -1,4 +1,0 @@
-[2026-05-25 22:42:57] config reps=1 n=500 K=2 p=10 C2 folds=5 base_seed=250099
-[2026-05-25 22:42:59] rep_done rep=1 seed=250099 W_bias=-0.058996 Z_bias=-0.063214 W_se=0.053575 Z_se=0.052606
-[2026-05-25 22:42:59] output runs=c2_target_ps_basis_output/20260525_224257_job9707954_n500_K2_p10_runs.csv
-[2026-05-25 22:42:59] output summary=c2_target_ps_basis_output/20260525_224257_job9707954_n500_K2_p10_summary.csv

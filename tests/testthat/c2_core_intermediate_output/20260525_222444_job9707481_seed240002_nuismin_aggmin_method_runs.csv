@@ -1,2 +1,0 @@
-"seed","method","truth","estimate","bias","se","ci_lower","ci_upper","covered","n_total","K","p","config","n_folds","nlambda_init","elapsed_sec"
-240002,"one_round_crossfit",0.589145556487431,0.600904213131322,0.0117586566438912,0.0106085157049115,0.580111904420268,0.621696521842376,TRUE,5000,5,50,"C2",10,100,288.173308610916

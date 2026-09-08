@@ -1,5 +1,0 @@
-"seed","method","estimate","se","variance","var_target_component","var_source_component","target_variance_component","source_variance_component","mean_weight","variance_wss","ivw_weight_sum","target_weight","source_weight_sum"
-364,"target_only",0.542100622580684,0.0205940904069374,0.000424116559689112,NA,NA,NA,NA,NA,NA,NA,NA,NA
-364,"pooled_dr",0.56539209503356,0.0137095762815175,0.000187952481818747,NA,NA,NA,NA,1,4698.81204546868,NA,NA,NA
-364,"tilted_aipw",0.576739109158806,0.0107847243695768,0.000116310279727745,NA,NA,6.31358154821452e-05,5.31744642455994e-05,NA,NA,NA,0.231,0.769
-364,"oracle_dr",0.596937035754533,0.0116254696935442,0.000135151545595514,NA,NA,NA,NA,NA,NA,NA,NA,NA

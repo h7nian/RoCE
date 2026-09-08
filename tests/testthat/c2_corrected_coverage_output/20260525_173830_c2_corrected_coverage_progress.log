@@ -1,4 +1,0 @@
-[2026-05-25 17:38:30] start job=1/1 rep=1 seed=250001 n=5000 K=5 p=50
-[2026-05-25 17:38:32] method_start job=1/1 rep=1 seed=250001 n=5000 K=5 p=50 method=one_round_crossfit
-[2026-05-25 18:29:11] method_done job=1/1 rep=1 seed=250001 n=5000 K=5 p=50 method=one_round_crossfit estimate=0.588956 se=0.010033 elapsed_sec=3039.2
-[2026-05-25 18:29:11] done job=1/1 rep=1 seed=250001 n=5000 K=5 p=50 runner=direct rows=1 elapsed_sec=3041.3

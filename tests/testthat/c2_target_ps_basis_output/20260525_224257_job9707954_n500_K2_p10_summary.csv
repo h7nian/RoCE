@@ -1,3 +1,0 @@
-"method","n_success","bias_mean","bias_sd","rmse","se_mean","coverage","bias_over_se","se_over_emp_sd"
-"target_ps_W_current",1,-0.0589956839171349,NA,0.0589956839171349,0.0535749988195057,1,-1.10117937876007,NA
-"target_ps_Z_diagnostic",1,-0.0632140260564951,NA,0.0632140260564951,0.0526062905185033,1,-1.20164386109415,NA

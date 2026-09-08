@@ -1,8 +1,0 @@
-[2026-05-25 18:15:30] config n_total=5000 K=5 p=50 folds=3 seed=270001 k1=1 k2=2 max_iter=10000 grids=5,10,20
-[2026-05-25 18:15:32] data source=s1 train_folds=3 n_source_train=254 n_arm=134 p_z=50 n_cv_folds=5 lambda_max=0.325893
-[2026-05-25 18:15:32] cv_start source=s1 nlambda=5
-[2026-05-25 18:16:01] cv_done source=s1 nlambda=5 elapsed_sec=28.576 lambda_min=0.325893 lambda_1se=0.325893 idx_min=1 idx_1se=1
-[2026-05-25 18:16:01] cv_start source=s1 nlambda=10
-[2026-05-25 18:16:54] cv_done source=s1 nlambda=10 elapsed_sec=53.396 lambda_min=0.325893 lambda_1se=0.325893 idx_min=1 idx_1se=1
-[2026-05-25 18:16:54] cv_start source=s1 nlambda=20
-[2026-05-25 18:18:34] cv_done source=s1 nlambda=20 elapsed_sec=99.275 lambda_min=0.200701 lambda_1se=0.325893 idx_min=2 idx_1se=1

@@ -1,6 +1,0 @@
-[2026-05-25 22:01:55] config seed=240001 n=5000 K=5 p=50 C2 folds=10 nlambda_init=100 methods=one_round_crossfit nuisance_rule=min agg_rule=min
-[2026-05-25 22:01:57] data truth=0.58914556 mu1_realized=0.59072769 n_t=962 n_sources=812,734,772,835,885
-[2026-05-25 22:01:57] crossfit_start one_round_crossfit
-[2026-05-25 22:06:48] crossfit_done one_round_crossfit estimate=0.58097175 bias=-0.00817381 se=0.01017243 target_bias=-0.04574051 weight_l1=0.8029 elapsed_sec=289.7
-[2026-05-25 22:06:48] output runs=c2_core_intermediate_output/20260525_220155_method_runs.csv
-[2026-05-25 22:06:48] output contracts=c2_core_intermediate_output/20260525_220155_paper_contracts.csv

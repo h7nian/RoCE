@@ -1,4 +1,0 @@
-[2026-05-25 22:48:02] config reps=1 n=500 K=2 p=10 C2 folds=5 base_seed=251099
-[2026-05-25 22:48:03] rep_done rep=1 seed=251099 W_bias=0.015739 Z_bias=0.024660 oracle_ps_bias=0.029745 oracle_or_bias=0.051067 oracle_both_bias=0.047934
-[2026-05-25 22:48:03] output runs=c2_target_ps_basis_output/20260525_224802_job9708021_n500_K2_p10_runs.csv
-[2026-05-25 22:48:03] output summary=c2_target_ps_basis_output/20260525_224802_job9708021_n500_K2_p10_summary.csv
