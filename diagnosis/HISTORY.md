@@ -151,6 +151,11 @@ recomputed on the same 100,000-unit reference population. Source weights stay ne
 0.3 / 0.2 (both sources compatible at rho = 0). C1 reproduces the current DGP to
 2e-4 (basis centering only).
 
+Re-run 2026-09-07 with the re-based (C1-relative) gates, job 18549812
+(`diagnosis/out/dgp_common_basis/selection/omega_selection_table.csv`): omega* = 0.75 again
+(all_ok TRUE at omega 0.5 and 0.75 for C2/C3/C4; FALSE at 0.25 and 1 on the R^2 gate), C1
+identity difference 2.15e-4.
+
 ### 6. Decision + rationale
 DECIDED-PASS with omega* = 0.75 pre-registered for C2–C4 (Kang–Schafer-style transforms
 of the four signal coordinates, standardized on the target reference population, mixed
