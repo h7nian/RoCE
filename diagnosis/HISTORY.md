@@ -151,6 +151,11 @@ recomputed on the same 100,000-unit reference population. Source weights stay ne
 0.3 / 0.2 (both sources compatible at rho = 0). C1 reproduces the current DGP to
 2e-4 (basis centering only).
 
+Re-run 2026-09-07 with the re-based (C1-relative) gates, job 18549812
+(`diagnosis/out/dgp_common_basis/selection/omega_selection_table.csv`): omega* = 0.75 again
+(all_ok TRUE at omega 0.5 and 0.75 for C2/C3/C4; FALSE at 0.25 and 1 on the R^2 gate), C1
+identity difference 2.15e-4.
+
 ### 6. Decision + rationale
 DECIDED-PASS with omega* = 0.75 pre-registered for C2–C4 (Kang–Schafer-style transforms
 of the four signal coordinates, standardized on the target reference population, mixed
@@ -199,15 +204,21 @@ calibrated fit, truncated vs untruncated score under candidate and baseline
 libraries; (B) C1 seed-20001 refit versus the #0002 stored fit.
 
 ### 4. Acceptance criteria
-- [ ] (a) candidate: max |truncated score| ≤ 1e-6 with truncation fraction > 0.05 → ___ [PENDING]
-- [ ] (b) baseline: max |untruncated score| ≤ 1e-6 and max |truncated score| > 1e-3 (documents the defect) → ___ [PENDING]
-- [ ] (c) candidate: max |untruncated score| > 1e-3 (the fit really changed) → ___ [PENDING]
-- [ ] (d) C1 identity: estimate, se, fold weights, target-only, source estimates differ ≤ 1e-10 from the #0002 C1 cell → ___ [PENDING]
+- [x] (a) candidate: max |truncated score| ≤ 1e-6 with truncation fraction > 0.05 → 2.25e-9 at truncation fraction 0.876 (radius 2, 1259 iterations, converged) [PASS]
+- [x] (b) baseline: max |untruncated score| ≤ 1e-6 and max |truncated score| > 1e-3 (documents the defect) → 1.27e-9 and 0.0736 (truncation fraction 0.132) [PASS]
+- [x] (c) candidate: max |untruncated score| > 1e-3 (the fit really changed) → 3.37e8 (the truncated solution's untruncated score explodes; radius-2 saturation as noted in §2) [PASS]
+- [x] (d) C1 identity: estimate, se, fold weights, target-only, source estimates differ ≤ 1e-10 from the #0002 C1 cell → all differences exactly 0; production radius inactive (truncation fraction 0) [PASS]
 - [ ] (e) full installed testthat: 0 failures, 0 errors → ___ [PENDING]
 - [ ] (f) R CMD check `Status: OK` → ___ [PENDING]
 
 ### 5. Validation results (filled after running)
-PENDING — Slurm job 18550692 (resubmitted after an internal-function call fix and the #0005 unit-mass fix; the C1 identity refit now uses the #0006 in-package DGP; `diagnosis/truncation_alignment/run_truncation_alignment.sh`), submitted 2026-09-07.
+Job 18550692 (2026-09-08, 2 h 59 min): steps 1–3 completed with (a)–(d) as recorded in §4
+(`diagnosis/out/truncation_alignment/{baseline,candidate}/`). Step 4 (full installed test suite
+on the candidate) hit the 3 h limit inside `test-comparison-bootstrap-variance.R`, and the
+candidate source had been copied before the test-fixture fixes of #0005 §5 landed. Resubmitted
+as phase `tests` of the same script (rebuilds the candidate from the current tree + patch, runs
+only step 4 and R CMD check) with a 10 h limit: job recorded below.
+(e), (f): PENDING — job 18576245.
 
 ### 6. Decision + rationale
 PENDING
@@ -288,6 +299,7 @@ landing. Findings and handling:
 
 ### 5. Validation results (filled after running)
 PENDING — test job 18550689 (`./test.sh`), package replay job 18550690 (depends on the test job), submitted 2026-09-07 after the substitute review fixes and the unit-mass length fix (first full run 18546449 failed: inner records index the full site, the mass vector was sized by the inner training sample). The test job also covers #0006.
+2026-09-08: job 18550689 built and ran the full suite (tree f7436de3: #0005 + #0006 + #0007); the only errors were the ten tests of `test-slurm-atomic-output.R`, which read `repo_root` from the helper's own environment (not visible after `load_all()`; pre-existing since the a03e3b5f snapshot, unrelated to these entries). Fixed in `helper-load.R` (commit 63809d41, `repo_root` exposed on the attached helper environment). The summary reporter had capped its listing at ten failures; the full list (test.cmd now prints every failure) also contained two `test-tate-aggregation.R` assertions of the pre-#0005 identity `variance == pseudo-value variance` (now asserted on `variance_fixed_weights`, with the decomposition identity added) and three `test-weight-layer-variance.R` fixture errors (binary outcomes under the gaussian family gave constant-y folds; the fixtures now generate continuous outcomes; the indefinite-matrix check was rebuilt through `C_ot`). Commit 1ed81858; resubmitted as test job 18565508 with replay 18565509, DGP reproduction 18565510, quadratic replay 18565511 dependent on it. Run 18565508 left one over-tight tolerance (quadratic coordinate-descent cross-check, 3e-8 relative; fixed in d184c5eb). **Run 18573008 (tree d184c5eb): all tests passed, 0 failures, 0 errors, exit 0.** Replay 18573009, DGP reproduction 18573010 and quadratic replay 18573011 run against the library installed by that job.
 
 ### 6. Decision + rationale
 PENDING
@@ -361,7 +373,9 @@ independently. Findings and handling:
    prototype, transient).
 
 ### 5. Validation results (filled after running)
-PENDING — test job 18550689 (`./test.sh`), package reproduction array 18550691 (`diagnosis/dgp_common_basis/run_dgp_common_basis.sh`, 4 configurations, depends on the test job), submitted 2026-09-07.
+Full test suite: run 18573008 (tree d184c5eb) passed with 0 failures, 0 errors (see #0005 §5 for
+the fixture fixes on the way there; none touched the DGP). Four-configuration package
+reproduction: job 18573010 (array 1–4, dependent on 18573008) — PENDING. — test job 18550689 (`./test.sh`), package reproduction array 18550691 (`diagnosis/dgp_common_basis/run_dgp_common_basis.sh`, 4 configurations, depends on the test job), submitted 2026-09-07.
 
 ### 6. Decision + rationale
 PENDING
@@ -402,10 +416,10 @@ weight-layer derivative has no kink and uses the penalty curvature plus the
   the prototype's `quadratic_weight_layer_n100_v1/weight_layer_rows.csv`.
 
 ### 4. Acceptance criteria
-- [ ] (a) normal-equation residual ≤ 1e-12 relative on every inner fold of the test fixture (and ≤ 1e-6 at run time inside the solver); discrepancy-free case equals `optimize_weights(lambda = 0)` to 1e-8 (its coordinate descent stops at `WEIGHT_OPT_TOL = 1e-8`; amended after the substitute review) → ___ [PENDING]
+- [ ] (a) normal-equation residual ≤ 1e-12 relative on every inner fold of the test fixture (and ≤ 1e-6 at run time inside the solver); discrepancy-free case equals the exact unpenalized solve `solve(Q, -l)` to 1e-10 and `optimize_weights(lambda = 0)` to 1e-6 (its coordinate descent stops at `WEIGHT_OPT_TOL = 1e-8`, which left a 3e-8 relative gap in run 18565508; amended after the substitute review and that run) → ___ [PENDING]
 - [ ] (b) finite-difference check of the quadratic weight layer: |numerical − analytical| ≤ 1e-8·max(1, |analytical|) → ___ [PENDING]
 - [ ] (c) 100-seed replay: estimates and weight-layer SEs equal the prototype's candidate rows to ≤ 1e-8 → ___ [PENDING]
-- [ ] (d) full build + testthat: 0 failures, 0 errors → ___ [PENDING]
+- [x] (d) full build + testthat: 0 failures, 0 errors → run 18573008 (tree d184c5eb), exit 0 [PASS]
 - [ ] (e) substitute Rule 7a review recorded; Rule 24 audit → ___ [PENDING]
 
 ### 7. Review note
