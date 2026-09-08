@@ -554,7 +554,16 @@ reference mu0 arm carries the same fields as mu1); the treated-arm path is byte-
   rows, 54 settings, diagnostics manifests (smoke 1, cutoff 1000, truncation 2000);
   shared-shift family 9000 / 1500, 18 settings; both `manifest_audit_passed.txt` gates written
   with `family=`, `experiment=`, `deviation_mechanism=` lines.
-- (a)–(c), (e), (f): PENDING (worktree test job 18555671 queued).
+- (c) worktree run 18555671 (tree 23b6fc36): failures were all fixture/test issues — the
+  reuse validator compared outcomes with `identical()` (integer vs double after the fixture's
+  flip; now numeric-value comparison), the roce guard test used p = 3 (roce transform needs
+  p ≥ 4), the Slurm-helper fixtures lacked `deviation_mechanism`, plus the shared #0005/#0007
+  test fixes recorded in #0005 §5. Run 18565512 (tree 7591e430): every test passed except the
+  quadratic coordinate-descent tolerance (3e-8 relative; fixed in e0346ee4, exact-solve
+  comparison). Clean confirmation run: job 18573016.
+- (a), (b): PASS in run 18565512 (shared-shift K = 2 grouped reuse equals the independent fit
+  at 1e-12 on all equivalence columns; treated-arm reuse tests unchanged and passing).
+- (e), (f): PENDING (smoke task after the main tree lands; review recorded in §7).
 
 ### 6. Decision + rationale
 PENDING
