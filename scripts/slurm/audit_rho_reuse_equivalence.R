@@ -24,8 +24,8 @@ independent <- read.csv(independent_path, stringsAsFactors = FALSE)
 grouped <- read.csv(grouped_path, stringsAsFactors = FALSE)
 required <- c(
   "task_id", "sim_id", "method", "estimate", "se", "bias", "coverage",
-  "config", "p", "K", "rho", "nlambda_init", "n_bootstrap",
-  "cutoff", "aggregation_cutoff", "aggregation_lambda",
+  "config", "p", "K", "rho", "deviation_mechanism", "nlambda_init",
+  "n_bootstrap", "cutoff", "aggregation_cutoff", "aggregation_lambda",
   "package_fingerprint", "workflow_fingerprint", "manifest_fingerprint",
   "rho_reuse_enabled", "rho_reuse_changed_sources",
   "task_elapsed_seconds"
@@ -67,10 +67,24 @@ single_value <- function(value, column, label) {
   }
   observed[[1L]]
 }
+# Locked setting of this audit (submit_rho_reuse_equivalence.sh exports the
+# family's choice; the defaults are the negative-transfer setting). The
+# deviation mechanism is read from the results and must agree between the
+# independent and the grouped fit.
 expected <- list(
-  config = "C3", p = 100L, K = 4L, rho = 2.5,
-  nlambda_init = 100L, n_bootstrap = 5000L
+  config = Sys.getenv("ROCE_REUSE_CONFIG", "C3"), p = 100L,
+  K = as.integer(Sys.getenv("ROCE_REUSE_K", "4")),
+  rho = as.numeric(Sys.getenv("ROCE_REUSE_RHO", "2.5")),
+  nlambda_init = 100L, n_bootstrap = 5000L,
+  deviation_mechanism = single_value(
+    independent, "deviation_mechanism", "independent"
+  )
 )
+if (!expected$config %in% c("C1", "C2", "C3") || !expected$K %in% c(2L, 4L, 8L) ||
+    !expected$rho %in% c(0.5, 1, 1.5, 2, 2.5) ||
+    !expected$deviation_mechanism %in% c("treated_arm", "both_arms")) {
+  stop("invalid locked reuse-audit setting.", call. = FALSE)
+}
 for (field in names(expected)) {
   for (label in c("independent", "grouped")) {
     if (!identical(
@@ -236,7 +250,9 @@ gate_lines <- c(
   "rho_reuse_equivalence=passed",
   paste0("task_id=", summary$task_id),
   paste0("group_task_id=", summary$group_task_id),
-  "config=C3", "p=100", "K=4", "rho=2.5",
+  paste0("config=", expected$config), "p=100",
+  paste0("K=", expected$K), paste0("rho=", expected$rho),
+  paste0("deviation_mechanism=", expected$deviation_mechanism),
   "nlambda_init=100", "n_bootstrap=5000",
   paste0("primary_cutoff=", primary_cutoff),
   "positive_rho_workers=5", "positive_rho_backend=psock",

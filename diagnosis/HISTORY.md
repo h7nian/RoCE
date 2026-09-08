@@ -491,7 +491,9 @@ sources are reused unchanged); the treated-arm mechanism keeps the control-arm r
   audits and the source-diagnostic summary use it; `.validate_face_production_scientific_metadata()`
   requires `deviation_mechanism` and checks the mechanism-consistent label.
 - Tooling: manifests carry `deviation_mechanism` (appended after `methods`, so the grouped
-  column positions 3/4/6/7 read by the submission script are unchanged); `build_direct_tate_manifest.R` mode `shared_shift` (pre-registered scope: C1,
+  column positions 3/4/6/7 read by the submission script are unchanged);
+  `submit_rho_reuse_equivalence.sh` / `audit_rho_reuse_equivalence.R` take the locked setting
+  from `ROCE_REUSE_CONFIG/K/RHO` and record the mechanism in the gate; `build_direct_tate_manifest.R` mode `shared_shift` (pre-registered scope: C1,
   K = 2/4/8, rho grid {0, 0.5, 1, 1.5, 2, 2.5}, both arms); the rho-group builder accepts one
   grouped experiment per manifest; task runners pass the mechanism; row annotation asserts it;
   `submit_rho_group_direct_tate.sh` derives the group count from the primary manifest; the
@@ -511,9 +513,11 @@ sources are reused unchanged); the treated-arm mechanism keeps the control-arm r
 - [ ] (f) substitute Rule 7a review recorded; Rule 24 audit → ___ [PENDING]
 
 Before the n = 10 stage of the shared-shift family: a shared-shift reuse-equivalence run
-(C1, K = 4, rho = 2.5; grouped both-arm reuse vs. an independent fit, the analogue of
-`submit_rho_reuse_equivalence.sh`), and the rho = 0 rows of the two families must be identical
-for the same sim_id (same dataset and fits).
+(C1, K = 4, rho = 2.5; grouped both-arm reuse vs. an independent fit) via
+`submit_rho_reuse_equivalence.sh` with `ROCE_REUSE_CONFIG=C1` on the shared-shift manifest
+root — the grouped submission requires a family-specific gate under the family's result root
+whose `deviation_mechanism` line matches the manifest — and the rho = 0 rows of the two
+families must be identical for the same sim_id (same dataset and fits).
 
 Staged production gates (pre-registered for #0010, per family and per C×K): n = 10
 (implementation: audits pass, no failed replicate, SE/SD within [0.7, 1.4]); n = 50 (coverage of

@@ -13,6 +13,17 @@ GROUP_MANIFEST="${MANIFEST_ROOT}/manifest_main_rho_groups.csv"
 MANIFEST_GATE="${ROCE_MANIFEST_GATE:-${MANIFEST_ROOT}/manifest_audit_passed.txt}"
 SLURM_PARTITION="${ROCE_SLURM_PARTITION:-msismall}"
 SUBMIT_DRY_RUN="${ROCE_SUBMIT_DRY_RUN:-0}"
+# Locked reuse-audit setting: the negative-transfer family audits C3/K4/rho 2.5;
+# the shared-shift family (HISTORY #0009) audits C1/K4/rho 2.5 with both-arm
+# reuse. The manifest under MANIFEST_ROOT determines the family.
+REUSE_CONFIG="${ROCE_REUSE_CONFIG:-C3}"
+REUSE_K="${ROCE_REUSE_K:-4}"
+REUSE_RHO="${ROCE_REUSE_RHO:-2.5}"
+if [[ ! "${REUSE_CONFIG}" =~ ^C[123]$ ]] || [[ ! "${REUSE_K}" =~ ^(2|4|8)$ ]] ||
+   [[ ! "${REUSE_RHO}" =~ ^(0\.5|1|1\.5|2|2\.5)$ ]]; then
+  echo "ROCE_REUSE_CONFIG/K/RHO must name a positive-rho production setting." >&2
+  exit 1
+fi
 if [[ ! "${SUBMIT_DRY_RUN}" =~ ^[01]$ ]]; then
   echo "ROCE_SUBMIT_DRY_RUN must be 0 or 1." >&2
   exit 1
@@ -86,18 +97,19 @@ require_gate_value \
   "${PACKAGE_CHECK_GATE}" check_driver_md5 \
   "$(md5sum "${PROJECT_ROOT}/scripts/slurm/run_r_cmd_check.sh" | awk '{print $1}')"
 
-INDEPENDENT_TASK_ID="$(awk -F, '
+INDEPENDENT_TASK_ID="$(awk -F, -v config="${REUSE_CONFIG}" -v k="${REUSE_K}" \
+  -v rho="${REUSE_RHO}" '
   NR > 1 {
     for (i = 1; i <= 7; i++) gsub(/"/, "", $i)
-    if ($3 == 1 && $4 == "C3" && $5 == 100 && $6 == 4 && $7 == 2.5) {
+    if ($3 == 1 && $4 == config && $5 == 100 && $6 == k && $7 == rho) {
       print $1
     }
   }
 ' "${PRIMARY_MANIFEST}")"
-GROUP_TASK_ID="$(awk -F, '
+GROUP_TASK_ID="$(awk -F, -v config="${REUSE_CONFIG}" -v k="${REUSE_K}" '
   NR > 1 {
     for (i = 1; i <= 6; i++) gsub(/"/, "", $i)
-    if ($3 == 1 && $4 == "C3" && $5 == 100 && $6 == 4) print $1
+    if ($3 == 1 && $4 == config && $5 == 100 && $6 == k) print $1
   }
 ' "${GROUP_MANIFEST}")"
 if [[ ! "${INDEPENDENT_TASK_ID}" =~ ^[1-9][0-9]*$ ]] ||
@@ -108,7 +120,7 @@ fi
 if [[ "${SUBMIT_DRY_RUN}" == "1" ]]; then
   echo "dry run: independent primary task ${INDEPENDENT_TASK_ID}"
   echo "dry run: six-rho grouped task ${GROUP_TASK_ID}"
-  echo "dry run: p=100, C3, K=4, rho=2.5, nlambda=100, B=5000"
+  echo "dry run: p=100, ${REUSE_CONFIG}, K=${REUSE_K}, rho=${REUSE_RHO}, nlambda=100, B=5000"
   echo "dry run: partition=${SLURM_PARTITION}"
   echo "dry run: tested package ${PROJECT_LIBRARY}"
   exit 0
@@ -130,6 +142,7 @@ NUISANCE_CV_THREADS="${ROCE_NUISANCE_CV_THREADS_RESOLVED}"
 CPUS_PER_TASK=$((2 * 4 * NUISANCE_CV_THREADS))
 export ROCE_PROJECT_LIB="${PROJECT_LIBRARY}"
 export ROCE_NUISANCE_CV_THREADS="${NUISANCE_CV_THREADS}"
+export ROCE_REUSE_CONFIG="${REUSE_CONFIG}" ROCE_REUSE_K="${REUSE_K}" ROCE_REUSE_RHO="${REUSE_RHO}"
 cd "${PROJECT_ROOT}"
 
 INDEPENDENT_JOB="$(

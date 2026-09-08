@@ -10,7 +10,10 @@ RESULT_ROOT="$(dirname "${OUTPUT_ROOT}")"
 PRIMARY_MANIFEST="${MANIFEST_ROOT}/manifest_main.csv"
 GROUP_MANIFEST="${MANIFEST_ROOT}/manifest_main_rho_groups.csv"
 MANIFEST_GATE="${ROCE_MANIFEST_GATE:-${MANIFEST_ROOT}/manifest_audit_passed.txt}"
-REUSE_GATE="${ROCE_RHO_REUSE_GATE:-${PROJECT_ROOT}/results/direct_tate_mc500_b5000/rho_reuse_equivalence_final/rho_reuse_equivalence_passed.txt}"
+# The reuse-equivalence gate lives under the family's result root: each family
+# (negative transfer with treated-arm reuse, shared shift with both-arm reuse)
+# must have audited its own grouped reuse (HISTORY #0009).
+REUSE_GATE="${ROCE_RHO_REUSE_GATE:-${RESULT_ROOT}/rho_reuse_equivalence_final/rho_reuse_equivalence_passed.txt}"
 CUTOFF_SELECTION_GATE="${ROCE_CUTOFF_SELECTION_GATE:-${PROJECT_ROOT}/results/direct_tate_mc500_b5000/grouped_cutoff_pilot/cutoff_decision_n010/cutoff_selection_passed.txt}"
 PROJECT_LIBRARY="${ROCE_PROJECT_LIB:-${PROJECT_ROOT}/results/direct_tate_mc500_b5000/Rlib_current}"
 PACKAGE_TEST_GATE="${ROCE_PACKAGE_TEST_GATE:-${PROJECT_LIBRARY}/audit_tests_passed.txt}"
@@ -118,8 +121,16 @@ require_gate_value \
   "${PACKAGE_CHECK_GATE}" check_driver_md5 \
   "$(md5sum "${PROJECT_ROOT}/scripts/slurm/run_r_cmd_check.sh" | awk '{print $1}')"
 
+# Family from the primary manifest (deviation_mechanism is its last column).
+FAMILY_MECHANISM="$(awk -F, 'NR == 2 { value = $NF; gsub(/"/, "", value); print value; exit }' "${PRIMARY_MANIFEST}")"
+case "${FAMILY_MECHANISM}" in
+  treated_arm) REUSE_CONFIG="C3" ;;
+  both_arms) REUSE_CONFIG="C1" ;;
+  *) echo "primary manifest has an unknown deviation_mechanism: ${FAMILY_MECHANISM}" >&2; exit 1 ;;
+esac
 require_gate_value "${REUSE_GATE}" rho_reuse_equivalence passed
-require_gate_value "${REUSE_GATE}" config C3
+require_gate_value "${REUSE_GATE}" config "${REUSE_CONFIG}"
+require_gate_value "${REUSE_GATE}" deviation_mechanism "${FAMILY_MECHANISM}"
 require_gate_value "${REUSE_GATE}" p 100
 require_gate_value "${REUSE_GATE}" K 4
 require_gate_value "${REUSE_GATE}" rho 2.5
