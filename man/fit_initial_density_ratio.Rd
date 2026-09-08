@@ -35,6 +35,11 @@ fit_initial_density_ratio(
 
 \item{A_val}{Treatment arm, either 0 or 1.}
 
+\item{M_tau}{Truncation radius of the tilting weight
+\eqn{\exp\{-T_M(\phi'\gamma)\}}, shared by the coordinate descent, its
+CV validation loss, the score and the influence function; \code{Inf}
+leaves the fit untruncated.}
+
 \item{warm_start}{Optional initial coefficient vector for the final
 optimization.}
 

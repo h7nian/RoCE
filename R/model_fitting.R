@@ -593,6 +593,10 @@ fit_initial_outcome <- function(W_outcome, Y, A, A_val = 1L, lambda = NULL,
 #' @param A_val Treatment arm, either 0 or 1.
 #' @param warm_start Optional initial coefficient vector for the final
 #'   optimization.
+#' @param M_tau Truncation radius of the tilting weight
+#'   \eqn{\exp\{-T_M(\phi'\gamma)\}}, shared by the coordinate descent, its
+#'   CV validation loss, the score and the influence function; \code{Inf}
+#'   leaves the fit untruncated.
 #' @return Vector of initial density ratio parameters
 #' @export
 #' @inheritParams fit_initial_outcome

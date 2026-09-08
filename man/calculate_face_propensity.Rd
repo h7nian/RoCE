@@ -18,6 +18,13 @@ calculate_face_propensity(
 \item{alpha1}{Linear PS coefficients (length p).}
 
 \item{alpha2}{Squared PS coefficients (length p).}
+
+\item{X_dagger}{Transformed covariates from \code{.face_x_dagger()};
+required when \code{misspecification_strength > 0}.}
+
+\item{misspecification_strength}{Mixing weight \eqn{\omega} of the
+transformed coordinates in the true propensity predictor (0 recovers the
+quadratic mechanism).}
 }
 \value{
 Numeric vector of propensity scores (length n).

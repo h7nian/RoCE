@@ -118,6 +118,11 @@ generate_face_covariates <- function(n_target, n_source_sizes, p,
 #' @param X      Covariate matrix (\eqn{n \times p}).
 #' @param alpha1 Linear PS coefficients (length p).
 #' @param alpha2 Squared PS coefficients (length p).
+#' @param X_dagger Transformed covariates from \code{.face_x_dagger()};
+#'   required when \code{misspecification_strength > 0}.
+#' @param misspecification_strength Mixing weight \eqn{\omega} of the
+#'   transformed coordinates in the true propensity predictor (0 recovers the
+#'   quadratic mechanism).
 #' @return Numeric vector of propensity scores (length n).
 calculate_face_propensity <- function(X, alpha1, alpha2, X_dagger = NULL,
                                       misspecification_strength = 0) {

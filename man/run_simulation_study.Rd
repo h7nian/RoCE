@@ -98,6 +98,10 @@ induced marginal TATE difference.}
 
 \item{n_deviated_sites}{Integer deviated sites (FACE DGP only).}
 
+\item{deviation_mechanism}{\code{"treated_arm"} (default) or
+\code{"both_arms"}: how the deviated sources deviate under the FACE DGP
+(see \code{\link{generate_face_data}}).}
+
 \item{n_target}{Optional integer target-site sample size for explicit
 per-site allocation (FACE DGP only; paired with \code{n_source_sizes}).
 When supplied, the \code{n_total} and \code{K} grid axes collapse to this
