@@ -60,7 +60,7 @@ numerical derivative is of the production rule. Replay over the 100 saved v19 se
 - [ ] (g) kink count (|lambda t_j − 1| < 1e-6) reported; ≤ 1% of fold×source cells → ___ [PENDING]
 
 ### 5. Validation results (filled after running)
-PENDING — Slurm job 18529696 (`diagnosis/weight_layer/run_weight_layer.sh`), submitted 2026-09-07.
+PENDING — Slurm job 18530725 (`diagnosis/weight_layer/run_weight_layer.sh`), submitted 2026-09-07.
 
 ### 6. Decision + rationale
 PENDING
@@ -114,7 +114,59 @@ Pilot: one seed (20001), p = 100, K = 2, 1000 per site, rho = 0, configs C1–C4
 - [ ] (f) with omega*: C2/C3/C4 fits finite, all selected nuisance fits converged → ___ [PENDING]
 
 ### 5. Validation results (filled after running)
-PENDING — Slurm array 18529697 (`diagnosis/dgp_common_basis/run_dgp_common_basis.sh`, 13 cells), submitted 2026-09-07.
+PENDING — Slurm array 18530726 (`diagnosis/dgp_common_basis/run_dgp_common_basis.sh`, 13 cells), submitted 2026-09-07.
+
+### 6. Decision + rationale
+PENDING
+
+<a id="0003"></a>
+## 0003 — 2026-09-07 — Truncation alignment of the tilting calibrated loss  [IN-FLIGHT]
+
+> commit: (this entry's prototype committed after submission)
+> previous related: none
+> stage: 1 (diagnosis; isolated candidate library, package source untouched)
+> method.tex section: `docs/main.tex` §nuisance truncation paragraph (lines 353–356: every displayed weight is implemented as exp[−T_{M}(phi'gamma)] in the calibrated losses and the influence function); `docs/supplemental.tex` lines 196–202
+
+### 1. Symptom / motivation
+The influence function and the outcome calibrated loss use the truncated tilt weight
+exp[−T_M(Z'gamma)] (`src/variance.cpp:57`, `src/cv_utils.h:74-82`), but the tilting
+coordinate descent and its CV validation loss use exp[−clip_{±50}(Z'gamma)]
+(`src/cv_utils.h:498-508`, `:563`, `:619`, `:683-698`), i.e. no truncation. When
+truncation is active the calibration score and the functional's alpha-derivative
+disagree by E_s[I (e^{−g} − e^{−T_M(g)}) g' Z]^T(alpha_hat − alpha*), a first-order term
+absent from the analytic variance. Inactive in the C1 pilots (truncation fraction 0)
+but relevant for RHC and for strong shift.
+
+### 2. Theoretical analysis
+Replace exp(−u) in the tilting loss by psi_M(u) = exp(−T_M(u)) (1 − (u − T_M(u))): the
+exponential inside the radius continued by its tangent outside. psi_M is convex,
+psi_M'(u) = −exp(−T_M(u)), psi_M''(u) = exp(−u) 1{|u| < M}. The first-order condition
+becomes E_t[g' Z] = E_s[I exp(−T_M(Z'gamma)) g' Z], which is exactly the
+alpha-derivative of the truncated functional in the Z directions, so orthogonality
+holds for the estimator that is actually evaluated. Loss, CV validation loss, score
+and influence function then share one weight. Refined (two-round) tilting fits keep
+an infinite radius in both CV and final fit (deferred; not the manuscript default).
+
+### 3. Decomposition
+Patch `diagnosis/truncation_alignment/truncation_alignment.patch` (applied to an
+isolated copy): `tilt_weight()` / `tilt_loss()` replace `density_ratio_weight()`;
+`density_ratio_cd_update()` and `density_ratio_val_loss()` take `M_tau`; the initial
+and calibrated fits and their CV kernels pass the fit radius; comparison-method
+density ratios pass `Inf` (baselines unchanged). Validation script
+`truncation_alignment.R`: (A) synthetic two-site example, radius 2, unpenalized
+calibrated fit, truncated vs untruncated score under candidate and baseline
+libraries; (B) C1 seed-20001 refit versus the #0002 stored fit.
+
+### 4. Acceptance criteria
+- [ ] (a) candidate: max |truncated score| ≤ 1e-6 with truncation fraction > 0.05 → ___ [PENDING]
+- [ ] (b) baseline: max |untruncated score| ≤ 1e-6 and max |truncated score| > 1e-3 (documents the defect) → ___ [PENDING]
+- [ ] (c) candidate: max |untruncated score| > 1e-3 (the fit really changed) → ___ [PENDING]
+- [ ] (d) C1 identity: estimate, se, fold weights, target-only, source estimates differ ≤ 1e-10 from the #0002 C1 cell → ___ [PENDING]
+- [ ] (e) full installed testthat: 0 failures, 0 errors → ___ [PENDING]
+- [ ] (f) R CMD check `Status: OK` → ___ [PENDING]
+
+### 5. Validation results (filled after running)
+PENDING — Slurm job 18530797 (`diagnosis/truncation_alignment/run_truncation_alignment.sh`, depends on the #0002 C1 cell), submitted 2026-09-07.
 
 ### 6. Decision + rationale
 PENDING

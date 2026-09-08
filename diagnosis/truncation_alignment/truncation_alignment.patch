@@ -1,0 +1,287 @@
+diff -ruN a/R/comparison_methods.R b/R/comparison_methods.R
+--- a/R/comparison_methods.R	2026-09-07 20:31:45.606576471 -0500
++++ b/R/comparison_methods.R	2026-09-07 20:33:19.868202794 -0500
+@@ -982,7 +982,7 @@
+       # Step 3: Fit density ratio model via exponential tilting (unpenalized)
+       # γ_{s,A_val} is the arm-specific density ratio
+       alpha <- fit_initial_density_ratio(Z_source, tr_source, mean_phi_target, lambda = 0.0,
+-                                         A_val = A_val)
++                                         A_val = A_val, M_tau = Inf)
+ 
+       # Density ratio weights
+       Z_int <- cbind(1, Z_source)
+diff -ruN a/R/cross_fitting_algorithms.R b/R/cross_fitting_algorithms.R
+--- a/R/cross_fitting_algorithms.R	2026-09-07 20:31:45.583271749 -0500
++++ b/R/cross_fitting_algorithms.R	2026-09-07 20:33:12.348316219 -0500
+@@ -431,7 +431,7 @@
+     gamma_init_k1_k2 <- fit_initial_density_ratio(
+       source_train$Z_site, source_train$A, mean_phi_k2,
+       lambda = if (isTRUE(use_lambda_cache)) cached_lambda_init_dr else NULL,
+-      A_val = A_val, warm_start = prev_gamma_init,
++      A_val = A_val, M_tau = M_tau, warm_start = prev_gamma_init,
+       nlambda = nuisance_nlambda,
+       max_iter = nuisance_max_iter,
+       lambda_rule = nuisance_lambda_rule,
+diff -ruN a/R/estimators_helpers.R b/R/estimators_helpers.R
+--- a/R/estimators_helpers.R	2026-09-07 20:31:45.594339310 -0500
++++ b/R/estimators_helpers.R	2026-09-07 20:33:18.338321539 -0500
+@@ -793,7 +793,7 @@
+     select_lambda_cv_initial_density_ratio_cpp(
+       Z_source, A_dummy, mean_phi_target,
+       lambda_grid, n_cv_folds,
+-      MAX_ITER_DEFAULT, TOL_DEFAULT, 1L
++      MAX_ITER_DEFAULT, TOL_DEFAULT, 1L, M_tau = Inf
+     )
+   }, error = function(e) {
+     stop(sprintf("select_dr_lambda_cv: DR lambda CV failed: %s",
+@@ -841,7 +841,7 @@
+   alpha <- tryCatch({
+     fit_initial_density_ratio(
+       Z_source, A_dummy, mean_phi_target,
+-      lambda = lambda, lambda_rule = lambda_rule
++      lambda = lambda, M_tau = Inf, lambda_rule = lambda_rule
+     )
+   }, error = function(e) {
+     stop(sprintf("calculate_dr_weights: density ratio fitting failed: %s",
+diff -ruN a/R/model_fitting.R b/R/model_fitting.R
+--- a/R/model_fitting.R	2026-09-07 20:30:14.897358139 -0500
++++ b/R/model_fitting.R	2026-09-07 20:33:09.335712509 -0500
+@@ -598,7 +598,8 @@
+ #' @inheritParams fit_initial_outcome
+ fit_initial_density_ratio <- function(Z_site, A, mean_phi, lambda = NULL,
+                                        max_iter = MAX_ITER_DEFAULT, tol = TOL_DEFAULT,
+-                                       A_val = 1L, warm_start = NULL,
++                                       A_val = 1L, M_tau = M_TAU_DEFAULT,
++                                       warm_start = NULL,
+                                        nlambda = LAMBDA_GRID_SIZE_STANDARD,
+                                        lambda_rule = c("min", "1se"), cv_group_id = NULL) {
+   A_val <- .validate_A_val(A_val, "fit_initial_density_ratio")
+@@ -626,7 +627,7 @@
+     ))
+     cv_result <- .call_nuisance_cv_with_groups(
+       select_lambda_cv_initial_density_ratio_cpp,
+-      list(Z_site, A, mean_phi, lambda_grid, n_cv_folds, max_iter, tol, A_val),
++      list(Z_site, A, mean_phi, lambda_grid, n_cv_folds, max_iter, tol, A_val, M_tau),
+       cv_group_id, A, A_val, n_cv_folds, "fit_initial_density_ratio"
+     )
+     lambda <- .select_nuisance_cv_lambda(cv_result, lambda_rule, "fit_initial_density_ratio")
+@@ -647,7 +648,9 @@
+   
+   ws <- if (!is.null(warm_start)) as.numeric(warm_start) else numeric(0)
+   final_fit_started_at <- proc.time()[["elapsed"]]
+-  cpp_result <- fit_initial_density_ratio_cpp(Z_site, A, mean_phi, lambda, max_iter, tol, A_val, ws)
++  cpp_result <- fit_initial_density_ratio_cpp(
++    Z_site, A, mean_phi, lambda, max_iter, tol, A_val, M_tau, ws
++  )
+   final_fit_seconds <- as.numeric(
+     proc.time()[["elapsed"]] - final_fit_started_at
+   )
+diff -ruN a/src/cv_utils.h b/src/cv_utils.h
+--- a/src/cv_utils.h	2026-09-07 20:30:14.854294043 -0500
++++ b/src/cv_utils.h	2026-09-07 20:32:28.828740734 -0500
+@@ -495,10 +495,14 @@
+     int line_search_failures = 0;
+ };
+ 
+-inline double density_ratio_weight(double linear_predictor) {
++// Tilting weight exp{-T_M(phi'gamma)} shared by every density-ratio loss, its
++// score, and the influence function (main.tex, truncation paragraph in
++// sec:nuisance). ETA_CLIP only guards exp() overflow when M_tau is infinite.
++inline double tilt_weight(double linear_predictor, double M_tau) {
+     double clipped = std::max(
+         NumericalConstants::ETA_CLIP_MIN,
+-        std::min(NumericalConstants::ETA_CLIP_MAX, linear_predictor)
++        std::min(NumericalConstants::ETA_CLIP_MAX,
++                 truncation_function(linear_predictor, M_tau))
+     );
+     double weight = std::exp(-clipped);
+     return std::max(
+@@ -507,6 +511,14 @@
+     );
+ }
+ 
++// Loss term whose derivative is -tilt_weight: exp(-g) inside the truncation
++// radius and the tangent continuation outside it, so that coordinate descent
++// minimizes exactly the objective whose score uses the truncated weights.
++inline double tilt_loss(double linear_predictor, double M_tau) {
++    double truncated = truncation_function(linear_predictor, M_tau);
++    return tilt_weight(truncated, M_tau) * (1.0 - (linear_predictor - truncated));
++}
++
+ // L1-penalized density-ratio coordinate descent shared by CV and final refits.
+ // source_scale is the empirical arm fraction n_{s,a}/n_s.  Consequently,
+ // source_scale * mean_{i:A_i=a}(.) is the source-site empirical expectation
+@@ -517,7 +529,8 @@
+         VectorXd& gamma, std::vector<bool>& active,
+         const MatrixXd& X_train, const VectorXd& psi_prime_train,
+         double source_scale, const VectorXd& mean_grad_psi, double lambda,
+-        double convergence_tol, int max_iter, bool use_active_set = true) {
++        double M_tau, double convergence_tol, int max_iter,
++        bool use_active_set = true) {
+     int p = gamma.size();
+     int n_train = X_train.rows();
+ 
+@@ -560,7 +573,7 @@
+         VectorXd g_vec = X_train * gamma;
+         VectorXd weight_vec(n_train);
+         for (int i = 0; i < n_train; i++) {
+-            weight_vec(i) = density_ratio_weight(g_vec(i));
++            weight_vec(i) = tilt_weight(g_vec(i), M_tau);
+         }
+ 
+         for (int j = 0; j < p; j++) {
+@@ -582,10 +595,13 @@
+                 grad_acc.add(
+                     -source_scale * X_train(i, j) * exp_neg_g * psi_p / n_train
+                 );
+-                // second derivative (Hessian diagonal) contribution
++                // second derivative (Hessian diagonal) contribution; the
++                // truncated loss is linear, hence flat, beyond the radius.
++                double curvature =
++                    (std::abs(g_vec(i)) < M_tau) ? exp_neg_g : 0.0;
+                 hess_acc.add(
+                     source_scale * X_train(i, j) * X_train(i, j) *
+-                    exp_neg_g * psi_p / n_train
++                    curvature * psi_p / n_train
+                 );
+             }
+             grad_j += grad_acc.value();
+@@ -616,13 +632,12 @@
+ 
+                 StableAccumulator source_loss_change;
+                 for (int i = 0; i < n_train; i++) {
+-                    double new_weight = density_ratio_weight(
+-                        g_vec(i) + delta_j * X_train(i, j)
+-                    );
+-                    candidate_weights(i) = new_weight;
++                    double new_predictor = g_vec(i) + delta_j * X_train(i, j);
++                    candidate_weights(i) = tilt_weight(new_predictor, M_tau);
+                     source_loss_change.add(
+                         source_scale * psi_prime_train(i) *
+-                        (new_weight - weight_vec(i)) / n_train
++                        (tilt_loss(new_predictor, M_tau) -
++                         tilt_loss(g_vec(i), M_tau)) / n_train
+                     );
+                 }
+                 double penalty_change = (j == 0) ? 0.0 :
+@@ -682,16 +697,13 @@
+ // leaving the estimated tilt γ̂ mis-regularized (degrades C2 coverage at large n).
+ inline double density_ratio_val_loss(const VectorXd& gamma, const VectorXd& mean_grad_psi,
+                                      const MatrixXd& X_val, const VectorXd& psi_prime_val,
+-                                     double source_scale) {
++                                     double source_scale, double M_tau) {
+     int n_val = X_val.rows();
+     long double linear = static_cast<long double>(mean_grad_psi.dot(gamma));
+     long double source_sum = 0.0L;
+     for (int j = 0; j < n_val; j++) {
+-        double eta_gamma = X_val.row(j).dot(gamma);
+-        eta_gamma = std::max(NumericalConstants::ETA_CLIP_MIN, std::min(NumericalConstants::ETA_CLIP_MAX, eta_gamma));
+-        double exp_neg_g = std::exp(-eta_gamma);
+-        exp_neg_g = std::max(NumericalConstants::WEIGHT_MIN, std::min(NumericalConstants::WEIGHT_MAX, exp_neg_g));
+-        source_sum += static_cast<long double>(exp_neg_g * psi_prime_val(j));
++        source_sum += static_cast<long double>(
++            tilt_loss(X_val.row(j).dot(gamma), M_tau) * psi_prime_val(j));
+     }
+     return static_cast<double>(
+         linear + static_cast<long double>(source_scale) * source_sum / n_val);
+diff -ruN a/src/density_ratio.cpp b/src/density_ratio.cpp
+--- a/src/density_ratio.cpp	2026-09-07 20:30:14.869656976 -0500
++++ b/src/density_ratio.cpp	2026-09-07 20:33:00.330013781 -0500
+@@ -136,11 +136,14 @@
+         psi_prime_precomputed(i) = std::abs(GLMUtils::response_derivative(eta_i, link));
+     }
+     
++    // The refined (two-round) loss keeps its untruncated tilt: its CV path is
++    // also run with an infinite radius from R.
++    double tilt_radius = calibrated ? M_tau : std::numeric_limits<double>::infinity();
+     std::vector<bool> active(p_site, true);
+     CVUtils::DensityRatioCDResult fit = CVUtils::density_ratio_cd_update(
+         gamma, active, Z_site_treated, psi_prime_precomputed,
+         static_cast<double>(n_treated) / n, mean_grad_psi, lambda,
+-        tol, max_iter, false
++        tilt_radius, tol, max_iter, false
+     );
+     return density_ratio_fit_result(
+         gamma, fit.converged, fit.iterations, fit.max_update,
+@@ -163,9 +166,9 @@
+ List fit_initial_density_ratio_cpp(const MatrixXd& Z_site, const VectorXd& A_source, 
+                                    const VectorXd& mean_phi,
+                                    double lambda, int max_iter, double tol,
+-                                   int A_val,
++                                   int A_val, double M_tau,
+                                    const VectorXd& warm_start) {
+-    
++
+     int n = Z_site.rows();
+     MatrixXd Z_site_int = prepend_intercept(Z_site);
+     int p = Z_site_int.cols();
+@@ -190,7 +193,7 @@
+     CVUtils::DensityRatioCDResult fit = CVUtils::density_ratio_cd_update(
+         gamma, active, X_treated, psi_prime,
+         static_cast<double>(n_treated) / n, mean_phi, lambda,
+-        tol, max_iter, false
++        M_tau, tol, max_iter, false
+     );
+     return density_ratio_fit_result(
+         gamma, fit.converged, fit.iterations, fit.max_update,
+@@ -272,13 +275,15 @@
+                 CVUtils::density_ratio_cd_update(
+                     gamma, active, X_train_folds[fold], pp_train[fold],
+                     static_cast<double>(n_treated) / n, mean_grad_psi,
+-                    lambda, cv_tol, cv_max_iter
++                    lambda, std::numeric_limits<double>::infinity(),
++                    cv_tol, cv_max_iter
+                 );
+             if (fit.converged) {
+                 consecutive_failures = 0;
+                 fold_scores(lambda_idx, fold) = CVUtils::density_ratio_val_loss(
+                     gamma, mean_grad_psi, X_val_folds[fold], pp_val[fold],
+-                    static_cast<double>(n_treated) / n);
++                    static_cast<double>(n_treated) / n,
++                    std::numeric_limits<double>::infinity());
+             } else {
+                 // Never warm-start the next candidate from an unconverged
+                 // solution.  The +Inf score records this candidate as invalid.
+@@ -314,8 +319,9 @@
+                                                 const VectorXd& lambda_grid, int n_folds,
+                                                 int max_iter, double tol,
+                                                 int A_val = 1,
++                                                double M_tau = NumericalConstants::M_TAU_DEFAULT,
+                                                 Rcpp::Nullable<Rcpp::NumericVector> cv_fold_id = R_NilValue) {
+-    
++
+     int n = Z_site.rows();
+     int n_lambda = lambda_grid.size();
+     int p = Z_site.cols() + 1;
+@@ -372,13 +378,13 @@
+                 CVUtils::density_ratio_cd_update(
+                     gamma, active, X_train_folds[fold], pp_train[fold],
+                     static_cast<double>(n_treated) / n, mean_phi,
+-                    lambda, cv_tol, cv_max_iter
++                    lambda, M_tau, cv_tol, cv_max_iter
+                 );
+             if (fit.converged) {
+                 consecutive_failures = 0;
+                 fold_scores(lambda_idx, fold) = CVUtils::density_ratio_val_loss(
+                     gamma, mean_phi, X_val_folds[fold], pp_val[fold],
+-                    static_cast<double>(n_treated) / n);
++                    static_cast<double>(n_treated) / n, M_tau);
+             } else {
+                 gamma = gamma_before;
+                 std::fill(active.begin(), active.end(), true);
+@@ -481,13 +487,13 @@
+                 CVUtils::density_ratio_cd_update(
+                     gamma, active, X_train_folds[fold], pp_train[fold],
+                     static_cast<double>(n_treated) / n, mean_grad_psi,
+-                    lambda, cv_tol, cv_max_iter
++                    lambda, M_tau, cv_tol, cv_max_iter
+                 );
+             if (fit.converged) {
+                 consecutive_failures = 0;
+                 fold_scores(lambda_idx, fold) = CVUtils::density_ratio_val_loss(
+                     gamma, mean_grad_psi, X_val_folds[fold], pp_val[fold],
+-                    static_cast<double>(n_treated) / n);
++                    static_cast<double>(n_treated) / n, M_tau);
+             } else {
+                 gamma = gamma_before;
+                 std::fill(active.begin(), active.end(), true);

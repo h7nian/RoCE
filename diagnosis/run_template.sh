@@ -22,10 +22,14 @@
 
 set -euo pipefail
 
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# sbatch copies the script to a spool directory, so locate the project by the
+# submission directory (submit from the project root).
+PROJECT_ROOT="${SLURM_SUBMIT_DIR:-$(pwd)}"
 cd "${PROJECT_ROOT}"
+test -f DESCRIPTION || { echo "submit from the project root (DESCRIPTION not found in ${PROJECT_ROOT})" >&2; exit 1; }
 
 module load R/4.2.2-gcc-8.2.0-vp7tyde
+# ~/.Renviron pins R_LIBS_USER; put any candidate library in R_LIBS instead.
 export R_LIBS_USER=/users/0/zhan9381/Rlibs
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 
