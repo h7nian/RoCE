@@ -505,9 +505,9 @@ sources are reused unchanged); the treated-arm mechanism keeps the control-arm r
   the independent fit, frozen row set, validator with both mechanisms.
 
 ### 4. Acceptance criteria
-- [ ] (a) shared-shift grouped reuse equals the independent fit on the K=1/p=3 fixture to 1e-12 (all `rho_equivalence_columns`) → ___ [PENDING]
-- [ ] (b) treated-arm grouped reuse unchanged: existing reuse tests pass byte-identically → ___ [PENDING]
-- [ ] (c) full build + testthat from the worktree (`USE_SOURCE=true`): 0 failures, 0 errors → ___ [PENDING]
+- [x] (a) shared-shift grouped reuse equals the independent fit on the K=2/p=3 fixture to 1e-12 (all `rho_equivalence_columns`; s2 reused in both arms, s1 refitted in both) → PASS in runs 18565512 and 18573016
+- [x] (b) treated-arm grouped reuse unchanged: existing reuse tests pass byte-identically → PASS (same runs)
+- [x] (c) full build + testthat from the worktree (`USE_SOURCE=true`): 0 failures, 0 errors → run 18573016 (tree e0346ee4), exit 0 [PASS]
 - [x] (d) manifest family build + `audit_mc500_manifests.R` pass for both families in a scratch root (500 replications: 27000 + 9000 primary tasks, 4500 + 1500 groups) → job 18555672: both audits passed; main 27000/4500 (54 settings), shared_shift 9000/1500 (18 settings); grouped columns 3/4/6/7 unchanged (`deviation_mechanism` after `methods`) [PASS]
 - [ ] (e) smoke task (`manifest_smoke_single.csv`) through `run_direct_tate_task.R` + `audit_direct_tate_smoke.R` with the frozen row set → ___ [PENDING]
 - [ ] (f) substitute Rule 7a review recorded; Rule 24 audit → ___ [PENDING]
@@ -560,7 +560,8 @@ reference mu0 arm carries the same fields as mu1); the treated-arm path is byte-
   p ≥ 4), the Slurm-helper fixtures lacked `deviation_mechanism`, plus the shared #0005/#0007
   test fixes recorded in #0005 §5. Run 18565512 (tree 7591e430): every test passed except the
   quadratic coordinate-descent tolerance (3e-8 relative; fixed in e0346ee4, exact-solve
-  comparison). Clean confirmation run: job 18573016.
+  comparison). **Clean confirmation run 18573016 (tree e0346ee4): all tests passed, 0 failures,
+  0 errors, exit 0.**
 - (a), (b): PASS in run 18565512 (shared-shift K = 2 grouped reuse equals the independent fit
   at 1e-12 on all equivalence columns; treated-arm reuse tests unchanged and passing).
 - (e), (f): PENDING (smoke task after the main tree lands; review recorded in §7).
