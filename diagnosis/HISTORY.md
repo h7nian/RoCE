@@ -698,7 +698,22 @@ Gates launched 2026-09-08 on tree 0fde383e: A1 test audit job 18580683
 (`package_check_production_20260908_v1`), A3 manifest families job 18580685
 (`production_20260908_v1/`); all three were cancelled unstarted by the cluster-wide scheduler
 reset at 13:05 (job numbering restarted) and resubmitted as A1 = 33441, A2 = 33442,
-A3 = 33443 on the same tree. A4/A5 follow A1–A3.
+A3 = 33443 on the same tree.
+
+- **A3 manifests [PASS]** (job 33443): `production_20260908_v1/` holds the negative-transfer
+  family (27,000 primary / 4,500 grouped rows, 54 settings, plus smoke 1, cutoff 1,000,
+  truncation 2,000) and `production_20260908_v1/shared_shift/` the shared-shift family
+  (9,000 / 1,500 rows, 18 settings); both `manifest_audit_passed.txt` gates written with
+  matching `family` / `experiment` / `deviation_mechanism` lines.
+- **A2 R CMD check**: first submission (33442) died in 8 s because `ROCE_CHECK_ROOT` was
+  relative and the script `cd`s into the check root before staging; resubmitted with an
+  absolute path as job 33807.
+- A1 = 33441 running. A4/A5 follow A1–A3.
+
+Defect found while reading the A2 log and fixed in 9a366d8e: `audit_roce_contracts.sh`
+scanned for retired identifiers with `rg`, which does not exist in the batch environment, and
+its trailing `|| true` made the scan a silent no-op in every gate. It now uses `grep` with
+equivalent exclusions and passes on the current tree.
 
 ### 6. Decision + rationale
 PENDING
