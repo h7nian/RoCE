@@ -5,7 +5,7 @@
 > History lives in `HISTORY.md`.
 >
 > Last updated: 2026-09-07
-> Last updating HISTORY entry: [#0001](HISTORY.md#0001) (DECIDED-PASS)
+> Last updating HISTORY entry: [#0002](HISTORY.md#0002) (DECIDED-PASS)
 
 ---
 
@@ -24,8 +24,10 @@
   (`se`). **Known deficit: omits the weight-learning term** (see §3).
 - Simulation DGP: FACE-style skew-normal covariates, binary outcome,
   `rho = ate_deviation` log-odds treatment shift on source `s1`'s treated arm.
-  Working bases still differ across configurations (C2/C3 drop the quadratic
-  block from one basis) — **being replaced** (see §3, #0002).
+  Working bases still differ across configurations in the package (C2/C3 drop
+  the quadratic block); the replacement (common basis, X-dagger
+  misspecification at strength 0.75) is validated (#0002) and awaits
+  migration (#0006).
 
 > Authoritative spec: `docs/main.tex` + `docs/supplemental.tex` (Rule 13,
 > amendment A1). This section is a 1-line-per-knob restatement.
@@ -59,23 +61,28 @@ No C2/C3, K=4/8, or RHC results exist for the current TATE estimator.
 
 1. **#0001 Weight-layer influence for the soft-threshold rule** — Stage 1
    DECIDED-PASS (HISTORY #0001). Next: Stage 2 migration (#0005a).
-2. **#0002 Common working basis + X-dagger misspecification pilot** — Stage 1.
-   Symptom: C2/C3 bases break the common-phi orthogonality assumption of
-   `docs/main.tex:222`. Status: PROPOSED. Blocker: none.
-3. #0003 Truncation alignment of the tilting calibrated loss (`density_ratio_weight`
-   ignores `M_tau`; IF uses `exp(-T_M)`) — Stage 1. Not started.
-4. #0004 Inner-fold weight learning on calibrated nuisances (paper: "same
-   secondary-fold scheme"; code uses initial plug-ins) — Stage 1, cost gate.
-5. #0005 [MIGRATION] of #0001-#0004 into `R/` + `src/`, tests, R CMD check,
-   substitute Rule 7a review, Rule 24 audit.
-6. #0006 Method-row schema freeze (target_only, roce A, roce B, roce armwise,
+2. **#0002 Common working basis + X-dagger misspecification pilot** — Stage 1
+   DECIDED-PASS: omega* = 0.75; C1 unchanged (2e-4). Next: Stage 2 (#0006).
+3. **#0003 Truncation alignment of the tilting calibrated loss** — Stage 1
+   IN-FLIGHT (candidate library; score check passed, C1 identity refit and
+   full tests pending).
+4. #0004 Inner-fold weight learning on calibrated nuisances: proposal is to
+   align the Supplement text with the implemented out-of-two-fold initial
+   plug-ins and run a bounded calibrated-inner sensitivity on C1/K2 instead
+   of a x4 nuisance cost in production — awaiting the user's answer.
+5. **#0005 [MIGRATION] weight-layer variance into `R/`** — IN-FLIGHT
+   (substitute review recorded; full tests + package replay pending).
+6. #0006 [MIGRATION] common-basis DGP with `misspecification_strength = 0.75`
+   into `R/data_generation_face.R`, README/main.tex configuration table.
+7. #0007 [MIGRATION] truncation-aligned tilting loss into `src/` (after #0003).
+8. #0008 Method-row schema freeze (target_only, roce A, roce B, roce armwise,
    SS, IVW, federated_dr, pooled_dr), shared-shift scenario S, manifest
    rebuild (500 x C1-C3 x K=2,4,8 + S), staged gates n = 10 / 50 / 100.
-7. #0007 Production runs, aggregation, figures/tables, paper updates
+9. #0009 Production runs, aggregation, figures/tables, paper updates
    (substitute Rule 7c review before numbers leave).
-8. #0008 RHC with the frozen package; #0009 cleanup (rename `direct_tate`
-   -> `tate`, retire root `main.R`/`realdata.R` legacy pipeline, README,
-   archive `diagnosis/tate_common_weight`).
+10. #0010 RHC with the frozen package; #0011 cleanup (rename `direct_tate`
+    -> `tate`, retire root `main.R`/`realdata.R` legacy pipeline, README,
+    archive `diagnosis/tate_common_weight`).
 
 ## 4. Parked for later (not v1 blockers)
 

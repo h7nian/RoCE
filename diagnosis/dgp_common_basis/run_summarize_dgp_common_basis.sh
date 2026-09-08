@@ -1,12 +1,11 @@
 #!/bin/bash
-# HISTORY: 2026-09-07 #0005 Land the weight-layer variance in the package
-# Task:    Replay the 100 saved v19 seeds with the in-package weight layer and
-#          compare with the Stage-1 prototype output (diagnosis/out/weight_layer/v1);
-#          writes diagnosis/out/weight_layer/v2. About 5 min, single core.
+# HISTORY: 2026-09-07 #0002 Common working basis and X-dagger misspecification: strength pilot
+# Task:    Apply the pre-registered omega selection rule to the 13 finished pilot
+#          cells; writes diagnosis/out/dgp_common_basis/selection/. A few minutes.
 
-#SBATCH --job-name=weight_layer
-#SBATCH --time=04:00:00
-#SBATCH --mem=12G
+#SBATCH --job-name=dgp_common_basis_summary
+#SBATCH --time=00:30:00
+#SBATCH --mem=8G
 #SBATCH --cpus-per-task=1
 #SBATCH --partition=msismall
 #SBATCH --output=diagnosis/logs/%x-%j.out
@@ -23,10 +22,9 @@ cd "${PROJECT_ROOT}"
 test -f DESCRIPTION || { echo "submit from the project root (DESCRIPTION not found in ${PROJECT_ROOT})" >&2; exit 1; }
 
 module load R/4.2.2-gcc-8.2.0-vp7tyde
-# Uses the package installed by ./test.sh into R_LIBS_USER (~/.Renviron).
+# ~/.Renviron overrides R_LIBS_USER, so the candidate library goes in R_LIBS.
+export R_LIBS="${PROJECT_ROOT}/results/direct_tate_mc500_b5000/outcome_cv_scale_candidate_v1/lib"
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 
-TASK="weight_layer"
-mkdir -p "diagnosis/logs" "diagnosis/out/${TASK}"
-
-Rscript "diagnosis/${TASK}/${TASK}.R" "diagnosis/out/${TASK}"
+mkdir -p "diagnosis/logs"
+Rscript diagnosis/dgp_common_basis/summarize_dgp_common_basis.R

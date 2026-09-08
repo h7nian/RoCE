@@ -41,7 +41,7 @@ C1_REFERENCE_FIT <- "diagnosis/out/dgp_common_basis/C1_omega0.00/fit.rds"
   mean_grad_psi <- RoCE:::.mean_glm_gradient_site_basis(
     sites$Z_target, sites$Z_target, alpha_init, family_int, link_int
   )
-  fit <- fit_unified_density_ratio_cpp(
+  fit <- RoCE:::fit_unified_density_ratio_cpp(
     sites$Z_source, sites$A_source, mean_grad_psi, alpha_init,
     0, 20000L, 1e-10, TRUE, TRUNCATION_RADIUS, sites$Z_source, 1L,
     family_int, link_int, numeric(0)
@@ -81,16 +81,18 @@ C1_REFERENCE_FIT <- "diagnosis/out/dgp_common_basis/C1_omega0.00/fit.rds"
   )
   stored <- readRDS(C1_REFERENCE_FIT)$fit
   difference <- function(a, b) max(abs(as.numeric(a) - as.numeric(b)))
+  # The stored fit predates the weight-layer SE (HISTORY #0005); compare the
+  # fixed-weight SE, which the truncation change must leave untouched.
   data.frame(
     estimate_difference = difference(fit$estimate, stored$estimate),
-    se_difference = difference(fit$se, stored$se),
+    se_difference = difference(fit$se_fixed_weights %||% fit$se, stored$se_fixed_weights %||% stored$se),
     fold_weight_difference = difference(fit$fold_weights, stored$fold_weights),
     target_only_difference = difference(
       c(fit$target_only$estimate, fit$target_only$se),
       c(stored$target_only$estimate, stored$target_only$se)
     ),
     source_estimate_difference = difference(fit$source_estimates, stored$source_estimates),
-    truncation_fraction = fit$clip_diagnostics$logit_truncation_fraction %||% NA_real_
+    truncation_fraction = fit$clip_diagnostics$total$logit_truncation_fraction %||% NA_real_
   )
 }
 
