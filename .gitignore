@@ -41,3 +41,28 @@ R/RcppExports.R
 
 # Diagnostic test outputs (test-c2-alignment-violation.R etc.)
 tests/testthat/c2_alignment_output/
+
+# ---- added 2026-09-07 (iterate-with-discipline bootstrap) ----
+# R session/plot artifacts
+Rplots.pdf
+# LaTeX build products
+docs/*.aux
+docs/*.log
+docs/*.fls
+docs/*.fdb_latexmk
+docs/*.bbl
+docs/*.blg
+docs/*.out
+# Overleaf clone (separate git repository)
+overleaf/
+# Rendered outputs
+output/
+# Diagnostic probe outputs and stale installed libraries
+tests/testthat/*_output/
+diagnosis/**/Rlib*/
+diagnosis/**/audit_results/
+diagnosis/**/_snaps/
+diagnosis/face_probe/validation/chunks*/
+diagnosis/face_probe/validation/*.out
+diagnosis/logs/
+diagnosis/out/
