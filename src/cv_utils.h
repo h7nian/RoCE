@@ -495,16 +495,28 @@ struct DensityRatioCDResult {
     int line_search_failures = 0;
 };
 
-inline double density_ratio_weight(double linear_predictor) {
+// Tilting weight exp{-T_M(phi'gamma)} shared by every density-ratio loss, its
+// score, and the influence function (main.tex, truncation paragraph in
+// sec:nuisance). ETA_CLIP only guards exp() overflow when M_tau is infinite.
+inline double tilt_weight(double linear_predictor, double M_tau) {
     double clipped = std::max(
         NumericalConstants::ETA_CLIP_MIN,
-        std::min(NumericalConstants::ETA_CLIP_MAX, linear_predictor)
+        std::min(NumericalConstants::ETA_CLIP_MAX,
+                 truncation_function(linear_predictor, M_tau))
     );
     double weight = std::exp(-clipped);
     return std::max(
         NumericalConstants::WEIGHT_MIN,
         std::min(NumericalConstants::WEIGHT_MAX, weight)
     );
+}
+
+// Loss term whose derivative is -tilt_weight: exp(-g) inside the truncation
+// radius and the tangent continuation outside it, so that coordinate descent
+// minimizes exactly the objective whose score uses the truncated weights.
+inline double tilt_loss(double linear_predictor, double M_tau) {
+    double truncated = truncation_function(linear_predictor, M_tau);
+    return tilt_weight(truncated, M_tau) * (1.0 - (linear_predictor - truncated));
 }
 
 // L1-penalized density-ratio coordinate descent shared by CV and final refits.
@@ -517,7 +529,8 @@ inline DensityRatioCDResult density_ratio_cd_update(
         VectorXd& gamma, std::vector<bool>& active,
         const MatrixXd& X_train, const VectorXd& psi_prime_train,
         double source_scale, const VectorXd& mean_grad_psi, double lambda,
-        double convergence_tol, int max_iter, bool use_active_set = true) {
+        double M_tau, double convergence_tol, int max_iter,
+        bool use_active_set = true) {
     int p = gamma.size();
     int n_train = X_train.rows();
 
@@ -560,7 +573,7 @@ inline DensityRatioCDResult density_ratio_cd_update(
         VectorXd g_vec = X_train * gamma;
         VectorXd weight_vec(n_train);
         for (int i = 0; i < n_train; i++) {
-            weight_vec(i) = density_ratio_weight(g_vec(i));
+            weight_vec(i) = tilt_weight(g_vec(i), M_tau);
         }
 
         for (int j = 0; j < p; j++) {
@@ -582,10 +595,13 @@ inline DensityRatioCDResult density_ratio_cd_update(
                 grad_acc.add(
                     -source_scale * X_train(i, j) * exp_neg_g * psi_p / n_train
                 );
-                // second derivative (Hessian diagonal) contribution
+                // second derivative (Hessian diagonal) contribution; the
+                // truncated loss is linear, hence flat, beyond the radius.
+                double curvature =
+                    (std::abs(g_vec(i)) < M_tau) ? exp_neg_g : 0.0;
                 hess_acc.add(
                     source_scale * X_train(i, j) * X_train(i, j) *
-                    exp_neg_g * psi_p / n_train
+                    curvature * psi_p / n_train
                 );
             }
             grad_j += grad_acc.value();
@@ -616,13 +632,12 @@ inline DensityRatioCDResult density_ratio_cd_update(
 
                 StableAccumulator source_loss_change;
                 for (int i = 0; i < n_train; i++) {
-                    double new_weight = density_ratio_weight(
-                        g_vec(i) + delta_j * X_train(i, j)
-                    );
-                    candidate_weights(i) = new_weight;
+                    double new_predictor = g_vec(i) + delta_j * X_train(i, j);
+                    candidate_weights(i) = tilt_weight(new_predictor, M_tau);
                     source_loss_change.add(
                         source_scale * psi_prime_train(i) *
-                        (new_weight - weight_vec(i)) / n_train
+                        (tilt_loss(new_predictor, M_tau) -
+                         tilt_loss(g_vec(i), M_tau)) / n_train
                     );
                 }
                 double penalty_change = (j == 0) ? 0.0 :
@@ -682,16 +697,13 @@ inline DensityRatioCDResult density_ratio_cd_update(
 // leaving the estimated tilt γ̂ mis-regularized (degrades C2 coverage at large n).
 inline double density_ratio_val_loss(const VectorXd& gamma, const VectorXd& mean_grad_psi,
                                      const MatrixXd& X_val, const VectorXd& psi_prime_val,
-                                     double source_scale) {
+                                     double source_scale, double M_tau) {
     int n_val = X_val.rows();
     long double linear = static_cast<long double>(mean_grad_psi.dot(gamma));
     long double source_sum = 0.0L;
     for (int j = 0; j < n_val; j++) {
-        double eta_gamma = X_val.row(j).dot(gamma);
-        eta_gamma = std::max(NumericalConstants::ETA_CLIP_MIN, std::min(NumericalConstants::ETA_CLIP_MAX, eta_gamma));
-        double exp_neg_g = std::exp(-eta_gamma);
-        exp_neg_g = std::max(NumericalConstants::WEIGHT_MIN, std::min(NumericalConstants::WEIGHT_MAX, exp_neg_g));
-        source_sum += static_cast<long double>(exp_neg_g * psi_prime_val(j));
+        source_sum += static_cast<long double>(
+            tilt_loss(X_val.row(j).dot(gamma), M_tau) * psi_prime_val(j));
     }
     return static_cast<double>(
         linear + static_cast<long double>(source_scale) * source_sum / n_val);

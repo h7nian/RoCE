@@ -793,7 +793,7 @@ select_dr_lambda_cv <- function(Z_source, Z_target,
     select_lambda_cv_initial_density_ratio_cpp(
       Z_source, A_dummy, mean_phi_target,
       lambda_grid, n_cv_folds,
-      MAX_ITER_DEFAULT, TOL_DEFAULT, 1L
+      MAX_ITER_DEFAULT, TOL_DEFAULT, 1L, M_tau = Inf
     )
   }, error = function(e) {
     stop(sprintf("select_dr_lambda_cv: DR lambda CV failed: %s",
@@ -841,7 +841,7 @@ calculate_dr_weights <- function(Z_source, Z_target, lambda = NULL,
   alpha <- tryCatch({
     fit_initial_density_ratio(
       Z_source, A_dummy, mean_phi_target,
-      lambda = lambda, lambda_rule = lambda_rule
+      lambda = lambda, M_tau = Inf, lambda_rule = lambda_rule
     )
   }, error = function(e) {
     stop(sprintf("calculate_dr_weights: density ratio fitting failed: %s",

@@ -431,7 +431,7 @@ process_source_site <- function(s, source_folds, target_folds, k1, n_folds,
     gamma_init_k1_k2 <- fit_initial_density_ratio(
       source_train$Z_site, source_train$A, mean_phi_k2,
       lambda = if (isTRUE(use_lambda_cache)) cached_lambda_init_dr else NULL,
-      A_val = A_val, warm_start = prev_gamma_init,
+      A_val = A_val, M_tau = M_tau, warm_start = prev_gamma_init,
       nlambda = nuisance_nlambda,
       max_iter = nuisance_max_iter,
       lambda_rule = nuisance_lambda_rule,

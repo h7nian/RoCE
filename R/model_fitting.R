@@ -598,7 +598,8 @@ fit_initial_outcome <- function(W_outcome, Y, A, A_val = 1L, lambda = NULL,
 #' @inheritParams fit_initial_outcome
 fit_initial_density_ratio <- function(Z_site, A, mean_phi, lambda = NULL,
                                        max_iter = MAX_ITER_DEFAULT, tol = TOL_DEFAULT,
-                                       A_val = 1L, warm_start = NULL,
+                                       A_val = 1L, M_tau = M_TAU_DEFAULT,
+                                       warm_start = NULL,
                                        nlambda = LAMBDA_GRID_SIZE_STANDARD,
                                        lambda_rule = c("min", "1se"), cv_group_id = NULL) {
   A_val <- .validate_A_val(A_val, "fit_initial_density_ratio")
@@ -626,7 +627,7 @@ fit_initial_density_ratio <- function(Z_site, A, mean_phi, lambda = NULL,
     ))
     cv_result <- .call_nuisance_cv_with_groups(
       select_lambda_cv_initial_density_ratio_cpp,
-      list(Z_site, A, mean_phi, lambda_grid, n_cv_folds, max_iter, tol, A_val),
+      list(Z_site, A, mean_phi, lambda_grid, n_cv_folds, max_iter, tol, A_val, M_tau),
       cv_group_id, A, A_val, n_cv_folds, "fit_initial_density_ratio"
     )
     lambda <- .select_nuisance_cv_lambda(cv_result, lambda_rule, "fit_initial_density_ratio")
@@ -647,7 +648,9 @@ fit_initial_density_ratio <- function(Z_site, A, mean_phi, lambda = NULL,
   
   ws <- if (!is.null(warm_start)) as.numeric(warm_start) else numeric(0)
   final_fit_started_at <- proc.time()[["elapsed"]]
-  cpp_result <- fit_initial_density_ratio_cpp(Z_site, A, mean_phi, lambda, max_iter, tol, A_val, ws)
+  cpp_result <- fit_initial_density_ratio_cpp(
+    Z_site, A, mean_phi, lambda, max_iter, tol, A_val, M_tau, ws
+  )
   final_fit_seconds <- as.numeric(
     proc.time()[["elapsed"]] - final_fit_started_at
   )

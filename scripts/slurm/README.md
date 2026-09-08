@@ -400,8 +400,13 @@ scripts/slurm/submit_rho_group_direct_tate.sh \
 
 For subsequent batches, omit `ROCE_BATCH_START`: the submitter scans grouped
 commit sentinels in order and starts at the first incomplete seed-setting job.
-Increase the batch only after reviewing the prior batch; the hard cap remains
-five jobs and two concurrent. The legacy `submit_main_direct_tate.sh` remains
+Increase the batch only after reviewing the prior batch. The caps are 500
+grouped jobs per call and 50 concurrent array tasks (HISTORY #0010); the
+checkpoint ladder truncates every call at the next rung regardless. Set
+`ROCE_SETTING=C1:K2` (config and K) to scope a call to one config/K block so
+that independent blocks, each walking its own ladder, run concurrently; without
+it the submitter walks the grouped manifest in order and requires the previous
+block's n=500 gate before starting the next block. The legacy `submit_main_direct_tate.sh` remains
 available only as an independent-fit fallback and retains its own small-batch
 gates.
 

@@ -88,15 +88,21 @@ the current TATE estimator yet (production #0010).
    "quadratic_bias"`, simulation row `<method>_ate_quadratic_bias` gated by
    `include_quadratic_bias_rule = TRUE`, quadratic weight layer) — CLOSED
    (DECIDED-PASS 2026-09-08; replay 18573011 exact).
-8. #0008 [MIGRATION] truncation-aligned tilting loss into `src/` (after #0003).
+8. **#0008 [MIGRATION] truncation-aligned tilting loss into `src/`** — IN-FLIGHT
+   (patch applied to main 2026-09-08; #0003 (e)/(f) job 18576245 running; commits
+   with the production-library gate of #0010).
 9. #0009 [MIGRATION] schema freeze + shared-shift scenario — CLOSED
    (DECIDED-PASS 2026-09-08, merged into main): `.tate_production_method_rows()`,
    `deviation_mechanism = "both_arms"` (both-arm reuse refit), manifests with a
    `deviation_mechanism` column and a `shared_shift` family (C1, K = 2/4/8),
    staged gates pre-registered in HISTORY #0009 §4.
-10. #0010 Production runs, aggregation, figures/tables, paper updates
-    (substitute Rule 7c review before numbers leave).
-11. #0011 RHC with the frozen package; #0012 cleanup (rename `screening_rule`
+10. **#0010 Production runs** (HISTORY #0010: production root
+    `results/direct_tate_mc500_b5000/production_20260908_v1/`, gates A1–A5,
+    per-setting grouped submissions with `ROCE_SETTING`, rungs
+    1/5/10/25/50/100/200/300/400/500) — starts after #0008 lands; #0011
+    aggregation, figures/tables, paper updates (substitute Rule 7c review
+    before numbers leave).
+11. #0012 RHC with the frozen package; #0013 cleanup (rename `screening_rule`
     -> `weight_rule`, `direct_tate` -> `tate`, retire root `main.R`/`realdata.R`
     legacy pipeline, README, archive `diagnosis/tate_common_weight`).
 

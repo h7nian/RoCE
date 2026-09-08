@@ -136,11 +136,14 @@ List fit_unified_density_ratio_cpp(const MatrixXd& Z_site, const VectorXd& A_sou
         psi_prime_precomputed(i) = std::abs(GLMUtils::response_derivative(eta_i, link));
     }
     
+    // The refined (two-round) loss keeps its untruncated tilt: its CV path is
+    // also run with an infinite radius from R.
+    double tilt_radius = calibrated ? M_tau : std::numeric_limits<double>::infinity();
     std::vector<bool> active(p_site, true);
     CVUtils::DensityRatioCDResult fit = CVUtils::density_ratio_cd_update(
         gamma, active, Z_site_treated, psi_prime_precomputed,
         static_cast<double>(n_treated) / n, mean_grad_psi, lambda,
-        tol, max_iter, false
+        tilt_radius, tol, max_iter, false
     );
     return density_ratio_fit_result(
         gamma, fit.converged, fit.iterations, fit.max_update,
@@ -163,9 +166,9 @@ List fit_unified_density_ratio_cpp(const MatrixXd& Z_site, const VectorXd& A_sou
 List fit_initial_density_ratio_cpp(const MatrixXd& Z_site, const VectorXd& A_source, 
                                    const VectorXd& mean_phi,
                                    double lambda, int max_iter, double tol,
-                                   int A_val,
+                                   int A_val, double M_tau,
                                    const VectorXd& warm_start) {
-    
+
     int n = Z_site.rows();
     MatrixXd Z_site_int = prepend_intercept(Z_site);
     int p = Z_site_int.cols();
@@ -190,7 +193,7 @@ List fit_initial_density_ratio_cpp(const MatrixXd& Z_site, const VectorXd& A_sou
     CVUtils::DensityRatioCDResult fit = CVUtils::density_ratio_cd_update(
         gamma, active, X_treated, psi_prime,
         static_cast<double>(n_treated) / n, mean_phi, lambda,
-        tol, max_iter, false
+        M_tau, tol, max_iter, false
     );
     return density_ratio_fit_result(
         gamma, fit.converged, fit.iterations, fit.max_update,
@@ -272,13 +275,15 @@ List select_lambda_cv_density_ratio_cpp(const MatrixXd& Z_site, const VectorXd& 
                 CVUtils::density_ratio_cd_update(
                     gamma, active, X_train_folds[fold], pp_train[fold],
                     static_cast<double>(n_treated) / n, mean_grad_psi,
-                    lambda, cv_tol, cv_max_iter
+                    lambda, std::numeric_limits<double>::infinity(),
+                    cv_tol, cv_max_iter
                 );
             if (fit.converged) {
                 consecutive_failures = 0;
                 fold_scores(lambda_idx, fold) = CVUtils::density_ratio_val_loss(
                     gamma, mean_grad_psi, X_val_folds[fold], pp_val[fold],
-                    static_cast<double>(n_treated) / n);
+                    static_cast<double>(n_treated) / n,
+                    std::numeric_limits<double>::infinity());
             } else {
                 // Never warm-start the next candidate from an unconverged
                 // solution.  The +Inf score records this candidate as invalid.
@@ -313,9 +318,9 @@ List select_lambda_cv_initial_density_ratio_cpp(const MatrixXd& Z_site, const Ve
                                                 const VectorXd& mean_phi,
                                                 const VectorXd& lambda_grid, int n_folds,
                                                 int max_iter, double tol,
-                                                int A_val = 1,
+                                                int A_val, double M_tau,
                                                 Rcpp::Nullable<Rcpp::NumericVector> cv_fold_id = R_NilValue) {
-    
+
     int n = Z_site.rows();
     int n_lambda = lambda_grid.size();
     int p = Z_site.cols() + 1;
@@ -372,13 +377,13 @@ List select_lambda_cv_initial_density_ratio_cpp(const MatrixXd& Z_site, const Ve
                 CVUtils::density_ratio_cd_update(
                     gamma, active, X_train_folds[fold], pp_train[fold],
                     static_cast<double>(n_treated) / n, mean_phi,
-                    lambda, cv_tol, cv_max_iter
+                    lambda, M_tau, cv_tol, cv_max_iter
                 );
             if (fit.converged) {
                 consecutive_failures = 0;
                 fold_scores(lambda_idx, fold) = CVUtils::density_ratio_val_loss(
                     gamma, mean_phi, X_val_folds[fold], pp_val[fold],
-                    static_cast<double>(n_treated) / n);
+                    static_cast<double>(n_treated) / n, M_tau);
             } else {
                 gamma = gamma_before;
                 std::fill(active.begin(), active.end(), true);
@@ -481,13 +486,13 @@ List select_lambda_cv_calibrated_density_ratio_cpp(const MatrixXd& Z_site, const
                 CVUtils::density_ratio_cd_update(
                     gamma, active, X_train_folds[fold], pp_train[fold],
                     static_cast<double>(n_treated) / n, mean_grad_psi,
-                    lambda, cv_tol, cv_max_iter
+                    lambda, M_tau, cv_tol, cv_max_iter
                 );
             if (fit.converged) {
                 consecutive_failures = 0;
                 fold_scores(lambda_idx, fold) = CVUtils::density_ratio_val_loss(
                     gamma, mean_grad_psi, X_val_folds[fold], pp_val[fold],
-                    static_cast<double>(n_treated) / n);
+                    static_cast<double>(n_treated) / n, M_tau);
             } else {
                 gamma = gamma_before;
                 std::fill(active.begin(), active.end(), true);

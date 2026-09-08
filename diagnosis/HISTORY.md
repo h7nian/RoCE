@@ -604,3 +604,90 @@ driver, both-arm reuse, validators, manifests, audits, submission tooling, paper
 grouped reuse proven exact against independent fits, and both manifest families build and
 audit at 500 replications. Merged into main by fast-forward. Status: CLOSED (smoke gate (e)
 runs inside #0010).
+<a id="0008"></a>
+## 0008 — 2026-09-08 — Land the truncation-aligned tilting loss in `src/`  [MIGRATION]
+
+> commit: (pending: applied to the main tree on 2026-09-08, committed after #0003 (e)/(f) pass)
+> previous related: [#0003](#0003) (Stage 1, isolated candidate library; (a)–(d) PASS)
+> stage: 2 (migration into `src/` and `R/`)
+> method.tex section: `docs/main.tex` nuisance truncation paragraph (every displayed weight is exp[−T_M(φ'γ)]); no text change — the code now matches the text
+
+### 1. Symptom / motivation
+#0003 showed that the tilting coordinate descent and its CV loss used the untruncated weight
+while the influence function and the outcome loss used the truncated one; when the radius is
+active the calibration score and the functional's α-derivative disagree at first order.
+
+### 2. Theoretical analysis
+As #0003 §2: the loss ψ_M(u) = exp(−T_M(u)) (1 − (u − T_M(u))) has derivative −exp(−T_M(u)),
+so loss, CV validation loss, score and influence function share one weight; refined
+(two-round) tilting fits keep an infinite radius; comparison methods pass Inf (unchanged).
+
+### 3. Decomposition
+`diagnosis/truncation_alignment/truncation_alignment.patch` applied verbatim to the main tree
+(`src/cv_utils.h`: `tilt_weight()` / `tilt_loss()`; `src/density_ratio.cpp`: `M_tau` threaded
+through `density_ratio_cd_update()` / `density_ratio_val_loss()` and the DR kernels;
+`R/model_fitting.R`, `R/estimators_helpers.R`, `R/cross_fitting_algorithms.R`: the initial and
+calibrated fits and their CV kernels pass the fit radius; `R/comparison_methods.R`: Inf);
+`Rcpp::compileAttributes()` regenerated the export glue.
+
+### 4. Acceptance criteria
+- [ ] (a) #0003 (e) and (f) on the isolated candidate (same patch, tree 8cb74da6): full installed suite 0 failures / 0 errors, R CMD check `Status: OK` → ___ [PENDING, job 18576245]
+- [ ] (b) production-library audit suite on the final tree (`run_package_audit_tests.sh`, #0010 gate A1): 0 failures / 0 errors → ___ [PENDING]
+- [ ] (c) R CMD check on the final tree (`run_r_cmd_check.sh`, #0010 gate A2): `Status: OK` → ___ [PENDING]
+- [ ] (d) C1 identity on the final tree is implied by #0003 (d) (radius inactive) and re-checked by the #0010 smoke task's Wald/weight diagnostics → ___ [PENDING]
+
+### 5. Validation results (filled after running)
+PENDING
+
+### 6. Decision + rationale
+PENDING
+
+<a id="0010"></a>
+## 0010 — 2026-09-08 — Production runs (500 replications, both families) with staged gates  [PRODUCTION]
+
+> commit: (pending)
+> previous related: [#0009](#0009) (frozen row set, manifest families, pre-registered gates), [#0008](#0008) (final estimator tree)
+> stage: production
+> method.tex section: `docs/main.tex` sec:simulations (results paragraphs and figures are written from these outputs in #0011)
+
+### 1. Symptom / motivation
+No multi-seed results exist for the current estimator beyond the 100-seed C1/K2 pilot. The
+paper needs C1–C3 × K = 2/4/8 × six rho values (negative transfer) and C1 × K = 2/4/8 × six
+shift values (shared shift), 500 replications each, with the primary rule A, the sensitivity
+rule B, the arm-wise diagnostic and the five benchmarks on every replicate.
+
+### 2. Theoretical analysis
+Not applicable (execution entry). The pre-registered decision gates of #0009 §4 apply per
+family and per config/K block; the weak-separation dip at rho = 0.5 is reported, not tuned.
+
+### 3. Decomposition
+Production root `results/direct_tate_mc500_b5000/production_20260908_v1/` (fresh; the earlier
+C1/K2 n = 10 rows under `raw/` were produced by the retired estimator and stay archived in
+place). Gate sequence, in order:
+- A1 `run_package_audit_tests.sh` → isolated library `Rlib_production_20260908_v1` + test gate.
+- A2 `run_r_cmd_check.sh` → `package_check_production_20260908_v1` + check gate.
+- A3 `prepare_mc500_manifests.sh` (`ROCE_MANIFEST_ROOT` = production root) → both families.
+- A4 smoke task (`manifest_smoke_single.csv`, C3/K4/rho 0) + `audit_direct_tate_smoke.sh`.
+- A5 reuse-equivalence gates: negative transfer (C3/K4/rho 2.5) on the production root and
+  shared shift (`ROCE_REUSE_CONFIG=C1`) on `production_root/shared_shift`.
+- B grouped submissions per setting (`ROCE_SETTING="C1:K2"` …, one submitter call per
+  config/K block and family) walking the checkpoint ladder 1/5/10/25/50/100/200/300/400/500
+  with the dependent six-rho checkpoint audit at every rung; decision reviews at n = 10, 50,
+  100 per #0009 §4 before the next rung is submitted.
+- Operational amendment (recorded here, Rule 27): `submit_rho_group_direct_tate.sh` gains
+  `ROCE_SETTING` scoping and its caps rise from 5 jobs / 2 concurrent per call to 500 / 50, so
+  the 18 setting blocks can run concurrently; per-job resources are unchanged
+  (K = 2/4/8: 20/40/32 CPUs, 12/16/32 GB, 12/18/24 h).
+
+### 4. Acceptance criteria
+- [ ] (a) gates A1–A5 pass on the final tree (fingerprints recorded in each gate file) → ___ [PENDING]
+- [ ] (b) n = 10 rung, every setting of both families: checkpoint audit passes, no failed replicate, SE/SD within [0.7, 1.4] for the primary rule → ___ [PENDING]
+- [ ] (c) n = 50 rung: primary-rule coverage within 0.95 ± 0.06 at every rho (two MC standard errors) → ___ [PENDING]
+- [ ] (d) n = 100 rung (go/no-go for 500): coverage within 0.95 ± 0.045 at every rho except the pre-declared rho = 0.5 dip, which is reported; RoCE RMSE ≤ target-only RMSE at rho = 0 within MC error → ___ [PENDING]
+- [ ] (e) n = 500: all 18 blocks committed and audited; `aggregate_direct_tate.R` and the per-setting diagnostics run on both families → ___ [PENDING]
+
+### 5. Validation results (filled after running)
+PENDING
+
+### 6. Decision + rationale
+PENDING

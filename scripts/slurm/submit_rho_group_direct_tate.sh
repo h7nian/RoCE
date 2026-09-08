@@ -173,16 +173,44 @@ if [[ "${N_GROUPS}" -lt 1 || $((N_GROUPS * 6)) -ne "${N_PRIMARY}" ]]; then
   exit 1
 fi
 COMMIT_ROOT="${OUTPUT_ROOT}/rho_group_commits"
+# Optional per-setting scope (HISTORY #0010): ROCE_SETTING="C1:K2" restricts
+# this call to the grouped rows of one config/K block, so independent settings
+# can run in parallel, each walking its own checkpoint ladder.
+SETTING="${ROCE_SETTING:-}"
+SETTING_CONFIG=""
+SETTING_K=""
+if [[ -n "${SETTING}" ]]; then
+  if [[ ! "${SETTING}" =~ ^(C[123]):K(2|4|8)$ ]]; then
+    echo "ROCE_SETTING must look like C1:K2." >&2
+    exit 1
+  fi
+  SETTING_CONFIG="${BASH_REMATCH[1]}"
+  SETTING_K="${BASH_REMATCH[2]}"
+fi
+in_setting() {
+  # Row fields: group_task_id, experiment, sim_id, config, p, K, ...
+  local config="$1" k="$2"
+  [[ -z "${SETTING}" || ( "${config}" == "${SETTING_CONFIG}" && "${k}" == "${SETTING_K}" ) ]]
+}
 FIRST_MISSING=""
-while IFS=, read -r group_task_id _; do
+SETTING_LAST_ROW=""
+while IFS=, read -r group_task_id _ _ config _ k _; do
   group_task_id="${group_task_id//\"/}"
-  if [[ ! -s "${COMMIT_ROOT}/$(printf 'group_%06d_committed.txt' "${group_task_id}")" ]]; then
+  config="${config//\"/}"
+  k="${k//\"/}"
+  in_setting "${config}" "${k}" || continue
+  SETTING_LAST_ROW="${group_task_id}"
+  if [[ -z "${FIRST_MISSING}" &&
+        ! -s "${COMMIT_ROOT}/$(printf 'group_%06d_committed.txt' "${group_task_id}")" ]]; then
     FIRST_MISSING="${group_task_id}"
-    break
   fi
 done < <(tail -n +2 "${GROUP_MANIFEST}")
+if [[ -n "${SETTING}" && -z "${SETTING_LAST_ROW}" ]]; then
+  echo "setting ${SETTING} has no rows in the grouped manifest." >&2
+  exit 1
+fi
 if [[ -z "${FIRST_MISSING}" ]]; then
-  echo "all ${N_GROUPS} rho-group jobs are already committed"
+  echo "all rho-group jobs${SETTING:+ of ${SETTING}} are already committed"
   exit 0
 fi
 
@@ -195,8 +223,11 @@ if [[ ! "${BATCH_START}" =~ ^[1-9][0-9]*$ ]] ||
   echo "batch start, size, and concurrency must be positive integers." >&2
   exit 1
 fi
-if [[ "${BATCH_SIZE}" -gt 5 || "${MAX_CONCURRENT}" -gt 2 ]]; then
-  echo "MSI safety cap is 5 grouped jobs per call and concurrency 2." >&2
+# Caps (HISTORY #0010): one call never exceeds one setting (500 grouped jobs)
+# and 50 concurrent array tasks; the checkpoint ladder below bounds a call
+# further.
+if [[ "${BATCH_SIZE}" -gt 500 || "${MAX_CONCURRENT}" -gt 50 ]]; then
+  echo "cap is 500 grouped jobs per call and concurrency 50." >&2
   exit 1
 fi
 if [[ "${BATCH_START}" -gt "${N_GROUPS}" ]]; then
@@ -204,12 +235,15 @@ if [[ "${BATCH_START}" -gt "${N_GROUPS}" ]]; then
   exit 1
 fi
 if [[ "${BATCH_START}" -ne "${FIRST_MISSING}" ]]; then
-  echo "production batches must start at the first uncommitted grouped row (${FIRST_MISSING})." >&2
+  echo "production batches must start at the first uncommitted grouped row${SETTING:+ of ${SETTING}} (${FIRST_MISSING})." >&2
   exit 1
 fi
 BATCH_END=$((BATCH_START + BATCH_SIZE - 1))
 if [[ "${BATCH_END}" -gt "${N_GROUPS}" ]]; then
   BATCH_END="${N_GROUPS}"
+fi
+if [[ -n "${SETTING}" && "${BATCH_END}" -gt "${SETTING_LAST_ROW}" ]]; then
+  BATCH_END="${SETTING_LAST_ROW}"
 fi
 
 read_group_field() {
@@ -273,8 +307,9 @@ if [[ "${PRIMARY_CUTOFF}" != "${SELECTED_CUTOFF}" ]]; then
 fi
 
 # A new batch cannot outrun review of the most recent predeclared cumulative
-# checkpoint. When starting a new config/K block, the previous block's n=500
-# gate is required.
+# checkpoint. When walking the whole manifest, starting a new config/K block
+# requires the previous block's n=500 gate; under ROCE_SETTING the settings
+# are independent and only the setting's own ladder applies.
 PREVIOUS_REVIEW_N=""
 PREVIOUS_CONFIG="${CONFIGURATION}"
 PREVIOUS_K="${SOURCE_COUNT}"
@@ -284,7 +319,7 @@ if [[ "${START_SIM_ID}" -gt 1 ]]; then
       PREVIOUS_REVIEW_N="${checkpoint}"
     fi
   done
-elif [[ "${BATCH_START}" -gt 1 ]]; then
+elif [[ -z "${SETTING}" && "${BATCH_START}" -gt 1 ]]; then
   PREVIOUS_ROW=$((BATCH_START - 1))
   PREVIOUS_CONFIG="$(read_group_field "${PREVIOUS_ROW}" 4)"
   PREVIOUS_K="$(read_group_field "${PREVIOUS_ROW}" 6)"

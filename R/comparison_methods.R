@@ -982,7 +982,7 @@ estimate_tilted_aipw <- function(data_split, family = "binomial", A_val = 1L,
       # Step 3: Fit density ratio model via exponential tilting (unpenalized)
       # γ_{s,A_val} is the arm-specific density ratio
       alpha <- fit_initial_density_ratio(Z_source, tr_source, mean_phi_target, lambda = 0.0,
-                                         A_val = A_val)
+                                         A_val = A_val, M_tau = Inf)
 
       # Density ratio weights
       Z_int <- cbind(1, Z_source)
