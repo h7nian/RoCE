@@ -1762,6 +1762,8 @@ run_tate_crossfit <- function(
     "n", "X", "X_dagger", "A", "Z_site_true", "W_outcome_true",
     "Z_site", "W_outcome"
   )
+  # Exact value comparison that ignores integer/double storage.
+  same_outcomes <- function(a, b) identical(as.numeric(a), as.numeric(b))
   for (site in names(data_split)) {
     reference_site <- reference_data_split[[site]]
     current_site <- data_split[[site]]
@@ -1793,13 +1795,13 @@ run_tate_crossfit <- function(
     }
 
     if (identical(site, "t") || !site %in% changed_sources) {
-      if (!identical(reference_site$Y, current_site$Y)) {
+      if (!same_outcomes(reference_site$Y, current_site$Y)) {
         stop(caller, ": outcome changed at non-refitted site '", site, "'.",
              call. = FALSE)
       }
     } else {
       unchanged_arm <- !current_site$A %in% changed_arms
-      if (!identical(
+      if (!same_outcomes(
         reference_site$Y[unchanged_arm], current_site$Y[unchanged_arm]
       )) {
         stop(

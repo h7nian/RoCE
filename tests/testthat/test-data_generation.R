@@ -634,7 +634,7 @@ test_that("the both-arms deviation shifts only the deviated source, in both arms
   expect_error(generate(ate_deviation = 1, deviation_mechanism = "shared"), "arg")
   # Forwarded defaults must not trip the roce guard (drivers forward them).
   roce_data <- generate_simulation_data(
-    n_total = 60, K = 1, p = 3, config = "C1", dgp_type = "roce",
+    n_total = 60, K = 1, p = 5, config = "C1", dgp_type = "roce",
     estimand_type = "sample", deviation_mechanism = "treated_arm",
     misspecification_strength = FACE_MISSPECIFICATION_STRENGTH
   )

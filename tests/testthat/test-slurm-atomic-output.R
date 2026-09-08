@@ -131,12 +131,21 @@ test_that("TATE task helpers share and validate sensitivity defaults", {
     task_id = 11L, sim_id = 7L, experiment = "negative_transfer",
     config = "C3", p = 100L, K = 4L, rho = 2.5,
     cutoff = reference_cutoff, n_site = 1000L, n_folds = 5L,
-    M_tau = 5, M_tau_inference = 5
+    M_tau = 5, M_tau_inference = 5, deviation_mechanism = "treated_arm"
   )
   expect_true(helper_environment$roce_is_reused_sensitivity_task(task))
   expect_false(helper_environment$roce_is_reused_sensitivity_task(
     transform(task, K = 2L)
   ))
+  # Sidecar sensitivities exist only for the treated-arm family.
+  expect_false(helper_environment$roce_is_reused_sensitivity_task(
+    transform(task, deviation_mechanism = "both_arms")
+  ))
+  expect_identical(helper_environment$roce_task_deviation_mechanism(task), "treated_arm")
+  expect_error(
+    helper_environment$roce_task_deviation_mechanism(transform(task, deviation_mechanism = "shared")),
+    "deviation_mechanism"
+  )
 
   resource_plan <- list(
     allocated_cores = 40L, nuisance_cv_threads = 5L,
@@ -151,7 +160,7 @@ test_that("TATE task helpers share and validate sensitivity defaults", {
   manifest_fingerprint <- paste(rep("c", 64L), collapse = "")
   primary_row <- data.frame(
     sim_id = 7L, p = 100L, K = 4L, config = "C3",
-    method = "one_round_crossfit_ate"
+    method = "one_round_crossfit_ate", deviation_mechanism = "treated_arm"
   )
   annotated_primary <- helper_environment$roce_annotate_direct_tate_rows(
     primary_row, task, resource_plan, 12.5, provenance,

@@ -441,8 +441,10 @@ test_that("TATE cross-fitting returns one common source-weight vector", {
   expect_equal(quadratic$fold_wald_statistics, result$fold_wald_statistics)
   expect_equal(quadratic$fold_penalty_coefficients, result$fold_penalty_coefficients)
   expect_true(all(is.finite(c(quadratic$estimate, quadratic$se, quadratic$se_fixed_weights))))
+  # The pseudo-value variance is the fixed-weight part; `variance` adds the
+  # weight layer (HISTORY #0005).
   expect_equal(
-    hard_screened$variance,
+    hard_screened$variance_fixed_weights,
     RoCE:::.multisite_pseudovalue_variance(
       hard_screened$all_phi_tau,
       vapply(data_split, function(site) site$n, integer(1L))
@@ -526,11 +528,17 @@ test_that("TATE cross-fitting returns one common source-weight vector", {
     expect_equal(result$fold_wald_statistics[k1, ], expected_wald)
   }
   expect_equal(
-    result$variance,
+    result$variance_fixed_weights,
     RoCE:::.multisite_pseudovalue_variance(
       result$all_phi_tau,
       vapply(data_split, function(site) site$n, integer(1L))
     )
+  )
+  expect_equal(
+    result$variance,
+    result$variance_fixed_weights + result$weight_layer$indirect_variance +
+      result$weight_layer$cross_term,
+    tolerance = 1e-12
   )
   expect_equal(result$estimate, mean(result$all_phi_tau))
   expect_equal(

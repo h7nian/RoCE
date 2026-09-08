@@ -6,7 +6,7 @@
   set.seed(seed)
   data <- generate_simulation_data(
     n_total = 120 * (K + 1), K = K, p = 3, config = "C1",
-    dgp_type = "face",
+    dgp_type = "face", outcome_type = "continuous",
     n_target = 120, n_source_sizes = rep(120, K),
     warn_ignored = FALSE
   )
@@ -165,9 +165,11 @@ test_that("quadratic-bias weights solve their normal equations", {
   broken <- moments
   broken$C_ot[1L] <- NA_real_
   expect_error(RoCE:::.quadratic_bias_weights(broken), "non-finite")
+  # A huge shared-target covariance makes the variance quadratic lose its
+  # positive diagonal curvature.
   indefinite <- moments
-  indefinite$V_ot <- 100 * max(moments$V_t, moments$V_s)
-  expect_error(RoCE:::.quadratic_bias_weights(indefinite), "not positive definite")
+  indefinite$C_ot[1L] <- 100 * (moments$V_ot + moments$V_t[1L] + moments$V_s[1L])
+  expect_error(RoCE:::.quadratic_bias_weights(indefinite), "positive")
 })
 
 test_that("weight layer is reported for the arm-specific and hard-threshold paths", {
@@ -175,6 +177,7 @@ test_that("weight layer is reported for the arm-specific and hard-threshold path
   set.seed(7104)
   data <- generate_simulation_data(
     n_total = 360, K = 2, p = 3, config = "C1", dgp_type = "face",
+    outcome_type = "continuous",
     n_target = 120, n_source_sizes = c(120, 120), warn_ignored = FALSE
   )
   data_split <- split_data_by_site(data)
@@ -202,6 +205,7 @@ test_that("weight layer vanishes when no source is retained", {
   set.seed(7103)
   data <- generate_simulation_data(
     n_total = 240, K = 1, p = 3, config = "C1", dgp_type = "face",
+    outcome_type = "continuous",
     n_target = 120, n_source_sizes = 120, warn_ignored = FALSE
   )
   data_split <- split_data_by_site(data)

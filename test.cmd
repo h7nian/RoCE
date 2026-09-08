@@ -154,6 +154,8 @@ test_reporter <- Sys.getenv("TEST_REPORTER", "summary")
 # raises at the end if any expectation failed or any test errored out. With
 # Rscript, that raised error propagates as a non-zero exit code, which SLURM
 # reports as job failure; silent passes leave exit 0.
+# The summary reporter prints only its first ten failures by default; show all.
+options(testthat.summary.max_reports = 1000L)
 args <- list(reporter = test_reporter, stop_on_failure = TRUE)
 if (nzchar(test_filter)) args$filter <- test_filter
 
