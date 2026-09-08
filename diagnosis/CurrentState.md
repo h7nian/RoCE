@@ -50,12 +50,21 @@ Target-only coverage 0.92. Mechanism (n=100 decomposition): at rho=1 source
 `s1` keeps mean fold weight 0.15 with Wald statistic 1-3, adding +0.023 bias;
 fold-weight SD 0.05-0.14 times discrepancy 0.13-0.20 is the missing SD.
 
-**#0001 (2026-09-07, DECIDED-PASS): delta-method weight-layer SE for the
-production soft-threshold rule, replayed on the same 100 seeds** — SE/SD
-1.03 / 1.03 / 0.99 / 0.96 / 0.97 / 1.02, coverage 0.93 / 0.91 / 0.88 / 0.94 /
-0.93 / 0.96 for rho = 0 … 2.5; points unchanged. Awaiting Stage-2 migration.
+**#0001 → #0005 (CLOSED 2026-09-08): delta-method weight-layer SE for the
+production soft-threshold rule, now the package's reported `se`, replayed on
+the same 100 seeds** — SE/SD 1.03 / 1.03 / 0.99 / 0.96 / 0.97 / 1.02, coverage
+0.93 / 0.91 / 0.88 / 0.94 / 0.93 / 0.96 for rho = 0 … 2.5; points unchanged;
+package equals the prototype to 6e-17.
 
-No C2/C3, K=4/8, or RHC results exist for the current TATE estimator.
+**#0007 (CLOSED 2026-09-08): smooth quadratic-bias rule B on the same 100
+seeds** — bias −0.011 / +0.006 / +0.007 / +0.004 / +0.002 / +0.001, coverage
+0.93 / 0.92 / 0.93 / 0.94 / 0.94 / 0.93; reported alongside rule A as
+`<method>_ate_quadratic_bias`.
+
+Common-basis DGP (#0006) single-seed C1–C4 refits (seed 20001, K = 2):
+weight-layer SE 0.0220 / 0.0223 / 0.0219 / 0.0214 vs fixed-weight SE 0.0216 /
+0.0218 / 0.0216 / 0.0214. No multi-seed C2/C3, K=4/8, or RHC results exist for
+the current TATE estimator yet (production #0010).
 
 ## 3. Active issues (open iterations)
 
@@ -70,16 +79,15 @@ No C2/C3, K=4/8, or RHC results exist for the current TATE estimator.
    align the Supplement text with the implemented out-of-two-fold initial
    plug-ins and run a bounded calibrated-inner sensitivity on C1/K2 instead
    of a x4 nuisance cost in production — awaiting the user's answer.
-5. **#0005 [MIGRATION] weight-layer variance into `R/`** — IN-FLIGHT
-   (substitute review recorded; full tests + package replay pending).
-6. **#0006 [MIGRATION] common-basis DGP** with `misspecification_strength = 0.75`
-   — IN-FLIGHT (substitute review recorded and its fixes applied; full tests +
-   4-config reproduction pending).
-7. **#0007 [MIGRATION] smooth quadratic-bias weight rule** (`screening_rule =
+5. #0005 [MIGRATION] weight-layer variance into `R/` — CLOSED (DECIDED-PASS
+   2026-09-08; full suite clean in run 18573008, replay 18573009 exact).
+6. #0006 [MIGRATION] common-basis DGP with `misspecification_strength = 0.75`
+   — CLOSED (DECIDED-PASS 2026-09-08; four-configuration reproduction
+   18573010 exact).
+7. #0007 [MIGRATION] smooth quadratic-bias weight rule (`screening_rule =
    "quadratic_bias"`, simulation row `<method>_ate_quadratic_bias` gated by
-   `include_quadratic_bias_rule = TRUE`, quadratic weight layer) — IN-FLIGHT
-   (substitute review recorded and its fixes applied; tests + 100-seed replay
-   pending).
+   `include_quadratic_bias_rule = TRUE`, quadratic weight layer) — CLOSED
+   (DECIDED-PASS 2026-09-08; replay 18573011 exact).
 8. #0008 [MIGRATION] truncation-aligned tilting loss into `src/` (after #0003).
 9. **#0009 [MIGRATION] schema freeze + shared-shift scenario** — IN-FLIGHT on
    branch `entry-0009` (worktree /scratch.global/zhan9381/FACE-HD-0009):

@@ -264,10 +264,10 @@ $L_{k_1}$, the gradient, the variance identity and the kink caveat; bib entry
   package builds (Rule 16 cleanup).
 
 ### 4. Acceptance criteria
-- [ ] (a) substitute Rule 7a review  recorded; every finding FIX/REBUT/DEFER → ___ [PENDING]
-- [ ] (b) full build + testthat via `./test.sh`: 0 failures, 0 errors → ___ [PENDING]
-- [ ] (c) package replay of the 100 v19 seeds reproduces `diagnosis/out/weight_layer/v1/replay_rows.csv` weight-layer SE to ≤ 1e-10 → ___ [PENDING]
-- [ ] (d) Rule 24 audit of user instructions in scope (readability, no dead code, naming, paper alignment) → ___ [PENDING]
+- [x] (a) substitute Rule 7a review  recorded; every finding FIX/REBUT/DEFER → §7 (ten findings: 8 FIX, 1 REBUT, 1 DEFER) [PASS]
+- [x] (b) full build + testthat via `./test.sh`: 0 failures, 0 errors → run 18573008 (tree d184c5eb), exit 0 [PASS]
+- [x] (c) package replay of the 100 v19 seeds reproduces `diagnosis/out/weight_layer/v1/replay_rows.csv` weight-layer SE to ≤ 1e-10 → job 18573009: max |package − prototype| weight-layer SE 5.6e-17, fixed SE 5.2e-17 (`diagnosis/out/weight_layer/v2/`) [PASS]
+- [x] (d) Rule 24 audit of user instructions in scope (readability, no dead code, naming, paper alignment) → no references to the retired `.soft_threshold_weight_derivative()` / `penalized` argument remain; the retired C2 diagnostic tests are archived, not deleted silently; `se` / `se_fixed_weights` / `weight_layer` named consistently across the fit list, the simulation rows and the QC columns; main.tex + supplement + README describe the same estimator [PASS]
 
 ### 7. Review note
 Reviewer verdict: math and correspondence to production sound; three items to fix before
@@ -302,7 +302,12 @@ PENDING — test job 18550689 (`./test.sh`), package replay job 18550690 (depend
 2026-09-08: job 18550689 built and ran the full suite (tree f7436de3: #0005 + #0006 + #0007); the only errors were the ten tests of `test-slurm-atomic-output.R`, which read `repo_root` from the helper's own environment (not visible after `load_all()`; pre-existing since the a03e3b5f snapshot, unrelated to these entries). Fixed in `helper-load.R` (commit 63809d41, `repo_root` exposed on the attached helper environment). The summary reporter had capped its listing at ten failures; the full list (test.cmd now prints every failure) also contained two `test-tate-aggregation.R` assertions of the pre-#0005 identity `variance == pseudo-value variance` (now asserted on `variance_fixed_weights`, with the decomposition identity added) and three `test-weight-layer-variance.R` fixture errors (binary outcomes under the gaussian family gave constant-y folds; the fixtures now generate continuous outcomes; the indefinite-matrix check was rebuilt through `C_ot`). Commit 1ed81858; resubmitted as test job 18565508 with replay 18565509, DGP reproduction 18565510, quadratic replay 18565511 dependent on it. Run 18565508 left one over-tight tolerance (quadratic coordinate-descent cross-check, 3e-8 relative; fixed in d184c5eb). **Run 18573008 (tree d184c5eb): all tests passed, 0 failures, 0 errors, exit 0.** Replay 18573009, DGP reproduction 18573010 and quadratic replay 18573011 run against the library installed by that job.
 
 ### 6. Decision + rationale
-PENDING
+**DECIDED-PASS (2026-09-08).** The delta-method weight layer is the reported variance of the
+common-weight TATE (`se`), with the fixed-weight pseudo-value SE retained as
+`se_fixed_weights`; the package reproduces the Stage-1 prototype to machine precision on the
+100 saved seeds and the full suite is clean. Landed in commits f7436de3 … d184c5eb (shared
+landing with #0006/#0007; see #0006 §7 item 4 for why the entries share one commit).
+Status: CLOSED.
 
 <a id="0006"></a>
 ## 0006 — 2026-09-07 — Land the common-basis DGP with X-dagger misspecification  [MIGRATION]
@@ -338,11 +343,11 @@ true mechanism through eta_mix = (1 − omega) eta(X) + omega eta(X†) with ome
 - Documentation: manuscript configuration paragraph, README table, roxygen.
 
 ### 4. Acceptance criteria
-- [ ] (a) package DGP reproduces the #0002 prototype for seed 20001: standardization constants and binary calibration equal to 1e-12; truth equal to 1e-12 for C1, C2/C3/C4 at omega 0.75 → ___ [PENDING]
-- [ ] (b) package refit of C2 and C3 (omega 0.75, seed 20001) reproduces the prototype fits' estimate, fixed-weight SE and fold weights to 1e-10 → ___ [PENDING]
-- [ ] (c) full build + testthat: 0 failures, 0 errors → ___ [PENDING]
-- [ ] (d) rho-reuse invariance tests pass under the new C3 (treatment mechanism misspecified) → ___ [PENDING]
-- [ ] (e) substitute Rule 7a review recorded; Rule 24 audit → ___ [PENDING]
+- [x] (a) package DGP reproduces the #0002 prototype for seed 20001: standardization constants and binary calibration equal to 1e-12; truth equal to 1e-12 for C1, C2/C3/C4 at omega 0.75 → job 18573010 (`diagnosis/out/dgp_common_basis/package_C*/dgp_checks.csv`): standardization and calibration differences exactly 0 in all four configurations; truth differences 4.4e-16 (C1, C3) and 2.8e-16 (C2, C4) [PASS]
+- [x] (b) package refit of C2 and C3 (omega 0.75, seed 20001) reproduces the prototype fits' estimate, fixed-weight SE and fold weights to 1e-10 → all four configurations refitted: estimate, fixed-weight SE, fold-weight and target-only differences exactly 0 (`fit_checks.csv`); weight-layer SE 0.0220 / 0.0223 / 0.0219 / 0.0214 vs fixed 0.0216 / 0.0218 / 0.0216 / 0.0214 for C1–C4 [PASS]
+- [x] (c) full build + testthat: 0 failures, 0 errors → run 18573008 (tree d184c5eb), exit 0 [PASS]
+- [x] (d) rho-reuse invariance tests pass under the new C3 (treatment mechanism misspecified) → `test-rho-reuse.R` (C3, p = 3) passes in run 18573008 [PASS]
+- [x] (e) substitute Rule 7a review recorded; Rule 24 audit → §7 (nine findings: 5 FIX, 2 DEFER, 2 no action); Rule 24: `config` is an explicit argument of the calibration/truth helpers, `misspecification_strength` is recorded on every result row, no unused variables remain (`X_centered` scoped), README configuration table and main.tex configuration paragraph match the code [PASS]
 
 ### 7. Review note
 Reviewer verdict: faithful port of the prototype, follows from §2, no blocking defects;
@@ -375,10 +380,15 @@ independently. Findings and handling:
 ### 5. Validation results (filled after running)
 Full test suite: run 18573008 (tree d184c5eb) passed with 0 failures, 0 errors (see #0005 §5 for
 the fixture fixes on the way there; none touched the DGP). Four-configuration package
-reproduction: job 18573010 (array 1–4, dependent on 18573008) — PENDING. — test job 18550689 (`./test.sh`), package reproduction array 18550691 (`diagnosis/dgp_common_basis/run_dgp_common_basis.sh`, 4 configurations, depends on the test job), submitted 2026-09-07.
+reproduction: job 18573010 (array 1–4, dependent on 18573008), all cells exact as recorded in
+§4 (a)–(b). The omega-selection rerun with the re-based gates (job 18549812) reproduced
+omega* = 0.75 (#0002 §5). — test job 18550689 (`./test.sh`), package reproduction array 18550691 (`diagnosis/dgp_common_basis/run_dgp_common_basis.sh`, 4 configurations, depends on the test job), submitted 2026-09-07.
 
 ### 6. Decision + rationale
-PENDING
+**DECIDED-PASS (2026-09-08).** The package DGP is the pre-registered common-basis design with
+X-dagger misspecification at omega = 0.75; it reproduces the Stage-1 pilot exactly in every
+configuration, the truth comes from one reference population, and every result row carries
+the strength applied. Landed in commits f7436de3 … d184c5eb. Status: CLOSED.
 
 <a id="0007"></a>
 ## 0007 — 2026-09-07 — Land the smooth quadratic-bias weight rule as the sensitivity estimator  [MIGRATION]
@@ -416,11 +426,11 @@ weight-layer derivative has no kink and uses the penalty curvature plus the
   the prototype's `quadratic_weight_layer_n100_v1/weight_layer_rows.csv`.
 
 ### 4. Acceptance criteria
-- [ ] (a) normal-equation residual ≤ 1e-12 relative on every inner fold of the test fixture (and ≤ 1e-6 at run time inside the solver); discrepancy-free case equals the exact unpenalized solve `solve(Q, -l)` to 1e-10 and `optimize_weights(lambda = 0)` to 1e-6 (its coordinate descent stops at `WEIGHT_OPT_TOL = 1e-8`, which left a 3e-8 relative gap in run 18565508; amended after the substitute review and that run) → ___ [PENDING]
-- [ ] (b) finite-difference check of the quadratic weight layer: |numerical − analytical| ≤ 1e-8·max(1, |analytical|) → ___ [PENDING]
-- [ ] (c) 100-seed replay: estimates and weight-layer SEs equal the prototype's candidate rows to ≤ 1e-8 → ___ [PENDING]
+- [x] (a) normal-equation residual ≤ 1e-12 relative on every inner fold of the test fixture (and ≤ 1e-6 at run time inside the solver); discrepancy-free case equals the exact unpenalized solve `solve(Q, -l)` to 1e-10 and `optimize_weights(lambda = 0)` to 1e-6 (its coordinate descent stops at `WEIGHT_OPT_TOL = 1e-8`, which left a 3e-8 relative gap in run 18565508; amended after the substitute review and that run) → run 18573008: normal equations satisfied on every inner fold at 1e-12; exact solve at 1e-10; coordinate descent at 1e-6 [PASS]
+- [x] (b) finite-difference check of the quadratic weight layer: |numerical − analytical| ≤ 1e-8·max(1, |analytical|) → run 18573008 (`test-weight-layer-variance.R`, three directions, K = 2 fixture, zero kink cells) [PASS]
+- [x] (c) 100-seed replay: estimates and weight-layer SEs equal the prototype's candidate rows to ≤ 1e-8 → job 18573011: max |package − prototype| estimate 5.3e-16, fold weights 9.4e-16, weight-layer SE 5.2e-17, fixed SE 5.6e-17 (`diagnosis/out/quadratic_bias_rule/v1/`) [PASS]
 - [x] (d) full build + testthat: 0 failures, 0 errors → run 18573008 (tree d184c5eb), exit 0 [PASS]
-- [ ] (e) substitute Rule 7a review recorded; Rule 24 audit → ___ [PENDING]
+- [x] (e) substitute Rule 7a review recorded; Rule 24 audit → §7 (eleven findings: 6 FIX, 2 DEFER, 3 no action); Rule 24: rule names (`soft_penalty` / `hard_threshold` / `quadratic_bias`) and the gate flag follow the existing `include_hard_threshold_diagnostic` pattern; no dead branches; remark, supplement paragraph and README agree with the code [PASS]
 
 ### 7. Review note
 Reviewer verdict: rule solve equivalent to the prototype's prototype (Q = A/n_t, l = linear/n_t);
@@ -454,14 +464,21 @@ mathematical defects. Findings and handling:
 11. Missing `skip_on_cran()` → **FIX**.
 
 ### 5. Validation results (filled after running)
-PENDING — the full test job 18550689 was still queued when #0007 landed in the tree, so it
-builds and tests #0005 + #0006 + #0007 together; package replay job 18552835
-(`diagnosis/quadratic_bias_rule/run_quadratic_bias_rule.sh`, depends on the test job). The
-replay exercises `.quadratic_bias_weights()` on recomputed moments; the Phase-2 wiring is
-covered by the quadratic FD test's unit-mass identity.
+Full suite: run 18573008 (see #0005 §5 for the runs before it). Replay job 18573011 on the
+100 v19 seeds (C1, K = 2, six rho values): quadratic rule bias −0.011 / +0.006 / +0.007 /
++0.004 / +0.002 / +0.001, empirical SD 0.023–0.029, mean weight-layer SE 0.023–0.028,
+coverage 0.93 / 0.92 / 0.93 / 0.94 / 0.94 / 0.93 for rho = 0 … 2.5 — identical to the prototype's
+`quadratic_weight_layer_n100_v1/rho_summary.csv`. The replay exercises
+`.quadratic_bias_weights()` on recomputed moments; the Phase-2 wiring is covered by the
+quadratic FD test's unit-mass identity.
 
 ### 6. Decision + rationale
-PENDING
+**DECIDED-PASS (2026-09-08).** Rule B is computed alongside rule A in every experiment as the
+`<method>_ate_quadratic_bias` row (gated, default on) with its own smooth weight layer; on the
+100-seed C1/K2 pilot it holds 0.92–0.94 coverage at every rho, including the rho = 0.5–1.5
+region where rule A dips, at a small RMSE cost at rho = 0 (bias −0.011 vs. target-only). The
+primary rule stays A per the user's decision; the production runs will report both. Landed in
+commits f7436de3 … d184c5eb. Status: CLOSED.
 
 <a id="0009"></a>
 ## 0009 — 2026-09-07 — Freeze the production row schema and add the shared-shift scenario  [MIGRATION]
