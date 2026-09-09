@@ -96,7 +96,9 @@ the current TATE estimator yet (production #0010).
    `deviation_mechanism = "both_arms"` (both-arm reuse refit), manifests with a
    `deviation_mechanism` column and a `shared_shift` family (C1, K = 2/4/8),
    staged gates pre-registered in HISTORY #0009 §4.
-10. **#0010 Production runs** (HISTORY #0010: production root
+10. **#0010 Production runs** — RUNNING since 2026-09-08: gates A1–A5 all passed
+    (tests, R CMD check, both manifest families, smoke, both reuse-equivalence
+    audits); 12 setting blocks launched at rung n = 1 (HISTORY #0010: production root
     `results/direct_tate_mc500_b5000/production_20260908_v1/`, gates A1–A5,
     per-setting grouped submissions with `ROCE_SETTING`, rungs
     1/5/10/25/50/100/200/300/400/500) — starts after #0008 lands; #0011

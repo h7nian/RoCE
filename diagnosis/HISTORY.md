@@ -746,10 +746,21 @@ tree (commit 54ef944e).
   recorded on the primary rows and the 16 sidecar rows. Implementation audit job 60192: all
   32 checks TRUE, `direct_tate_smoke_audit_passed.txt` written. Single-replicate values (an
   implementation check, not evidence): RoCE TATE 0.2259 vs truth 0.2063, target-only 0.2538.
-- **A5 reuse equivalence** submitted 2026-09-08: negative-transfer family (C3/K4/rho 2.5)
-  independent job 60401, grouped job 60402, dependent audit 60403; shared-shift family
-  (`ROCE_REUSE_CONFIG=C1`, C1/K4/rho 2.5) independent job 60404, grouped job 60405, audit
-  60406. The shared-shift audit is the first production-scale exercise of the both-arm reuse.
+- **A5 reuse equivalence [PASS, both families]**. Negative transfer (C3/K4/rho 2.5): jobs
+  60401 / 60402 / 60403, gate records `deviation_mechanism=treated_arm`. Shared shift
+  (C1/K4/rho 2.5, the first production-scale exercise of the both-arm reuse): jobs 60404 /
+  60405 / 60406. Both audits report the grouped six-rho run exactly matching the independent
+  fit on every non-timing statistical and diagnostic field; gates written under each family's
+  `rho_reuse_equivalence_final/audit/`.
+
+**B — production submissions.** The grid has 12 setting blocks, not 18: 9 in the
+negative-transfer family (C1–C3 × K = 2/4/8) and 3 in the shared-shift family (C1 ×
+K = 2/4/8); each block covers six rho values per replicate. The first rung (n = 1) was
+submitted for all 12 blocks on 2026-09-08 (grouped jobs 85113 … 85240, each with its
+dependent six-rho checkpoint audit). Subsequent rungs are advanced by
+`scratchpad/advance_ladder.sh`, which re-invokes the submitter for every block; a block that
+has not passed its previous checkpoint is refused by the submitter itself, so the ladder
+cannot outrun review.
 
 Defect found while reading the A2 log and fixed in 9a366d8e: `audit_roce_contracts.sh`
 scanned for retired identifiers with `rg`, which does not exist in the batch environment, and
