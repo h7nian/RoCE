@@ -734,8 +734,22 @@ tree (commit 54ef944e).
 - **A2 R CMD check [PASS]** (job 38764): `Status: OK`; gate in
   `package_check_production_20260908_v1/r_cmd_check_passed.txt` with the same source
   fingerprint. The A3 manifest gate's three recorded md5s still match, so it stands.
-- **A4 smoke** submitted as job 40502 (C3/K4/rho 0, 40 CPUs, 5 CV threads, production library),
-  writing to `production_20260908_v1/smoke_final_direct_tate_raw`.
+- **A4 smoke [PASS]**. The first attempt (job 40502) fit for 67 minutes and then died in
+  `roce_annotate_direct_tate_rows`: the #0009 freeze asserts `deviation_mechanism` on every
+  annotated row, but the reused-sensitivity sidecar rows are built by
+  `roce_make_tate_result_row()` and never carried it. Fixed in baa54c02 (sidecar sets it from
+  the task, the smoke audit verifies it, and the sensitivity-row test now asserts every field
+  the annotator requires); the failing path was reproduced and re-checked locally before
+  resubmitting. Gates A1/A2 were rerun for the changed fingerprints (jobs 47152, 47153, both
+  pass) and the smoke rerun as job 48917: 14 rows exactly matching
+  `.tate_production_method_rows()` including the quadratic-bias sensitivity row, mechanism
+  recorded on the primary rows and the 16 sidecar rows. Implementation audit job 60192: all
+  32 checks TRUE, `direct_tate_smoke_audit_passed.txt` written. Single-replicate values (an
+  implementation check, not evidence): RoCE TATE 0.2259 vs truth 0.2063, target-only 0.2538.
+- **A5 reuse equivalence** submitted 2026-09-08: negative-transfer family (C3/K4/rho 2.5)
+  independent job 60401, grouped job 60402, dependent audit 60403; shared-shift family
+  (`ROCE_REUSE_CONFIG=C1`, C1/K4/rho 2.5) independent job 60404, grouped job 60405, audit
+  60406. The shared-shift audit is the first production-scale exercise of the both-arm reuse.
 
 Defect found while reading the A2 log and fixed in 9a366d8e: `audit_roce_contracts.sh`
 scanned for retired identifiers with `rg`, which does not exist in the batch environment, and
