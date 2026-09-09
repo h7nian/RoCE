@@ -787,7 +787,11 @@ fingerprint, and the A4 smoke gate and both A5 reuse gates record that fingerpri
 therefore invalidates A1–A5 together, not just A1/A2: the whole gate sequence must be the last
 thing done before production. The stale gate artifacts were archived with a
 `_superseded_<timestamp>` suffix and A4 (job 112422) plus both A5 families (112423–112425 and
-112426–112428) were relaunched on the rebuilt library.
+112426–112428) were relaunched on the rebuilt library. All three passed on the fixed tree:
+A4 smoke 32/32 checks with its gate written; A5 negative transfer (independent 52 min, grouped
+1 h 14 m) and A5 shared shift (44 min, 2 h 24 m) each with an empty `exact_mismatches.csv` and
+gates carrying the new fingerprint `4cbbf8b0…`. The n = 1 rung was then relaunched for all 12
+blocks (jobs 118974 … 119006).
 
 Defect found while reading the A2 log and fixed in 9a366d8e: `audit_roce_contracts.sh`
 scanned for retired identifiers with `rg`, which does not exist in the batch environment, and
