@@ -780,6 +780,15 @@ outputs were archived as `raw_superseded_20260909T0654/` (with a README) rather 
 gates A1/A2 were rerun on the fixed tree (jobs 112187, 112188), and the n = 1 rung relaunched.
 The ladder starting at n = 1 is what kept this cheap.
 
+**Operational note (Rule 27 amendment A6).** Rebuilding the audited library changes its
+fingerprint, and the A4 smoke gate and both A5 reuse gates record that fingerprint, so
+`submit_rho_group_direct_tate.sh` refused every block with
+`gate mismatch … expected package_fingerprint=…`. Any change to installed R or C++ code
+therefore invalidates A1–A5 together, not just A1/A2: the whole gate sequence must be the last
+thing done before production. The stale gate artifacts were archived with a
+`_superseded_<timestamp>` suffix and A4 (job 112422) plus both A5 families (112423–112425 and
+112426–112428) were relaunched on the rebuilt library.
+
 Defect found while reading the A2 log and fixed in 9a366d8e: `audit_roce_contracts.sh`
 scanned for retired identifiers with `rg`, which does not exist in the batch environment, and
 its trailing `|| true` made the scan a silent no-op in every gate. It now uses `grep` with
