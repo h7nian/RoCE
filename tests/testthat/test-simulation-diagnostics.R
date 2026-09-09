@@ -29,6 +29,35 @@ make_diagnostic_fixture <- function(n = 200L, method = "target_only_ate") {
   )
 }
 
+test_that("reading result CSVs restores declared numeric storage", {
+  fixture <- make_diagnostic_fixture(n = 2L)
+  # A disabled diagnostic is NA_real_ in every row; CSV cannot carry that type,
+  # so read.csv returns logical and the production validator would reject it.
+  fixture$variance_weight_relearn_bootstrap <- NA_real_
+  fixture$weight_bootstrap_seed <- NA_real_
+  fixture$nuisance_lambda_rule <- "min"
+  path <- file.path(tempdir(), "roce_numeric_roundtrip.csv")
+  on.exit(unlink(path), add = TRUE)
+  write.csv(fixture, path, row.names = FALSE)
+
+  plain <- read.csv(path, stringsAsFactors = FALSE)
+  expect_true(is.logical(plain$variance_weight_relearn_bootstrap))
+
+  restored <- RoCE:::.read_simulation_result_files(path)
+  numeric_columns <- intersect(
+    RoCE:::.simulation_numeric_columns(), names(restored)
+  )
+  expect_true(all(vapply(restored[numeric_columns], is.numeric, logical(1L))))
+  expect_true(all(is.na(restored$variance_weight_relearn_bootstrap)))
+  expect_identical(restored$estimate, fixture$estimate)
+
+  # A column carrying real non-numeric values is left alone, so the production
+  # validator still rejects it.
+  fixture$se <- "not a number"
+  write.csv(fixture, path, row.names = FALSE)
+  expect_true(is.character(RoCE:::.read_simulation_result_files(path)$se))
+})
+
 test_that("the production method-row set is frozen", {
   expect_identical(
     RoCE:::.tate_production_method_rows(),

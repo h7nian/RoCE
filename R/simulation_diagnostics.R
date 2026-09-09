@@ -40,6 +40,28 @@
 
 .face_deviation_mechanisms <- function() c("treated_arm", "both_arms")
 
+# Columns that must carry numeric storage in a simulation result frame.
+# .read_simulation_result_files() restores this storage after a CSV round trip
+# and the production validator enforces it.
+.simulation_numeric_columns <- function() {
+  unique(c(
+    "estimate", "bias", "se", "truth", "ci_lower", "ci_upper",
+    "ci_width", "min_site_arm_outcome_cell_n",
+    "min_target_arm_outcome_cell_n",
+    "n_site_arm_outcome_cells_below_8", "dr_weight_n",
+    "dr_weight_n_clipped", "dr_weight_fraction_clipped",
+    "dr_weight_max_site_fraction_clipped",
+    "dr_weight_min_before_clipping", "dr_weight_max_before_clipping",
+    "comparison_se_analytic", "comparison_se_bootstrap",
+    "comparison_n_bootstrap",
+    "n_weight_bootstrap", "variance_weight_relearn_bootstrap",
+    "se_weight_relearn_bootstrap", "se_fixed_weight_bootstrap",
+    "weight_uncertainty_ratio", "weight_relearn_n_bootstrap",
+    "weight_bootstrap_seed", "weight_bootstrap_failures",
+    .direct_tate_aggregation_diagnostic_columns()
+  ))
+}
+
 .direct_tate_aggregation_diagnostic_columns <- function() {
   c(
     "target_anchor_weight", "mean_abs_source_weight",
@@ -179,9 +201,21 @@
   if (!is.character(files) || length(files) == 0L || any(!file.exists(files))) {
     stop("files must name one or more existing simulation CSVs.", call. = FALSE)
   }
-  .bind_simulation_result_frames(lapply(
+  results <- .bind_simulation_result_frames(lapply(
     files, utils::read.csv, stringsAsFactors = FALSE
   ))
+  # A numeric column that is NA in every row (a disabled diagnostic, such as
+  # the weight-relearn bootstrap when n_weight_bootstrap = 0) is written as
+  # "NA" and read back as logical.  Restore the declared storage; a column with
+  # any non-numeric value is left alone so the production validator still
+  # rejects it.
+  for (column in intersect(.simulation_numeric_columns(), names(results))) {
+    values <- results[[column]]
+    if (is.logical(values) && all(is.na(values))) {
+      results[[column]] <- as.numeric(values)
+    }
+  }
+  results
 }
 
 .summarize_group_nuisance_diagnostics <- function(group) {
@@ -1508,25 +1542,7 @@ diagnose_simulation_results <- function(
     stop("se_ratio_limits must be two increasing positive values.",
          call. = FALSE)
   }
-  numeric_columns <- intersect(
-    unique(c(
-      "estimate", "bias", "se", "truth", "ci_lower", "ci_upper",
-      "ci_width", "min_site_arm_outcome_cell_n",
-      "min_target_arm_outcome_cell_n",
-      "n_site_arm_outcome_cells_below_8", "dr_weight_n",
-      "dr_weight_n_clipped", "dr_weight_fraction_clipped",
-      "dr_weight_max_site_fraction_clipped",
-      "dr_weight_min_before_clipping", "dr_weight_max_before_clipping",
-      "comparison_se_analytic", "comparison_se_bootstrap",
-      "comparison_n_bootstrap",
-      "n_weight_bootstrap", "variance_weight_relearn_bootstrap",
-      "se_weight_relearn_bootstrap", "se_fixed_weight_bootstrap",
-      "weight_uncertainty_ratio", "weight_relearn_n_bootstrap",
-      "weight_bootstrap_seed", "weight_bootstrap_failures",
-      .direct_tate_aggregation_diagnostic_columns()
-    )),
-    names(results)
-  )
+  numeric_columns <- intersect(.simulation_numeric_columns(), names(results))
   nonnumeric_columns <- numeric_columns[!vapply(
     results[numeric_columns], is.numeric, logical(1L)
   )]
