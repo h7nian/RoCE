@@ -762,6 +762,24 @@ dependent six-rho checkpoint audit). Subsequent rungs are advanced by
 has not passed its previous checkpoint is refused by the submitter itself, so the ladder
 cannot outrun review.
 
+**n = 1 rung, first attempt (2026-09-08/09).** All 12 grouped simulations completed (1 h 30 m
+to 5 h 34 m each) but all 12 checkpoint audits failed in about 10 s:
+`simulation numeric columns have nonnumeric storage: variance_weight_relearn_bootstrap, …`.
+Cause: production runs with `n_weight_bootstrap = 0`, so those seven diagnostic columns are
+`NA_real_` in every row; CSV cannot carry the type, `read.csv` returns logical, and the
+production validator rejects it. Older production rows never triggered it because they predate
+those columns. Fixed in 77747831: `.read_simulation_result_files()` restores the declared
+storage, the schema lives once in `.simulation_numeric_columns()`, and a column with any
+non-numeric value is still rejected. Verified on the 54 produced rows before relaunching: all
+44 declared-numeric columns numeric, scientific metadata valid, `diagnose_simulation_results()`
+clean, and `implementation_failed = FALSE` for C1 at K = 2/4/8.
+
+Because the fix changes installed R code, the library fingerprint recorded in those rows no
+longer matches the audited library and `roce_result_provenance()` rejects them by design. The
+outputs were archived as `raw_superseded_20260909T0654/` (with a README) rather than deleted,
+gates A1/A2 were rerun on the fixed tree (jobs 112187, 112188), and the n = 1 rung relaunched.
+The ladder starting at n = 1 is what kept this cheap.
+
 Defect found while reading the A2 log and fixed in 9a366d8e: `audit_roce_contracts.sh`
 scanned for retired identifiers with `rg`, which does not exist in the batch environment, and
 its trailing `|| true` made the scan a silent no-op in every gate. It now uses `grep` with
