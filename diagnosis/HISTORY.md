@@ -780,6 +780,18 @@ outputs were archived as `raw_superseded_20260909T0654/` (with a README) rather 
 gates A1/A2 were rerun on the fixed tree (jobs 112187, 112188), and the n = 1 rung relaunched.
 The ladder starting at n = 1 is what kept this cheap.
 
+**Operational note (Rule 27 amendment A7, 2026-09-10).** A6 below is stronger than it first
+appeared and was violated in practice. While the ladder was running, the target-remainder
+refactor edited `tests/testthat/test-slurm-atomic-output.R`; `tests/` is inside
+`roce_package_source_fingerprint`, so the A1 gate went stale and
+`submit_rho_group_direct_tate.sh` refused all 12 blocks at the n = 50 rung with
+`gate mismatch ... expected package_source_fingerprint=...`. The installed library was
+untouched (`tests/` is not installed), so the library fingerprint `4cbbf8b0…` still matched
+and the A4/A5 gates stayed valid; only A1 and A2, which record the source fingerprint, had to
+be rerun. **Rule: while a production ladder is running, do not touch `R/`, `src/`, `tests/`,
+`man/`, `DESCRIPTION`, `NAMESPACE` or `README.md`.** Diagnostic work belongs in `diagnosis/`
+and operational scripts in `scripts/slurm/`, neither of which is fingerprinted.
+
 **Operational note (Rule 27 amendment A6).** Rebuilding the audited library changes its
 fingerprint, and the A4 smoke gate and both A5 reuse gates record that fingerprint, so
 `submit_rho_group_direct_tate.sh` refused every block with
