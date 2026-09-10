@@ -63,8 +63,44 @@ seeds** — bias −0.011 / +0.006 / +0.007 / +0.004 / +0.002 / +0.001, coverage
 
 Common-basis DGP (#0006) single-seed C1–C4 refits (seed 20001, K = 2):
 weight-layer SE 0.0220 / 0.0223 / 0.0219 / 0.0214 vs fixed-weight SE 0.0216 /
-0.0218 / 0.0216 / 0.0214. No multi-seed C2/C3, K=4/8, or RHC results exist for
-the current TATE estimator yet (production #0010).
+0.0218 / 0.0216 / 0.0214.
+
+**#0010 production, n = 10 rung (2026-09-10; preliminary — the n = 50 rung is the
+pre-registered decision point).** RMSE and 95% coverage pooled over configs and K;
+rule A is the primary truncated-Wald rule, rule B the smooth quadratic-bias
+sensitivity rule.
+
+Negative transfer, 90 replicates per rho:
+
+| rho | RMSE A | cov A | RMSE B | cov B | RMSE target | cov target |
+|---|---|---|---|---|---|---|
+| 0 | 0.0177 | 0.92 | 0.0179 | 0.94 | 0.034 | 0.89 |
+| 0.5 | 0.0208 | 0.93 | 0.0208 | 0.93 | 0.034 | 0.89 |
+| 1 | 0.0262 | 0.90 | 0.0230 | 0.94 | 0.034 | 0.89 |
+| 1.5 | 0.0252 | 0.88 | 0.0223 | 0.91 | 0.034 | 0.89 |
+| 2 | 0.0235 | 0.88 | 0.0217 | 0.91 | 0.034 | 0.89 |
+| 2.5 | 0.0230 | 0.88 | 0.0214 | 0.91 | 0.034 | 0.89 |
+
+Shared shift, 30 replicates per rho:
+
+| rho | RMSE A | cov A | RMSE B | cov B | RMSE target | cov target |
+|---|---|---|---|---|---|---|
+| 0 | 0.0150 | 1.00 | 0.0158 | 1.00 | 0.036 | 0.87 |
+| 0.5 | 0.0185 | 0.90 | 0.0186 | 0.93 | 0.036 | 0.87 |
+| 1 | 0.0230 | 0.87 | 0.0231 | 0.90 | 0.036 | 0.87 |
+| 1.5 | 0.0275 | 0.73 | 0.0269 | 0.83 | 0.036 | 0.87 |
+| 2 | 0.0302 | 0.73 | 0.0277 | 0.83 | 0.036 | 0.87 |
+| 2.5 | 0.0312 | 0.83 | 0.0277 | 0.87 | 0.036 | 0.87 |
+
+Both rules beat target-only on RMSE at every rho in both families. Rule B covers at
+least as well as rule A in every cell — by 2–4 points under negative transfer, by
+10 points at the shared-shift intermediate range — and its RMSE is no worse for
+rho > 0; the cost is a slightly larger RMSE at rho = 0. This matches the mechanism:
+A selects (hard zeros, a discrete activation that adds weight variance near the Wald
+cutoff) while B shrinks continuously. The shared-shift under-coverage at rho = 1.5–2
+is the finding the scenario was built to expose and is reported, not tuned away.
+
+No RHC results exist for the current TATE estimator yet (#0012).
 
 ## 3. Active issues (open iterations)
 
