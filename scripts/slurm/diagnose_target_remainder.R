@@ -1,11 +1,11 @@
 #!/usr/bin/env Rscript
 
 main <- function(args = commandArgs(trailingOnly = TRUE)) {
-if (length(args) > 3L) {
+if (length(args) > 4L) {
   stop(
     paste0(
-      "usage: diagnose_c3_target_remainder.R [N_REPLICATIONS] ",
-      "[OUTPUT_ROOT] [NUISANCE_LAMBDA_RULE]"
+      "usage: diagnose_target_remainder.R [N_REPLICATIONS] ",
+      "[OUTPUT_ROOT] [NUISANCE_LAMBDA_RULE] [CONFIG]"
     ),
     call. = FALSE
   )
@@ -19,6 +19,13 @@ output_root <- if (length(args) >= 2L) {
 nuisance_lambda_rule <- if (length(args) >= 3L) args[[3L]] else "min"
 if (!nuisance_lambda_rule %in% c("min", "1se")) {
   stop("NUISANCE_LAMBDA_RULE must be either 'min' or '1se'.", call. = FALSE)
+}
+# The oracle-remainder decomposition is not C(3)-specific: C(1) isolates pure
+# regularization bias because both nuisance mechanisms are correctly specified,
+# while C(2)/C(3)/C(4) add outcome and/or propensity misspecification.
+config <- if (length(args) >= 4L) args[[4L]] else "C3"
+if (!config %in% c("C1", "C2", "C3", "C4")) {
+  stop("CONFIG must be one of C1, C2, C3, C4.", call. = FALSE)
 }
 if (length(n_replications) != 1L || is.na(n_replications) ||
     n_replications < 1L) {
@@ -35,7 +42,7 @@ source(file.path("scripts", "slurm", "atomic_output.R"))
 source(file.path("scripts", "slurm", "direct_tate_task_helpers.R"))
 package_provenance <- roce_runtime_package_provenance(project_library)
 workflow_fingerprint <- roce_sha256_environment(
-  "ROCE_C3_DIAGNOSTIC_WORKFLOW_FINGERPRINT"
+  "ROCE_REMAINDER_DIAGNOSTIC_WORKFLOW_FINGERPRINT"
 )
 
 if (dir.exists(output_root)) {
@@ -45,13 +52,20 @@ if (dir.exists(output_root)) {
   )
 }
 
+# Oracle target-arm means: the DGP's own outcome predictor, so C(2)/C(4) get
+# the mixed (1 - omega) eta(X) + omega eta(X_dagger) predictor rather than the
+# working-basis one (HISTORY #0006).
 .true_face_target_means <- function(data) {
   target <- data$R == "t"
   X <- data$X[target, , drop = FALSE]
-  centered <- sweep(X, 2L, RoCE:::FACE_KAPPA, "-")
-  eta <- as.numeric(
-    centered %*% data$out_params$beta_linear +
-      X^2 %*% data$out_params$beta_squared
+  strengths <- RoCE:::.face_misspecification_strengths(
+    data$config, data$misspecification_strength
+  )
+  eta <- RoCE:::.face_mixed_predictor(
+    X,
+    if (is.null(data$X_dagger)) NULL else data$X_dagger[target, , drop = FALSE],
+    data$out_params$beta_linear, data$out_params$beta_squared,
+    RoCE:::FACE_KAPPA, strengths$outcome
   )
   calibration <- RoCE:::get_face_binary_calibration(
     data$p, config = data$config, kappa = RoCE:::FACE_KAPPA
@@ -69,7 +83,7 @@ if (dir.exists(output_root)) {
     n_total = 5000L,
     K = 4L,
     p = 100L,
-    config = "C3",
+    config = config,
     estimand_type = "superpopulation",
     outcome_type = "binary",
     dgp_type = "face",
@@ -177,12 +191,12 @@ if (dir.exists(output_root)) {
       ci_upper = ci_upper,
       ci_width = ci_upper - ci_lower,
       truth = truth,
-      experiment = "c3_target_remainder_diagnostic",
+      experiment = "target_remainder_diagnostic",
       dgp_type = "face",
       outcome_family = "binomial",
       heterogeneity_type = "none",
       estimand_type = "superpopulation",
-      config = "C3",
+      config = config,
       p = 100L,
       K = 4L,
       rho = 0,
@@ -214,10 +228,10 @@ if (length(allocated_cores) != 1L || is.na(allocated_cores) ||
 workers <- min(allocated_cores, n_replications)
 message(sprintf(
   paste0(
-    "[C3 remainder] replications=%d workers=%d p=100 K=4 rho=0 ",
+    "[remainder] config=%s replications=%d workers=%d p=100 K=4 rho=0 ",
     "folds=5 nuisance_rule=%s"
   ),
-  n_replications, workers, nuisance_lambda_rule
+  config, n_replications, workers, nuisance_lambda_rule
 ))
 
 replication_ids <- seq_len(n_replications)
@@ -234,7 +248,7 @@ parts <- if (workers > 1L && .Platform$OS.type != "windows") {
 failed <- which(vapply(parts, inherits, logical(1L), what = "try-error"))
 if (length(failed) > 0L) {
   stop(
-    "C3 target-remainder worker failure(s) at replications: ",
+    "target-remainder worker failure(s) at replications: ",
     paste(failed, collapse = ","),
     call. = FALSE
   )
@@ -285,7 +299,7 @@ if (length(missing_paired_columns) > 0L ||
     !identical(as.integer(paired_estimates$sim_id), seq_len(n_replications)) ||
     any(!is.finite(unlist(paired_estimates[required_paired_columns])))) {
   stop(
-    "C3 paired remainder decomposition is incomplete: ",
+    "paired remainder decomposition is incomplete: ",
     paste(missing_paired_columns, collapse = ","),
     call. = FALSE
   )
@@ -342,7 +356,7 @@ roce_write_atomic_directory(
       row.names = FALSE
     )
   },
-  caller = "C3 target-remainder diagnostic"
+  caller = "target-remainder diagnostic"
 )
 print(summary, row.names = FALSE, digits = 5)
 print(remainder_summary, row.names = FALSE, digits = 5)

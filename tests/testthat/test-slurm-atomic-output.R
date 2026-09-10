@@ -449,10 +449,10 @@ test_that("bootstrap benchmark preserves provenance and refuses overwrite", {
 
 test_that("C3 remainder diagnostic is scoped and workflow-provenanced", {
   diagnostic_r_path <- file.path(
-    repo_root, "scripts", "slurm", "diagnose_c3_target_remainder.R"
+    repo_root, "scripts", "slurm", "diagnose_target_remainder.R"
   )
   diagnostic_sh_path <- file.path(
-    repo_root, "scripts", "slurm", "diagnose_c3_target_remainder.sh"
+    repo_root, "scripts", "slurm", "diagnose_target_remainder.sh"
   )
   skip_if_not(
     file.exists(diagnostic_r_path) && file.exists(diagnostic_sh_path),

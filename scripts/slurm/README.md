@@ -509,7 +509,7 @@ The C(3), `rho = 0` centering diagnosis has a separate oracle-nuisance
 decomposition that does not refit source models or enter the production array:
 
 ```bash
-sbatch scripts/slurm/diagnose_c3_target_remainder.sh
+ROCE_REMAINDER_CONFIG=C3 sbatch scripts/slurm/diagnose_target_remainder.sh
 ```
 
 It runs the exact `p = 100`, `K = 4`, five-fold target estimator for 500
