@@ -31,11 +31,25 @@ required_columns <- c(
   "package_library", "package_fingerprint", "workflow_fingerprint"
 )
 
-read_result <- function(directory, expected_rule) {
-  path <- file.path(directory, "c3_target_remainder_raw.csv")
-  if (!file.exists(path)) {
-    stop("missing C3 raw result: ", path, call. = FALSE)
+# The diagnostic was renamed from diagnose_c3_target_remainder.R to
+# diagnose_target_remainder.R; archived runs keep the old file and experiment
+# labels, so both are accepted here.
+REMAINDER_RAW_FILES <- c("target_remainder_raw.csv", "c3_target_remainder_raw.csv")
+REMAINDER_EXPERIMENTS <- c(
+  "target_remainder_diagnostic", "c3_target_remainder_diagnostic"
+)
+
+remainder_raw_path <- function(directory) {
+  candidates <- file.path(directory, REMAINDER_RAW_FILES)
+  found <- candidates[file.exists(candidates)]
+  if (length(found) == 0L) {
+    stop("missing C3 raw result in: ", directory, call. = FALSE)
   }
+  found[[1L]]
+}
+
+read_result <- function(directory, expected_rule) {
+  path <- remainder_raw_path(directory)
   result <- utils::read.csv(path, stringsAsFactors = FALSE)
   missing_columns <- setdiff(required_columns, names(result))
   if (length(missing_columns) > 0L) {
@@ -46,7 +60,7 @@ read_result <- function(directory, expected_rule) {
     )
   }
   expected_design <-
-    result$experiment == "c3_target_remainder_diagnostic" &
+    result$experiment %in% REMAINDER_EXPERIMENTS &
     result$dgp_type == "face" & result$outcome_family == "binomial" &
     result$heterogeneity_type == "none" &
     result$estimand_type == "superpopulation" &
@@ -203,8 +217,8 @@ provenance <- data.frame(
     unique(minimum$workflow_fingerprint),
     unique(one_se$workflow_fingerprint)
   ),
-  raw_result_md5 = unname(tools::md5sum(file.path(
-    result_directories, "c3_target_remainder_raw.csv"
+  raw_result_md5 = unname(tools::md5sum(vapply(
+    result_directories, remainder_raw_path, character(1L)
   ))),
   stringsAsFactors = FALSE
 )

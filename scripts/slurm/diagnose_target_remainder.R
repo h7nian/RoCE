@@ -14,7 +14,7 @@ n_replications <- if (length(args) >= 1L) as.integer(args[[1L]]) else 500L
 output_root <- if (length(args) >= 2L) {
   args[[2L]]
 } else {
-  "results/direct_tate_mc500_b5000/c3_target_remainder"
+  "results/direct_tate_mc500_b5000/target_remainder"
 }
 nuisance_lambda_rule <- if (length(args) >= 3L) args[[3L]] else "min"
 if (!nuisance_lambda_rule %in% c("min", "1se")) {
@@ -337,22 +337,22 @@ roce_write_atomic_directory(
   writer = function(staging_directory) {
     write.csv(
       raw,
-      file.path(staging_directory, "c3_target_remainder_raw.csv"),
+      file.path(staging_directory, "target_remainder_raw.csv"),
       row.names = FALSE
     )
     write.csv(
       summary,
-      file.path(staging_directory, "c3_target_remainder_summary.csv"),
+      file.path(staging_directory, "target_remainder_summary.csv"),
       row.names = FALSE
     )
     write.csv(
       paired_remainder,
-      file.path(staging_directory, "c3_target_remainder_paired.csv"),
+      file.path(staging_directory, "target_remainder_paired.csv"),
       row.names = FALSE
     )
     write.csv(
       remainder_summary,
-      file.path(staging_directory, "c3_target_remainder_contrast.csv"),
+      file.path(staging_directory, "target_remainder_contrast.csv"),
       row.names = FALSE
     )
   },

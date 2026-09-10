@@ -466,10 +466,10 @@ test_that("C3 remainder diagnostic is scoped and workflow-provenanced", {
   expect_true(any(grepl("outcome_family", diagnostic_r, fixed = TRUE)))
   expect_true(any(grepl("workflow_fingerprint", diagnostic_r, fixed = TRUE)))
   expect_true(any(grepl(
-    "c3_target_remainder_contrast.csv", diagnostic_r, fixed = TRUE
+    "target_remainder_contrast.csv", diagnostic_r, fixed = TRUE
   )))
   expect_true(any(grepl(
-    "ROCE_C3_DIAGNOSTIC_WORKFLOW_FINGERPRINT",
+    "ROCE_REMAINDER_DIAGNOSTIC_WORKFLOW_FINGERPRINT",
     diagnostic_sh, fixed = TRUE
   )))
   comparison_path <- file.path(
