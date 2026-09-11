@@ -100,20 +100,39 @@ main <- function(args = commandArgs(trailingOnly = TRUE)) {
 
   workers <- max(1L, as.integer(Sys.getenv("SLURM_CPUS_PER_TASK", "1")))
   ids <- seed_offset + seq_len(n_replications)
-  message(sprintf("[weight rules] %s K=%d rho=%s reps=%d seeds %d-%d workers=%d",
-                  config, K, format(rho), n_replications, min(ids), max(ids), workers))
-  parts <- parallel::mclapply(ids, function(sim_id) {
-    tryCatch(.one_replication(sim_id, config, K, rho),
-             error = function(e) structure(conditionMessage(e), sim_id = sim_id))
-  }, mc.cores = min(workers, n_replications))
-  failed <- vapply(parts, is.character, logical(1L))
-  if (any(failed)) {
-    stop("replication failure(s): ",
-         paste(vapply(parts[failed], function(x) attr(x, "sim_id"), numeric(1L)),
-               collapse = ", "), call. = FALSE)
+  # Each finished replicate is written immediately to its own file, so a job
+  # that reaches its time limit keeps every replicate it completed and a rerun
+  # skips them. (The first version wrote only at the end and lost all 2400
+  # core-hours of a timed-out run.)
+  replicate_directory <- file.path(args[[1L]], "replicates",
+                                   sprintf("%s_K%d_rho%s", config, K, format(rho)))
+  dir.create(replicate_directory, recursive = TRUE, showWarnings = FALSE)
+  replicate_path <- function(sim_id) {
+    file.path(replicate_directory, sprintf("replicate_%06d.csv", sim_id))
   }
-  rows <- do.call(rbind, parts)
-  rows <- rows[rows$method %in% names(RULE_LABELS), , drop = FALSE]
+  pending <- ids[!file.exists(vapply(ids, replicate_path, ""))]
+  message(sprintf(
+    "[weight rules] %s K=%d rho=%s seeds %d-%d: %d done, %d pending, workers=%d",
+    config, K, format(rho), min(ids), max(ids),
+    length(ids) - length(pending), length(pending), workers
+  ))
+  failures <- parallel::mclapply(pending, function(sim_id) {
+    tryCatch({
+      rows <- .one_replication(sim_id, config, K, rho)
+      rows <- rows[rows$method %in% names(RULE_LABELS), , drop = FALSE]
+      path <- replicate_path(sim_id)
+      temporary <- paste0(path, ".tmp")
+      write.csv(rows, temporary, row.names = FALSE)
+      file.rename(temporary, path)
+      NULL
+    }, error = function(e) sprintf("%d: %s", sim_id, conditionMessage(e)))
+  }, mc.cores = max(1L, min(workers, length(pending))))
+  failures <- unlist(failures)
+  if (length(failures) > 0L) {
+    stop("replication failure(s): ", paste(failures, collapse = "; "), call. = FALSE)
+  }
+  rows <- do.call(rbind, lapply(vapply(ids, replicate_path, ""), utils::read.csv,
+                                stringsAsFactors = FALSE))
   summary <- .summarize(rows, config, K, rho)
   print(summary[, c("rule", "n", "bias", "empirical_sd", "mean_se",
                     "se_to_empirical_sd", "rejection_rate", "coverage", "rmse")],
