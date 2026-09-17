@@ -584,6 +584,48 @@ test_that("TATE cross-fitting returns one common source-weight vector", {
   expect_equal(reaggregated$all_phi_tau, result$all_phi_tau,
                tolerance = 1e-12)
   expect_equal(reaggregated$timing$nuisance_refit_seconds, 0)
+
+  # Changing neither radius nor cutoff must preserve every supported rule,
+  # including fitted objects from before the screening metadata was added.
+  for (rule in c("soft_penalty", "hard_threshold", "quadratic_bias")) {
+    original <- result
+    aggregated <- calculate_tate_crossfit_aggregation(
+      data_split, result$arm_results$mu1, result$arm_results$mu0,
+      lambda_selection = result$aggregation_lambda_selection,
+      screening_rule = rule, verbose = FALSE
+    )
+    original[names(aggregated)] <- aggregated
+    refreshed <- reaggregate_tate_crossfit(
+      data_split, original, original$M_tau_inference, verbose = FALSE
+    )
+    expect_identical(refreshed$aggregation_screening_rule, rule)
+    for (field in c("estimate", "se", "weights", "fold_weights")) {
+      expect_equal(refreshed[[field]], original[[field]], tolerance = 1e-12)
+    }
+    grid <- reaggregate_tate_sensitivity_grid(
+      data_split, original,
+      data.frame(cutoff = c(1, 2, 2), M_tau_inference = c(5, 5, Inf))
+    )
+    for (i in seq_along(grid$results)) {
+      candidate <- grid$results[[i]]
+      expected <- calculate_tate_crossfit_aggregation(
+        data_split, candidate$arm_results$mu1, candidate$arm_results$mu0,
+        lambda_selection = 1 / grid$grid$cutoff[i], screening_rule = rule,
+        verbose = FALSE
+      )
+      expect_identical(candidate$aggregation_screening_rule, rule)
+      expect_equal(candidate$estimate, expected$estimate, tolerance = 1e-12)
+      expect_equal(candidate$se, expected$se, tolerance = 1e-12)
+      expect_equal(candidate$weights, expected$weights, tolerance = 1e-12)
+    }
+  }
+  legacy <- result
+  legacy$aggregation_screening_rule <- NULL
+  legacy_refreshed <- reaggregate_tate_crossfit(
+    data_split, legacy, legacy$M_tau_inference, verbose = FALSE
+  )
+  expect_identical(legacy_refreshed$aggregation_screening_rule, "soft_penalty")
+  expect_equal(legacy_refreshed$estimate, result$estimate, tolerance = 1e-12)
   for (arm_name in c("mu1", "mu0")) {
     for (fold_index in seq_len(result$n_folds)) {
       original_sources <-

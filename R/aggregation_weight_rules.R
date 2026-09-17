@@ -31,11 +31,12 @@
 # Checks that a symmetric matrix is positive definite after diagonal scaling
 # and returns the scaling (square roots of the diagonal).
 .require_positive_definite <- function(matrix, label) {
-  scale <- sqrt(diag(matrix))
-  if (any(!is.finite(scale)) || any(scale <= 0)) {
+  curvature <- diag(matrix)
+  if (any(!is.finite(curvature)) || any(curvature <= 0)) {
     stop(sprintf(".quadratic_bias_weights: %s lacks positive diagonal curvature.", label),
          call. = FALSE)
   }
+  scale <- sqrt(curvature)
   positive_definite <- !inherits(
     try(chol(matrix / outer(scale, scale)), silent = TRUE), "try-error"
   )

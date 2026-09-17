@@ -22,7 +22,19 @@ PROJECT_ROOT="${SLURM_SUBMIT_DIR:-$(pwd)}"
 cd "${PROJECT_ROOT}"
 test -f DESCRIPTION || { echo "submit from the project root" >&2; exit 1; }
 
+PROJECT_LIBRARY="${ROCE_PROJECT_LIB:?ROCE_PROJECT_LIB must name the frozen library}"
+source scripts/slurm/package_library_utils.sh
+PROJECT_LIBRARY="$(roce_resolve_package_library "${PROJECT_LIBRARY}")"
+export ROCE_PROJECT_LIB="${PROJECT_LIBRARY}"
+export ROCE_PACKAGE_FINGERPRINT="$(roce_package_fingerprint "${PROJECT_LIBRARY}")"
+export ROCE_RULE_WORKFLOW_FINGERPRINT="$(roce_files_fingerprint \
+  diagnosis/weight_rule_precision/run_weight_rule_precision.sh \
+  diagnosis/weight_rule_precision/weight_rule_precision.R \
+  scripts/slurm/result_provenance.R scripts/slurm/atomic_output.R \
+  scripts/slurm/package_library_utils.sh)"
+
 module load R/4.2.2-gcc-8.2.0-vp7tyde
+export R_LIBS_USER="/users/0/zhan9381/Rlibs"
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 
 CONFIG="${ROCE_RULE_CONFIG:?ROCE_RULE_CONFIG is required}"

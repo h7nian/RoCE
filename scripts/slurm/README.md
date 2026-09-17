@@ -930,3 +930,15 @@ scripts/slurm/submit_fitting_radius_diagnostic.sh
 
 As with the primary study, advance only after checking each completed batch;
 the manifest size is not authorization to submit all rows at once.
+# September 2026 production recovery
+
+The v2 run keeps rule A (`soft_penalty`, cutoff 1) as the primary estimator;
+rule B remains a paired sensitivity. V1's 25 replicates are archived in place.
+V2 restarts seeds 1–500 in `production_20260911_v2`, with a separate frozen
+`Rlib_production_20260911_v2` installation and fresh A1–A5 gates.
+Audit builds refuse existing library directories. Re-test a frozen installed
+package with `ROCE_TEST_INSTALLED=1`, without invoking an installation step.
+The ladder returns nonzero if any block fails, retaining the full submitter
+message. Statistical warnings at n=50/100 are reported and production continues
+to 500; implementation and provenance failures still stop affected blocks.
+See `diagnosis/HISTORY.md` #0014 for the user-approved amendment.

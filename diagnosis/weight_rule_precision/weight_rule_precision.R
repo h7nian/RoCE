@@ -14,7 +14,6 @@
 #          Usage: weight_rule_precision.R OUTPUT_DIR CONFIG K RHO N_REPLICATIONS
 #                 [SEED_OFFSET]
 
-suppressPackageStartupMessages(library(RoCE))
 source("scripts/slurm/result_provenance.R")
 source("scripts/slurm/atomic_output.R")
 
@@ -42,14 +41,16 @@ RULE_LABELS <- c(
     estimand_type = "superpopulation",
     outcome_type = "binary",
     n_folds = N_FOLDS,
-    aggregation_lambda = RoCE:::AGG_WALD_LAMBDA,
+    aggregation_lambda = 1,
     M_tau = 5,
     M_tau_inference = 5,
     estimate_ate = TRUE,
     dgp_type = "face",
     ate_deviation = rho,
     n_deviated_sites = if (rho > 0) 1L else 0L,
-    nuisance_lambda_rule = "min"
+    nuisance_lambda_rule = "min",
+    deviation_mechanism = "treated_arm",
+    include_quadratic_bias_rule = TRUE
   )
 }
 
@@ -66,9 +67,7 @@ RULE_LABELS <- c(
       bias = mean(error), bias_mcse = sd_hat / sqrt(nrow(g)),
       empirical_sd = sd_hat, mean_se = mean(g$se),
       se_to_empirical_sd = mean(g$se) / sd_hat,
-      # The rejection rate is the coverage-relevant statistic; unlike the
-      # SE/SD ratio it is insensitive to the heavy tail of the treated-arm
-      # influence function (HISTORY #0011).
+      # Report interval rejection directly alongside the SE/SD ratio.
       rejection_rate = mean(abs(error) > z * g$se),
       coverage = mean(g$coverage),
       rmse = sqrt(mean(error^2)),
@@ -76,6 +75,30 @@ RULE_LABELS <- c(
       stringsAsFactors = FALSE
     )
   }))
+}
+
+.validate_rule_rows <- function(rows, sim_id, settings) {
+  required <- c("sim_id", "method", "estimate", "se", "truth", "coverage",
+                names(settings))
+  if (!is.data.frame(rows) || !all(required %in% names(rows)) ||
+      nrow(rows) != length(RULE_LABELS) || anyDuplicated(rows$method) ||
+      !setequal(rows$method, names(RULE_LABELS)) ||
+      anyNA(rows$sim_id) || any(rows$sim_id != sim_id)) {
+    stop("incomplete or mismatched replicate ", sim_id, call. = FALSE)
+  }
+  for (field in names(settings)) {
+    if (anyNA(rows[[field]]) ||
+        any(as.character(rows[[field]]) != as.character(settings[[field]]))) {
+      stop("replicate ", sim_id, " has mismatched ", field, call. = FALSE)
+    }
+  }
+  if (!all(vapply(rows[c("estimate", "se", "truth")], is.numeric, logical(1))) ||
+      any(!is.finite(as.matrix(rows[c("estimate", "se", "truth")])) ) ||
+      any(rows$se <= 0) || !is.logical(rows$coverage) || anyNA(rows$coverage) ||
+      any(rows$coverage != (abs(rows$estimate - rows$truth) <= stats::qnorm(0.975) * rows$se))) {
+    stop("invalid numerical result in replicate ", sim_id, call. = FALSE)
+  }
+  rows
 }
 
 main <- function(args = commandArgs(trailingOnly = TRUE)) {
@@ -98,7 +121,21 @@ main <- function(args = commandArgs(trailingOnly = TRUE)) {
   )
   if (file.exists(output)) stop("output already exists: ", output, call. = FALSE)
 
+  project_library <- Sys.getenv("ROCE_PROJECT_LIB", "")
+  if (!nzchar(project_library)) stop("ROCE_PROJECT_LIB is required.", call. = FALSE)
+  .libPaths(c(project_library, .libPaths()))
+  suppressPackageStartupMessages(library(RoCE))
+  provenance <- roce_runtime_package_provenance(project_library)
+  workflow <- roce_sha256_environment("ROCE_RULE_WORKFLOW_FINGERPRINT")
+  settings <- list(config = config, K = K, p = P, n_total = N_SITE * (K + 1L),
+                   n_folds = N_FOLDS, nlambda_init = 100L, M_tau = 5,
+                   M_tau_inference = 5, nuisance_lambda_rule = "min",
+                   aggregation_lambda = 1, deviation_mechanism = "treated_arm",
+                   package_library = provenance$library,
+                   package_fingerprint = provenance$fingerprint,
+                   workflow_fingerprint = workflow, rho = rho)
   workers <- max(1L, as.integer(Sys.getenv("SLURM_CPUS_PER_TASK", "1")))
+  if (is.na(workers)) stop("invalid SLURM_CPUS_PER_TASK.", call. = FALSE)
   ids <- seed_offset + seq_len(n_replications)
   # Each finished replicate is written immediately to its own file, so a job
   # that reaches its time limit keeps every replicate it completed and a rerun
@@ -110,7 +147,13 @@ main <- function(args = commandArgs(trailingOnly = TRUE)) {
   replicate_path <- function(sim_id) {
     file.path(replicate_directory, sprintf("replicate_%06d.csv", sim_id))
   }
+  read_replicate <- function(sim_id) {
+    .validate_rule_rows(utils::read.csv(replicate_path(sim_id), stringsAsFactors = FALSE),
+                        sim_id, settings)
+  }
   pending <- ids[!file.exists(vapply(ids, replicate_path, ""))]
+  # Validate every cached row before launching any replacement work.
+  invisible(lapply(setdiff(ids, pending), read_replicate))
   message(sprintf(
     "[weight rules] %s K=%d rho=%s seeds %d-%d: %d done, %d pending, workers=%d",
     config, K, format(rho), min(ids), max(ids),
@@ -120,10 +163,15 @@ main <- function(args = commandArgs(trailingOnly = TRUE)) {
     tryCatch({
       rows <- .one_replication(sim_id, config, K, rho)
       rows <- rows[rows$method %in% names(RULE_LABELS), , drop = FALSE]
+      for (field in c("package_library", "package_fingerprint", "workflow_fingerprint", "rho", "n_folds")) {
+        rows[[field]] <- settings[[field]]
+      }
+      rows <- .validate_rule_rows(rows, sim_id, settings)
       path <- replicate_path(sim_id)
-      temporary <- paste0(path, ".tmp")
+      temporary <- tempfile(paste0(basename(path), "."), tmpdir = dirname(path))
+      on.exit(unlink(temporary), add = TRUE)
       write.csv(rows, temporary, row.names = FALSE)
-      file.rename(temporary, path)
+      if (!file.rename(temporary, path)) stop("could not commit ", path)
       NULL
     }, error = function(e) sprintf("%d: %s", sim_id, conditionMessage(e)))
   }, mc.cores = max(1L, min(workers, length(pending))))
@@ -131,8 +179,7 @@ main <- function(args = commandArgs(trailingOnly = TRUE)) {
   if (length(failures) > 0L) {
     stop("replication failure(s): ", paste(failures, collapse = "; "), call. = FALSE)
   }
-  rows <- do.call(rbind, lapply(vapply(ids, replicate_path, ""), utils::read.csv,
-                                stringsAsFactors = FALSE))
+  rows <- do.call(rbind, lapply(ids, read_replicate))
   summary <- .summarize(rows, config, K, rho)
   print(summary[, c("rule", "n", "bias", "empirical_sd", "mean_se",
                     "se_to_empirical_sd", "rejection_rate", "coverage", "rmse")],
@@ -145,7 +192,7 @@ main <- function(args = commandArgs(trailingOnly = TRUE)) {
                  paste0("config=", config), paste0("K=", K), paste0("rho=", rho),
                  paste0("n_replications=", n_replications),
                  paste0("seed_offset=", seed_offset),
-                 paste0("package_library=", .libPaths()[1])),
+                 paste0(names(settings), "=", unlist(settings))),
                file.path(stage, "metadata.txt"))
     files <- list.files(stage, full.names = TRUE)
     writeLines(paste(vapply(files, roce_sha256_file, ""), basename(files), sep = "  "),

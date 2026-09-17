@@ -39,6 +39,7 @@ outcome means $\mu^a_t=E_t\{Y(a)\}$.
 
 - **Primary API**: `run_tate_crossfit()` with `communication_mode = "one_round"` (manuscript default) or `"two_round"`.
 - **Arm-specific API**: `run_crossfit(A_val = 0/1)` for secondary potential-outcome means.
+- **Reaggregation**: `reaggregate_tate_crossfit()` and its sensitivity grid preserve the fitted source-weight rule, including `quadratic_bias`; unchanged cutoff and inference radius reproduce the original fit.
 - **Internal C++ bindings**: functions ending with `_cpp` are internal implementation/testing interfaces and are **not** part of the package's stable public API contract.
 
 ## Installation

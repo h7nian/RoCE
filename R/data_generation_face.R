@@ -8,8 +8,9 @@
 #                 equals an ATE only for the continuous identity-link outcome;
 #                 for binary outcomes it is a conditional log-odds shift.
 #   - PS model:   logistic with both linear and squared covariate terms
-#   - Config C1–C4: correctness/misspecification refers to including vs.
-#                   omitting the squared covariate block
+#   - Config C1–C4: both nuisances use the same linear + squared working
+#                   basis; X-dagger mixing misspecifies the true outcome in
+#                   C2/C4 and the true propensity in C3/C4.
 #
 # Functions:
 #   - generate_skewed_normal

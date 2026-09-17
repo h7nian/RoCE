@@ -13,6 +13,33 @@ rho_equivalence_columns <- function(result) {
   setdiff(columns, grep("seconds$", columns, value = TRUE))
 }
 
+test_that("both rho reuse paths retain the fitted aggregation rule", {
+  observed <- character()
+  testthat::local_mocked_bindings(
+    .refit_one_round_crossfit_sources = function(fitted_arm, ...) fitted_arm,
+    calculate_tate_crossfit_aggregation = function(screening_rule = "soft_penalty", ...) {
+      observed <<- c(observed, screening_rule)
+      list(aggregation_screening_rule = screening_rule)
+    },
+    .package = "RoCE"
+  )
+  arm <- list(nuisance_fit_diagnostics = data.frame(fold = 1L), timing = list())
+  fitted <- list(communication_mode = "one_round", arm_results = list(mu1 = arm, mu0 = arm))
+  for (rule in c("soft_penalty", "hard_threshold", "quadratic_bias")) {
+    fitted$aggregation_screening_rule <- rule
+    for (both_arms in c(FALSE, TRUE)) {
+      reused <- RoCE:::.reuse_one_round_tate_across_rho(
+        list(), list(), fitted, "s1", 1, refit_control_arm = both_arms
+      )
+      expect_identical(reused$aggregation_screening_rule, rule)
+    }
+  }
+  fitted$aggregation_screening_rule <- NULL
+  legacy <- RoCE:::.reuse_one_round_tate_across_rho(list(), list(), fitted, "s1", 1)
+  expect_identical(legacy$aggregation_screening_rule, "soft_penalty")
+  expect_identical(observed, c(rep(c("soft_penalty", "hard_threshold", "quadratic_bias"), each = 2), "soft_penalty"))
+})
+
 test_that("mixed integer and fractional rho artifacts retain exact keys", {
   make_artifact <- function(rho) {
     list(data_split = list(marker = rho), direct_tate_results = list(

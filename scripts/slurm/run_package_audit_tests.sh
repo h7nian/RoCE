@@ -10,7 +10,18 @@ set -euo pipefail
 
 PROJECT_ROOT="${ROCE_PROJECT_ROOT:-$(git rev-parse --show-toplevel)}"
 AUDIT_LIBRARY="${ROCE_AUDIT_LIB:-${PROJECT_ROOT}/results/direct_tate_mc500_b5000/Rlib_final_audit}"
+AUDIT_LIBRARY="$(readlink -m -- "${AUDIT_LIBRARY}")"
 AUDIT_SOURCE="${ROCE_AUDIT_SOURCE:-${AUDIT_LIBRARY}_source/RoCE}"
+AUDIT_SOURCE="$(readlink -m -- "${AUDIT_SOURCE}")"
+
+# Claim a fresh library before loading R or staging sources. An audit must
+# never reinstall into the frozen library referenced by production results.
+mkdir -p "$(dirname "${AUDIT_LIBRARY}")"
+if ! mkdir "${AUDIT_LIBRARY}"; then
+  echo "Refusing to reuse an existing audit library: ${AUDIT_LIBRARY}" >&2
+  echo "Use a fresh ROCE_AUDIT_LIB; test a frozen installation with ROCE_TEST_INSTALLED=1 without rebuilding it." >&2
+  exit 2
+fi
 
 module load R/4.2.2-gcc-8.2.0-vp7tyde
 export R_LIBS_USER="/users/0/zhan9381/Rlibs"
