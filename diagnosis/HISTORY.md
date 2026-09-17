@@ -840,3 +840,437 @@ equivalent exclusions and passes on the current tree.
 
 ### 6. Decision + rationale
 PENDING
+
+<a id="0014"></a>
+## 0014 — 2026-09-11 — Freeze A and restart production after recovery fixes [IN-FLIGHT]
+
+### 1. Symptom and decisions
+The v1 ladder completed n=25 in all 12 blocks, then stopped because an
+in-place library reinstall changed the package fingerprint from 4cbbf8b0...
+to 0d0de95d.... Review also reproduced non-default aggregation rules silently
+reverting to A during reaggregation/rho reuse, and a ladder exit code of zero
+when all 12 submitters failed. Diagnostic resume lacked package/workflow checks.
+
+The user explicitly confirmed A as the provisional primary method and approved
+implementation of the recovery plan. In the planning questions they selected:
+(a) archive the existing 25 replicates and restart on a new frozen version;
+(b) record statistical deficits and complete all 500 replicates when
+implementation checks pass. No cross-version result migration is used.
+
+### 2. Frozen scientific contract
+A = soft_penalty, cutoff 1, weight-layer SE; B = quadratic_bias sensitivity.
+All existing DGP, nuisance tuning, sample sizes, folds, truncation radii,
+comparison methods and seeds remain fixed. The actual grid is 12 blocks,
+not the 18 mentioned in superseded #0010 prose: negative transfer C1-C3 x
+K2/4/8; shared shift C1 x K2/4/8; each block has six rho values.
+
+### 3. Amendment to staged acceptance criteria
+The coverage bounds and n=100 go/no-go in #0009/#0010 are retained above as
+history, but no longer stop this fixed-design experiment. At n=50,100,500,
+report per-cell coverage and MCSE, bias, RMSE, empirical SD, mean SE and
+SE/SD with paired A/B/target comparisons. Low coverage is reported without
+changing A, the DGP, seed selection or tuning. Implementation failures,
+missing/duplicate results and provenance mismatches pause the affected block.
+The checkpoint ladder remains 1/5/10/25/50/100/200/300/400/500.
+
+### 4. Implementation and validation requirements
+- Preserve fitted aggregation rules in reaggregation, sensitivity grids and
+  both rho-reuse mechanisms, with historical soft_penalty fallback only for
+  objects lacking the field. Test same-parameter identities for all rules.
+- Audit builds require a new installation directory; frozen libraries are
+  never reinstalled. Submission errors remain visible and return nonzero.
+- Diagnostic replicates carry package, workflow and parameter provenance;
+  resume rejects stale/incomplete rows before launching pending work.
+- Synchronize C++ declarations, remove the negative-curvature NaN warning,
+  and refresh CurrentState without rewriting historical decisions.
+- Full testthat: zero failures. R CMD check: Status: OK. Then gates A1-A5
+  on the same frozen source/workflow and installed library.
+
+### 5. Production artifacts and validation results
+New roots: results/direct_tate_mc500_b5000/production_20260911_v2,
+Rlib_production_20260911_v2 and package_check_production_20260911_v2.
+V1 artifacts remain in place as a superseded archive and are not read by v2.
+Validation and production: PENDING; append measured results below.
+
+Validation launch (2026-09-11): recovery regression file passed 15 checks;
+59 R files parsed successfully. A1 full build/tests = job 382288, A2 R CMD
+check = 382289, A3 both manifest families = 382290. Jobs use the independent
+source_production_20260911_v2 snapshot (996 files; SHA-256 inventory beside
+it), with ROCE_AGG_WALD_LAMBDA=1. The live checkout is not their source root.
+No A4/A5 or production task has been submitted at this point.
+
+A3 passed both families in job 382290. A4 smoke/audit = 382451/382452;
+A5 submission wrappers (main/shared) = 382453/382454, all dependent on
+successful A1-A3. A5 wrappers invoke the existing gated submitter and log
+its independent/grouped/audit child job IDs. No production is released
+until actual A4 and both A5 gate artifacts pass.
+
+A1 (382288) passed, zero failures; existing small-cell warnings remain and
+the negative-curvature NaN warning is gone. A2 (382289) returned Status: OK.
+Frozen package fingerprint: ad51045358861e41a461c2079ed7fdbdd29f52b91205d232da303fe74324f456.
+Both gates record source fingerprint e1cee94c8e2710220d130eafbb2c688ef3309d483ea33980e78a5f02f192aaa8.
+A5 main independent/group/audit = 382490/382492/382494;
+shared-shift = 382489/382491/382493. A4 and A5 numerical validations running.
+A run-specific continuation script is stored beside the v2 artifacts; it
+uses the existing bounded submitter, queues each next rung after its own
+successful QC, refuses duplicate rung submissions and preserves job IDs.
+It does not modify the frozen package or simulation workflow.
+
+Initial production continuation jobs 382610-382621 are queued with afterok
+on A4 audit 382452 and both A5 audits 382493/382494. No production
+simulation has been released yet. The run-specific ladder queues per-block
+reports at n=50/100/500 after QC, filtering exactly seeds 1..n from the
+frozen manifest even if later rungs have begun. Reports use the package's
+diagnostics and paired-MSE utilities and include paired coverage differences
+and A-primary PDF figures. Scripts and job registries live beside v2 results;
+the estimator and audited simulation workflow remain unchanged.
+
+Run-specific continuation harness passed dependency chaining, duplicate
+refusal, n=50 reporting, submission-error propagation, n=500 termination,
+family validation and smoke fingerprint rejection without submitting jobs.
+The stage reporter passed an end-to-end synthetic fixture smoke (archived
+v1 C1/K2 rows duplicated to 50 IDs strictly for software testing, marked
+SYNTHETIC and stored only in scratch, never production). Independent Python
+calculations confirmed 18 summaries, 12 paired MSE rows and 12 paired
+coverage rows including MCSEs; the PDF was generated. Removed ggplot2's
+unsupported geom_hline inherit.aes argument from this reporting script.
+The frozen estimator, workflow, installed library and gates were untouched.
+
+Final family aggregation is wired after every n=500 block's QC and report
+job are registered. The run-specific finalizer avoids dependencies on old
+jobs whose completed artifacts exist, submits each family only once, and
+refuses incomplete registrations. It uses the frozen aggregate_direct_tate.R
+and FACE-style plotter, retains A as the primary RoCE line, includes paired
+A/B/target companion tables, hashes the output files, and writes a final
+report gate only after successful checks and plotting. Aggregation requests
+64 GB to accommodate the full 27,000-task main-family input. Syntax and a
+mocked scheduler harness passed; no final reporting job has been released.
+
+The n=500 continuation integration harness also passed: it schedules the
+block report and invokes the family finalizer, with no further production
+rung. ggplot2 3.5.2 supports the frozen FACE plotter's linewidth interface.
+These checks used temporary fixtures only and submitted no real jobs.
+
+2026-09-11 15:49 CDT: first numerical validation completed, shared-shift
+independent job 382489_5501 (53m29s, exit 0). The task_005501.csv artifact
+contains 14 distinct methods, matching package/manifest fingerprints and
+C1/K4/rho=2.5/seed=1/both_arms metadata. Estimates/truth are finite and SEs
+positive. For A, B and target-only, estimate/SE/bias/truth/CI endpoints and
+width match the archived same-seed v1 result exactly (max difference 0).
+This is a bounded numerical regression observation, not an A5 pass or a
+coverage claim. Grouped reuse and its dependent exact audit remain active.
+
+2026-09-11 16:02 CDT: A4 PASSED. Smoke job 382451_1 completed in
+1h07m45s and audit 382452 completed in 13s, both exit 0. The formal audit
+has 32/32 passing checks; gate package/workflow match the frozen version,
+and primary/sidecar MD5s were independently recomputed and verified.
+The C3/K4/rho=0/seed=1 A/B/target estimate, SE, truth and CI endpoints
+also equal the archived v1 case exactly. Both A5 comparisons remain pending;
+production is still held behind their successful audit dependencies.
+
+Correction to the immediately preceding A4 observation: the actual
+CSV contains 31 checks, all passing (31/31), not the 32-check count copied
+from an older run's prose. Gate and checksum verification is unchanged.
+
+Main negative-transfer independent task 382490_17501 also completed
+(1h07m28s, exit 0). Its 14 expected methods, C3/K4/rho=2.5/seed=1/treated_arm
+metadata, package and manifest fingerprints, finite values and positive SEs
+passed inspection. All 14 methods' core numerical fields match the archived
+v1 case exactly. Both independent A5 tasks are now complete; the two grouped
+runs and their exact-comparison audits are still required.
+
+2026-09-11 16:33 CDT: A5 negative-transfer PASSED. Grouped task
+382492_3501 completed in 1h36m19s and audit 382494 in 6s, both exit 0.
+All six rho task files contain the 14 expected methods with correct v2
+provenance; every core numeric field equals the archived same-seed v1
+case. The formal exact_mismatches.csv is empty. The gate's fixed design,
+worker topology, package/workflow/manifest hashes and both result MD5s
+were independently checked. Shared-shift grouped task 382491_501 is still
+running and its audit 382493 remains the final pre-production gate.
+
+2026-09-11 17:21 CDT: A5 shared shift PASSED. Grouped task 382491_501
+completed in 2h24m19s and audit 382493 in 3s, both exit 0. The exact audit
+compares 14 rows x 756 fields and reports zero mismatches. The gate's design,
+worker topology, package/workflow/manifest hashes and result MD5s were
+verified. All six rho outputs also match archived v1 core values for all
+14 methods on seed 1. All A1-A5 pre-production gates are now passed.
+
+All 12 initial ladder controllers (382610-382621) completed successfully
+and submitted n=1 production groups, their dependent QC jobs and n=5
+continuations. Job IDs are recorded in v2_production_n001_jobs.json and
+per-block ladder_jobs/*_n001/jobs.txt. Submission is not completion; the
+full 500-replicate objective remains active. No validation or v1 rows are
+imported into the new production raw directories.
+
+First production runtime check: 7 of the 12 n=1 group tasks RUNNING and
+5 scheduler-pending. Started logs carry the frozen package fingerprint;
+allocated CPUs match K2/K4/K8 = 20/40/32. The queued n=5 reference batch
+script (393520) was retrieved from Slurm and its SHA-256 matches the frozen
+run_v2_setting_ladder.sh, including stage-report and family-finalizer hooks.
+
+17:28 CDT follow-up: all 12 n=1 production group tasks are RUNNING;
+the earlier five queued tasks were admitted normally by the scheduler.
+
+Timestamp clarification: the all-12-RUNNING observation above was the
+subsequent follow-up around 17:32 CDT; 17:28 was an earlier admission time,
+not the time all tasks had started. This note is recorded at 2026-09-11 17:32:31 CDT.
+Per-job scheduler StartTime remains the authoritative timing source.
+
+Monitoring correction: the grouped launcher does not print package hashes
+to stdout. The earlier statement about hashes in started logs was based on
+a vacuous check that skipped empty stdout files. All 12 stderr startup lines
+have now been checked against their planned config/K/seed/rhos/nlambda/B,
+CPU/CV-thread/source-worker/positive-rho-worker settings. Submission records
+carry the frozen hash, and the installed library checksum was recomputed as
+ad510453... unchanged. Runtime package provenance is checked by the R driver
+before its startup message; row-level hashes will also be checked on output.
+The observer assertion did not affect or fail any production job.
+
+Production checkpoint observation at 2026-09-11T19:02:49.121887-05:00:
+- negative_transfer C1/K4: verified n=1, submitted target n=5 (group 413493, QC 413524).
+- negative_transfer C2/K4: verified n=1, submitted target n=1 (group 393504, QC 393509).
+- negative_transfer C3/K2: verified n=1, submitted target n=5 (group 413981, QC 413982).
+C1/K4 and C3/K2 n=1 diagnostics were inspected across all six rho cells: 84 setting/method rows each, zero implementation failures. Their n=5 submissions cover only seeds 2-5 and queue cumulative audits at n=5, followed by n=10 continuations.
+
+2026-09-11T19:06:09.403402-05:00: C1/K2 and C2/K4 negative-transfer n=1 checkpoints also verified across all six rho cells (84 method rows each, zero implementation failures). Four blocks now have verified n=1 and submitted target n=5. Submitted targets remain distinct from completed replication counts.
+
+2026-09-11T19:20:14.211823-05:00: C3/K4 negative-transfer n=1 production and its checkpoint passed. All six committed rho files (14 methods each) have valid provenance and core numerical fields identical to the separately executed validation group. All 84 method diagnostics report zero implementation failures. Its n=5 continuation remains scheduler-managed.
+
+2026-09-11T19:40:36.284201-05:00: C2/K2 negative-transfer n=1 production completed (393502_1501, exit 0, 2h09m11s) and QC 393514 passed (16s). All six rho outputs / 84 method rows verified; six negative-transfer K2/K4 blocks now have n=1 gates. The C2/K2 n=5 continuation remains scheduler-managed.
+
+2026-09-11T19:52:10.844690-05:00: shared-shift C1/K4 n=1 passed (group 393499_501: 2h25m09s; QC 393511: 20s; both exit 0). Six rho files x 14 methods match the validation group core numbers exactly. All 84 method diagnostics show zero implementation failures. The rho=0 production rows also match negative-transfer C1/K4 on the same seed for all 14 methods (max core difference 0), verifying the common-baseline contract at this setting.
+
+2026-09-11T20:24:46.457947-05:00: first post-n=1 repeat verified: negative-transfer C1/K2 seed 5 (414994_5, exit 0, 1h16m00s). Six rho outputs x 14 methods are committed with correct frozen provenance, finite estimates and positive SEs. Seeds 2-4 in this batch remain running and the cumulative n=5 audit has not run; verified progress therefore remains n=1 for this block. Completion order is not used to select or summarize a partial statistical sample.
+
+2026-09-11T20:43:03.992911-05:00: first cumulative n=5 production checkpoint PASSED, negative-transfer C1/K2 (QC 414995, exit 0, 24s). Seeds 1-5 / 30 rho task files / 420 method rows were verified with frozen provenance and finite positive-SE results. All 84 diagnostics contain five unique replicates and no implementation failures. The n=10 continuation 414996 is scheduler-managed; no statistical tuning is performed at n=5.
+
+2026-09-11T20:45:38.990620-05:00: C1/K2 n=10 continuation 414996 completed successfully (10s). It submitted only seeds 6-10 as group array 432279, cumulative QC 432280, and the QC-dependent n=25 continuation 432281. Verified progress remains n=5 until the new audit passes.
+
+2026-09-11T20:47:36.980264-05:00: negative-transfer C1/K4 cumulative n=5 gate verified against frozen fingerprints. All six rho cells / 84 method diagnostics contain five unique replicates and no implementation failures. n=10 continuation remains governed by the passed audit.
+
+2026-09-11T20:50:20.823865-05:00: negative-transfer C2/K4 cumulative n=5 diagnostics verified (six rho cells, 84 method rows, five unique replicates, zero implementation failures). Gate fingerprints were verified by the progress observer. The next n=10 batch remains scheduler-managed.
+
+2026-09-11T20:50:20.886456-05:00: negative-transfer C3/K2 cumulative n=5 diagnostics verified (six rho cells, 84 method rows, five unique replicates, zero implementation failures). Gate fingerprints were verified by the progress observer. The next n=10 batch remains scheduler-managed.
+
+2026-09-11T20:52:15.378800-05:00: C2/K4 n=10 batch submitted (seeds 6-10 only): group 432873, cumulative QC 432874, QC-dependent n=25 continuation 432877. Verified progress remains n=5.
+
+2026-09-11T20:52:15.390704-05:00: C3/K2 n=10 batch submitted (seeds 6-10 only): group 432872, cumulative QC 432875, QC-dependent n=25 continuation 432876. Verified progress remains n=5.
+
+2026-09-11T20:59:23.330632-05:00: shared-shift C1/K2 n=1 passed (group 393528_1: 3h27m36s; QC 393531: 24s; exit 0). Six rho outputs / 84 method diagnostics verified with frozen provenance, finite positive-SE results, and zero implementation failures. The rho=0 core numbers match the negative-transfer family on the same seed exactly for all 14 methods. n=5 continuation 393533 remains scheduler-managed.
+
+2026-09-11T21:01:54.089012-05:00: shared-shift C1/K2 n=5 continuation 393533 completed successfully (11s): seeds 2-5 submitted as group 433833, cumulative QC 433834, and QC-dependent n=10 continuation 433835. Verified progress remains n=1 for this setting.
+
+2026-09-11T21:12:18.394404-05:00: negative-transfer C3/K4 cumulative n=5 gate and all 84 method diagnostics verified (five unique replicates; zero implementation failures; frozen provenance). Controller 419054 submitted only seeds 6-10 as group 435613, QC 435614, followed by the QC-dependent n=25 continuation 435615.
+
+2026-09-11T21:45:42.643781-05:00: negative-transfer C2/K8 n=1 passed (group 393496_2501: 4h20m32s; QC 393506: 31s; exit 0). All six rho files / 84 method diagnostics verified with frozen provenance and no implementation failures. Controller 393521 submitted only seeds 2-5 as group 438328, cumulative QC 438329, and n=10 continuation 438330.
+
+2026-09-11T21:54:20.333958-05:00: negative-transfer C1/K8 n=1 passed (group 393501_1001: 4h28m40s; QC 393515: 38s; exit 0). Six rho files and all 84 method diagnostics verified with frozen provenance and zero implementation failures. Controller 393518 submitted only seeds 2-5 as group 439352, cumulative QC 439353, and n=10 continuation 439354.
+
+2026-09-11T22:28:01.512538-05:00: negative-transfer C2/K2 cumulative n=5 diagnostics verified (six rho cells, 84 methods, five unique replicates, zero implementation failures; gate fingerprints checked by the progress observer). Controller 422541 submitted only seeds 6-10 as group 442187, QC 442188, and the QC-dependent n=25 continuation 442189. All six negative-transfer K2/K4 blocks now have verified n=5 gates.
+
+2026-09-11T22:53:28.158146-05:00: first cumulative n=10 production checkpoint PASSED, negative-transfer C1/K4 (QC 432641, exit 0, 46s). Frozen gate fingerprints and all 84 method diagnostics were verified: ten unique replicates and zero implementation failures. The n=25 continuation 432642 remains scheduler-managed; no statistical tuning or stopping is introduced.
+
+2026-09-11T22:56:25.603326-05:00: negative-transfer C1/K4 n=25 continuation 432642 succeeded (9s), submitting only seeds 11-25 as group 445093, QC 445094, then n=50 continuation 445095. Shared-shift C1/K4 cumulative n=5 QC 423494 also passed (21s); all 84 method diagnostics were checked for five unique replicates and zero implementation failures.
+
+2026-09-11T22:58:38.172990-05:00: shared-shift C1/K4 n=10 continuation submitted only seeds 6-10 as group 445297, cumulative QC 445299, and QC-dependent n=25 continuation 445300. Verified progress remains n=5 for this setting.
+
+2026-09-11T23:08:07.437892-05:00: negative-transfer C3/K4 cumulative n=10 audit 435614 passed (33s, exit 0). All six rho cells / 84 method diagnostics verified with ten unique replicates and zero implementation failures. The n=25 continuation 435615 remains scheduler-managed.
+
+2026-09-11T23:11:12.654822-05:00: negative-transfer C2/K4 n=10 audit 432874 passed (37s, exit 0), with all 84 method diagnostics verified at ten unique replicates and zero implementation failures. C3/K4 n=25 controller 435615 succeeded (10s): only seeds 11-25 submitted as group 446637, QC 446638, then n=50 continuation 446640.
+
+2026-09-11T23:12:22.617427-05:00: C2/K4 n=25 continuation 432877 succeeded (10s), submitting only seeds 11-25 as group 447092, QC 447093, and n=50 continuation 447094. All three negative-transfer K4 blocks now have verified n=10 gates and submitted targets n=25.
+
+2026-09-11T23:14:32.005822-05:00: negative-transfer C1/K2 cumulative n=10 diagnostics verified (six rho cells, 84 methods, ten unique replicates, zero implementation failures). The n=25 continuation 432281 remains scheduler-managed.
+
+2026-09-11T23:17:04.969925-05:00: C1/K2 n=25 continuation submitted only seeds 11-25 as group 448135, cumulative QC 448136, and n=50 continuation 448137. Verified progress remains n=10.
+
+2026-09-11T23:38:28.978841-05:00: negative-transfer C3/K2 cumulative n=10 QC 432875 passed (24s, exit 0). Frozen gate fingerprints and all six rho cells / 84 method diagnostics were verified: ten unique replicates and zero implementation failures. Controller 432876 succeeded (5s), submitting only seeds 11-25 as group 449249, cumulative QC 449250, and n=50 continuation 449265. All fifteen new group tasks were observed RUNNING. Five blocks now have verified n=10 and submitted targets n=25; the full n=500 objective remains incomplete.
+
+2026-09-11T23:45:54.117886-05:00: negative-transfer C3/K8 n=1 passed (group 393526_4001: 6h12m56s; QC 393529: 22s; both exit 0). Six committed rho task files / 84 method rows were verified against frozen provenance and manifest mapping, with finite core results and positive SEs. All 84 diagnostics have one unique replicate and zero implementation failures. Controller 393532 succeeded (7s), submitting only seeds 2-5 as group 450677, cumulative QC 450678, and n=10 continuation 450679; all four tasks were observed RUNNING. All nine negative-transfer settings now have n=1 gates. Shared-shift C1/K8 remains live; its batch CPU accounting increased across two observations, so no restart was warranted. An observer initially used the wrong group-manifest filename, then successfully repeated the read-only check using manifest_main_rho_groups.csv; production was unaffected.
+
+2026-09-11T23:49:25.715195-05:00: shared-shift C1/K8 n=1 passed (group 393497_1001: 6h22m09s; QC 393510: 29s; both exit 0). Its completion followed the earlier live CPU-accounting observations and supersedes the preceding entry's live-status statement. All six committed rho outputs / 84 method diagnostics were verified with frozen provenance, finite core results, positive SEs and zero implementation failures. C1/K8 rho=0 seed=1 matches negative-transfer exactly for all 14 methods x 7 core fields (estimate, se, truth, bias, coverage, ci_lower, ci_upper). This comparison resolves task IDs separately from each manifest: negative-transfer 18001 versus shared-shift 6001. An initial observer lookup incorrectly assumed task IDs matched across families, comparing different config/K settings; the corrected manifest-based comparison has zero mismatches and no production fault. Controller 393525 succeeded (9s), submitting only seeds 2-5 as group 450781, QC 450782 and n=10 continuation 450784; the array was observed PENDING. All twelve production settings now have verified n=1 gates.
+
+2026-09-12T00:12:28.247568-05:00: first completed repeats inspected from an n=25 production batch: negative-transfer C1/K4 seeds 17, 18, 23 (jobs 445093_517, _518, _523; all exit 0). Their 18 committed rho files / 252 method rows passed manifest mapping, frozen fingerprint, method completeness, finite core result, positive SE and logical coverage-flag checks. The observer initially attempted numeric conversion of R logical coverage strings and then correctly checked TRUE/FALSE; production data were unchanged. This is an output integrity check only: cumulative verified progress stays n=10 until the full n=25 QC passes, and no partial statistical sample is summarized.
+
+2026-09-12T00:21:40.675221-05:00: shared-shift C1/K2 cumulative n=5 QC 433834 passed (17s, exit 0). The gate and all six rho cells / 84 method diagnostics were verified against frozen provenance: five unique replicates and zero implementation failures. Its n=10 continuation 433835 was observed PENDING with no remaining dependency; no duplicate submission or restart is warranted. All eight K2/K4 settings across both families now have at least n=5 gates; five have n=10 gates.
+
+2026-09-12T00:24:29.671924-05:00: shared-shift C1/K2 n=10 continuation 433835 succeeded (10s). Its frozen submission record covers only seeds 6-10 as group 454933, cumulative QC 454988, and n=25 continuation 454990. Scheduler dependencies were directly verified: QC waits afterok for the full array and the continuation waits afterok for QC. All five new tasks were observed PENDING; verified cumulative progress remains n=5.
+
+2026-09-12T00:45:25.512964-05:00: negative-transfer C2/K2 cumulative n=10 QC 442188 passed (32s, exit 0). Frozen gate fingerprints and all six rho cells / 84 method diagnostics were verified: ten unique replicates and zero implementation failures. All six negative-transfer K2/K4 settings now have verified n=10 gates. The n=25 continuation 442189 was observed PENDING; no n=25 completion is inferred.
+
+2026-09-12T00:47:50.247815-05:00: first cumulative n=25 production checkpoint PASSED, negative-transfer C1/K4 (QC 445094: 31s, exit 0). Frozen gate fingerprints and all six rho cells / 84 method diagnostics were verified: 25 unique replicates and zero implementation failures. Its n=50 continuation 445095 was observed PENDING. Separately, C2/K2 n=25 continuation 442189 succeeded (8s), submitting only seeds 11-25 as group 456700, cumulative QC 456701 and n=50 continuation 456703; the new array was observed PENDING. No statistical tuning is introduced.
+
+2026-09-12T00:54:31.145348-05:00: first n=50 production continuation 445095 succeeded (13s): negative-transfer C1/K4 seeds 26-50 submitted as group 456982, cumulative QC 456983, stage report 456984, and n=100 continuation 457037. Frozen submission fingerprints and the exact new seed range were checked. Scheduler dependencies were directly verified: QC waits for the full array; both report and continuation wait afterok for QC. All 25 tasks were observed PENDING for Priority. The observer briefly could not see the new submission directory after job completion; a fresh directory listing and direct reads recovered the complete record and logs, with no resubmission. This visibility delay did not affect production. C2/K2 n=25 array 456700 was also observed with all 15 tasks RUNNING at 00:51:54 CDT. Verified C1/K4 progress remains n=25; no n=50 report has yet been generated.
+
+2026-09-12T01:04:46.769262-05:00: negative-transfer C3/K4 cumulative n=25 QC 446638 passed (46s, exit 0). Frozen gate fingerprints and all six rho cells / 84 method diagnostics were verified: 25 unique replicates and zero implementation failures. C1/K4 and C3/K4 now have verified n=25 gates. The C3/K4 n=50 continuation 446640 remains scheduler-managed; no n=50 result or report completion is inferred.
+
+2026-09-12T01:06:51.512048-05:00: C3/K4 n=50 continuation 446640 succeeded (5s), submitting only seeds 26-50 as group 458859, cumulative QC 458860, stage report 458862, and n=100 continuation 458863. Frozen submission fingerprints and seed range were verified. Scheduler dependencies were directly checked: QC waits afterok for the full array; the report and continuation each wait afterok for QC. All 25 new tasks were observed PENDING. Two blocks now have submitted n=50 targets, while verified progress remains n=25 for both.
+
+2026-09-12T01:30:01.311651-05:00: negative-transfer C1/K2 cumulative n=25 QC 448136 passed (24s, exit 0). Its gate and all six rho cells / 84 method diagnostics were verified for 25 unique replicates, the frozen 14-method set, fixed fingerprints and zero implementation failures. These existing read-only observer checks were consolidated in /tmp/roce_v2_audit_checkpoint.py, which also pins each family's manifest hash; the frozen production code was unchanged. Controller 448137 succeeded (9s), submitting only seeds 26-50 as group 460430, cumulative QC 460431, stage report 460432 and n=100 continuation 460433. Frozen submission metadata and all scheduler dependencies were checked; all 25 new tasks were observed RUNNING. Three blocks now have verified n=25 and submitted n=50 targets.
+
+2026-09-12T01:33:11.485474-05:00: negative-transfer C3/K2 cumulative n=25 QC 449250 passed (20s, exit 0). The read-only checkpoint observer verified the frozen package/workflow/manifest values, six distinct rho cells, complete 14-method sets, 25 unique replicates and zero implementation failures across all 84 diagnostic rows. Four blocks now have verified n=25 gates. Its n=50 continuation 449265 was observed PENDING; production parameters remain frozen.
+
+2026-09-12T01:36:00.986664-05:00: C3/K2 n=50 continuation 449265 succeeded (5s), submitting only seeds 26-50 as group 460858, cumulative QC 460859, stage report 460860, and n=100 continuation 460861. Frozen metadata, seed range and scheduler dependencies were verified; all 25 tasks were observed RUNNING.
+
+2026-09-12T01:36:00.986664-05:00: negative-transfer C2/K4 cumulative n=25 QC 447093 passed (30s, exit 0). The checkpoint observer verified six rho cells / 84 method diagnostics, 25 unique replicates, complete method sets, fixed fingerprints and zero implementation failures. Controller 447094 succeeded (4s), submitting seeds 26-50 as group 460905, QC 460907, report 460908 and n=100 continuation 460909. All dependencies and frozen submission metadata were verified; all 25 tasks were observed PENDING for Resources. Five blocks now have verified n=25 gates and submitted n=50 targets.
+
+2026-09-12T01:46:57.317857-05:00: first shared-shift cumulative n=10 checkpoint passed, C1/K4 (QC 445299: 22s, exit 0). The read-only observer verified its frozen family manifest/package/workflow values, six distinct rho cells, complete 14-method sets, ten unique replicates and zero implementation failures across all 84 diagnostic rows. Its n=25 continuation 445300 remains scheduler-managed. No statistical tuning or stopping is introduced.
+
+2026-09-12T01:50:21.057141-05:00: shared-shift C1/K4 n=25 continuation 445300 succeeded (7s), submitting only seeds 11-25 as group 462250, cumulative QC 462251 and n=50 continuation 462253. Frozen submission metadata and exact seed range were verified. Scheduler dependencies were directly checked: QC waits afterok for the full array, and n=50 continuation waits afterok for QC. All 15 tasks were observed PENDING. Verified shared-shift C1/K4 progress remains n=10.
+
+2026-09-12T02:23:45.461025-05:00: first K=8 cumulative n=5 production checkpoint passed, negative-transfer C1/K8 (QC 439353: 43s, exit 0). The checkpoint observer verified frozen manifest/package/workflow values, all six distinct rho cells, the complete 14-method set, five unique replicates and zero implementation failures across 84 diagnostic rows. Its n=10 continuation 439354 was observed PENDING. Statistical conclusions and tuning remain deferred to the pre-specified reporting stages.
+
+2026-09-12T02:27:44.182727-05:00: clarification to the preceding K=8 checkpoint note: the n=50/100/500 reporting stages are for statistical review. No interim tuning or statistics-based stopping is permitted; A and all scientific parameters stay fixed throughout the full 500-replicate run.
+
+2026-09-12T02:27:44.182727-05:00: negative-transfer C2/K8 cumulative n=5 QC 438329 passed (22s, exit 0). Its gate and all six rho cells / 84 method diagnostics were verified against frozen values, with five unique replicates and zero implementation failures. The n=10 continuation 438330 was observed PENDING. C1/K8 n=10 controller 439354 succeeded (11s), submitting only seeds 6-10 as group 465299, QC 465300 and n=25 continuation 465301. Frozen metadata, seed range and both scheduler dependencies were verified; all five new tasks were observed PENDING.
+
+2026-09-12T02:33:28.175187-05:00: C2/K8 n=10 controller 438330 succeeded (10s), submitting only seeds 6-10 as group 465353, cumulative QC 465355 and n=25 continuation 465356. Frozen metadata, seed range and scheduler dependencies were verified. Both C1/K8 group 465299 and C2/K8 group 465353 were observed with all five tasks RUNNING. Their verified cumulative progress remains n=5.
+
+2026-09-12T02:33:28.175187-05:00: native PDF-rendering readiness check passed using /usr/bin/gs (Ghostscript 9.27) and the existing synthetic reporter fixture. Its first PDF page rendered to a valid 990 x 715 PNG at /tmp/roce_v2_synthetic_report_preview.png; the source PDF SHA256 remained ba8faa51d432c6a585c8073546fbe1eada7fdf4f82802b4c531b7ec7b30ba413 before and after. This is a rendering software check only, with synthetic rows excluded from production. Future real report PDFs can be rendered directly for visual inspection without regenerating the published PDF.
+
+2026-09-12T03:40:53.263318-05:00: production incident: C2/K4 seed 26, group 460905_2026, failed at 03:07:29 CDT (exit 1; 1h31m46s). Positive-rho workers for rho=2 and 2.5 detected changed target outcomes at a non-refitted site. No group commit was published. Pending QC 460907, report 460908 and continuation 460909 were placed on user hold and verified JobHeldUser. Other blocks remain active. Data-only probe 470610 stopped before generation due a missing diagnostic fingerprint environment variable; the corrected wrapper was submitted as 471806. Frozen package/source/scientific parameters were unchanged. Exact failure details and log hashes are in v2_incidents/C2_K4_seed026.json. The observer now reports this exact acknowledged historical failure without masking different or new failures; remove its acknowledgement before any original-task requeue.
+
+2026-09-12T04:10:40.271177-05:00: C2/K4 seed-26 data-only probe 471806 succeeded (31s) and reproduced the exact guard failures at rho=2 and 2.5. One s1 treated-outcome probability becomes exactly 1 (row 1657); rbinom consumes one fewer uniform, so target Y0 changes in 433 rows and observed target Y in 256 rows despite unchanged target probabilities. No DGP or estimator parameter was changed. Canonical independent recovery array 472795 was submitted for primary tasks 12026,12526,13026,13526,14026,14526 using the frozen executor, 40 CPUs, 16G, five CV threads and an isolated output directory; all six were observed RUNNING. Full n=50 isolated validation job 474075 is queued afterok for that array. The old held QC/report/continuation jobs 460907/460908/460909 were cancelled with scheduler Reason=Dependency at 03:47:24 CDT, so the recovered branch requires replacement downstream jobs. These exact known historical cancellations are acknowledged by the observer; new failures, including recovery jobs, still alert.
+
+2026-09-12T05:48:25.778827-05:00: five negative-transfer n=50 stage reports (C1/K2, C1/K4, C2/K4, C3/K2, C3/K4) now have independent core-statistic/paired-comparison audits and PDF visual reviews. Each numerical audit checked 300 inputs and 4,200 method rows; maximum absolute recomputation differences were at most 5.33e-15. Statistical review signals were retained. Audit records and report links are in production_20260911_v2/stage_report_audits/README.md.
+
+2026-09-12T05:48:25.778827-05:00: C2/K4 seed-26 recovery completed: independent array 472795 (all six tasks exit 0), isolated full-stage validation 474075 (39s), exact-byte publication 478758 (8s), and dependency-chain rebuild 478759 (7s). Published CSV/commit hashes and the preserved original/revised ledger were verified. Replacement production QC 480957 passed (42s), report 480958 completed (22s), and continuation 480959 succeeded (10s), submitting n=100 group 481663, QC 481664, report 481665 and n=200 continuation 481666. Formal n=50 gate and report numerical/visual audits passed. Frozen package, DGP and A parameters were unchanged.
+
+2026-09-12T05:48:25.778827-05:00: C2/K2 seed 26 independently hit the same target-outcome reuse guard (469878_1526, exit 1, 1h24m53s). Probe 480603 reproduced an endpoint at rho=2/2.5 and changed target Y0/observed Y counts 444/269 with unchanged target probabilities. Recovery array 480480 uses six frozen independent fits with the original K2 resource profile. Full n=50 validation 481661, exact-byte publication 483303 and resumption 483304 are queued in order. The publication/resumption program bytes reuse the tested K4 implementation (12 atomic-publication and eight mocked-resumption cases); case-specific data must still pass the frozen full checker.
+
+2026-09-12T06:03:34.643616-05:00: completed independent checkpoint catch-up checks for negative-transfer C3/K8 n=5 and C2/K2 n=25, and shared-shift C1/K2 n=10 and C1/K4 n=25; all six rho cells / 84 method diagnostics per checkpoint have the expected unique seed count and zero implementation failures. C1/K4 and C3/K4 n=100 reports now passed independent numeric and PDF visual audits: each used 600 inputs / 8,400 method rows, with maximum absolute recomputation discrepancy 4.89e-15. Statistical review signals remain recorded without tuning. Their n=200 submissions contain only seeds 101-200 (C1/K4 group 483019, QC 483020, n=300 continuation 483021; C3/K4 group 483028, QC 483029, continuation 483030), and dependencies were checked directly. The stage-report audit index now contains five n=50 and two n=100 reports.
+
+2026-09-12T06:20:21.619834-05:00: submitted read-only C2 rho-reuse preflight for all planned seeds 1-500 at K=2,4,8 as array 487252 (three tasks; 1 CPU, 8G, 2h each). The unchanged scanner passed its smoke test 486782 (37s): seed 25 was valid, while seed 26 failed only at rho=2 and 2.5 as expected. Scanner script SHA256 is e13a505bdeeda448ec81b5b228df0b2a0c56027a427750263f47da43edea7ace. It checks generated data, RNG state and folds under the frozen library, saves per-seed diagnostic records, and writes no estimator fits or production results. Its purpose is to identify future unsafe reuse cases while retaining A and all scientific parameters.
+
+2026-09-12T06:28:20.575889-05:00: C1/K2 cumulative n=100 QC 473032 passed (47s), report 473033 completed (29s), and n=200 continuation 473034 succeeded (13s). Independent checkpoint, core-statistic, paired-comparison and PDF visual audits passed for 600 input files / 8,400 method rows; maximum absolute numerical discrepancy 4.89e-15. The n=200 submission covers only seeds 101-200 as group 488191, QC 488192 and n=300 continuation 488193; frozen fingerprints and dependencies were checked. Eight stage reports are now independently audited.
+
+2026-09-12T06:34:59.034797-05:00: C2/K2 seed-26 independent recovery array 480480 completed all six fits successfully (maximum 1h10m45s). Isolated full n=50 validation 481661 passed (27s), exact-byte publication 483303 completed (6s), and resumption 483304 completed (6s). Published six CSV hashes and the commit marker were verified, as were the original ledger backup and replacement ledger. New production QC/report/n=100 continuation are 488727/488728/488729. They were observed PENDING; resolution remains conditional on the formal production QC. No scientific parameters changed.
+
+2026-09-12T06:40:17.208258-05:00: C2/K2 seed-26 recovery is verified resolved. Full isolated n=50 validation 481661 passed (27s), exact-byte publication 483303 completed (6s), and resumption 483304 completed (6s). All six published CSVs, the commit marker, original ledger backup and replacement ledger hashes were verified. Formal replacement QC 488727 passed (59s), report 488728 completed (22s), and continuation 488729 succeeded (10s), submitting group 489114 for seeds 51-100, QC 489115, report 489116 and n=200 continuation 489137; dependencies were checked. The recovered n=50 report passed independent numerical and PDF visual audits (300 inputs, 4,200 rows, max discrepancy 4.89e-15). Both known incidents are now resolved with unchanged frozen DGP/package/A parameters; nine stage reports are audited.
+
+2026-09-12T07:14:10.191320-05:00: data-only preflight identified further planned C2 seeds with the same target-outcome RNG guard. Staged canonical independent arrays 491348/491349 cover K4 seeds 105/160, and 491350/491351 cover K8 seeds 26/105. All use the frozen independent executor, original task IDs and per-K resources. C2/K4 n=200 continuation 481666 was placed on user hold; release requires validated publication of both K4 bundles. Its n=100 computation/reporting continues. Per-case validator smoke passed on the genuine recovered K4 seed-26 files: six original IDs, 84 method diagnostics, one unique replication per rho and zero implementation failures. No new proactive outputs have yet been published.
+
+2026-09-12T07:25:46.715628-05:00: C1/K8 n=10 and shared-shift C1/K2 n=25 independent checkpoint audits passed (six rho, 84 methods, expected unique seeds, zero implementation failures). C3/K2 n=100 report passed independent numerical and PDF visual review: 600 files, 8,400 method rows, 9,228 numerical comparisons, max discrepancy 4.89e-15. Ten stage reports are now audited.
+
+2026-09-12T07:25:46.715628-05:00: proactive canonical workflow sealed at tooling SHA256 71ab6564ffa12e3f8a9eb6fc2a04b42dff4136befb1f8d577b639cf7568be805 after 20 passing isolated tests and Python/shell syntax checks. A submission-helper path syntax error was caught before any follow-up submission; the unused manifest revision and test records were preserved, and existing independent arrays were not resubmitted. Seven planned cases now have independent -> per-case validation -> exact-byte publication dependencies (see proactive_canonical_v2/registry.json). Release job 493168 waits afterok for publications 493129 and 493131, verifies both bundles, then releases only held controller 481666 while preserving its original QC dependency. Full cumulative ladder QC remains required. No source, library, scientific parameters or seed IDs changed.
+
+2026-09-12T07:29:16.610666-05:00: C2/K8 cumulative n=10 independent checkpoint audit passed (six rho, 84 method diagnostics, ten unique seeds, zero implementation failures). All 15 proactive validation/publication/release dependencies were directly verified; whole-array dependencies use Slurm’s _* display. Read-only observer formatting/key errors were corrected without changing jobs. The five original production ladder/reporting script hashes and the new sealed canonical tooling manifest still match their recorded values.
+
+2026-09-12T07:34:14.849592-05:00: continued preflight confirmed C2/K4 seed 380 fails the target-outcome reuse guard at rho=1/1.5/2/2.5, with 253 changed target outcomes and unchanged truth/folds. Original group 2380, primary task IDs 12380/12880/13380/13880/14380/14880, was staged as canonical independent array 494130, followed by validation 494131 and publication 494133 using unchanged sealed tooling. No production publication or completed-replication claim is inferred. Eight proactive cases are now registered.
+
+2026-09-12T07:37:01.706840-05:00: C2/K2 full planned-seed data-only preflight 487252_2 completed successfully (1h15m37s). Independent record audit verified all 500 atomic seed records / 2,500 rho pairs, exact agreement with final CSVs, frozen metadata and manifest mapping. Only seeds 26 and 282 fail reuse (four rho pairs total); seed 26 is already recovered and seed 282 is staged canonically. Record hashes and gate are in rho_preflight_v2/full_audits/K2_s1_500. This is not a 500-replication estimator checkpoint.
+
+2026-09-12T07:38:41.334211-05:00: C2/K4 full planned-seed data-only preflight 487252_4 completed successfully (1h17m42s). Independent record audit verified 500 atomic seed records / 2,500 rho pairs, exact final CSV agreement, frozen metadata and manifest mapping. Invalid seeds are 26/105/160/296/380 (21 positive-rho pairs). Seed 26 is already recovered; all four others have canonical independent validation/publication chains. K8 preflight remains active, and the full estimator experiment remains incomplete. New seed-380 array 494130 was observed RUNNING; validation 494131 depends afterok on its entire array and publication 494133 depends afterok on validation.
+
+2026-09-12T07:45:22.948719-05:00: C2/K4 cumulative n=100 completed: all 50 new group tasks 481663 exited 0, QC 481664 passed (43s), report 481665 completed (31s). Independent checkpoint, core-statistic, paired-comparison and PDF visual audits passed for 600 inputs / 8,400 method rows / 9,228 numeric comparisons (max discrepancy 4.89e-15). Seed-26 canonical recovery context is preserved in the n=100 audit notes. Eleven stage reports are now audited. Continuation 481666 remains deliberately held until validated publication of seeds 105 and 160; release job 493168 is still pending. A read-only scheduler query hit an automatic-review timeout, then the explicitly permitted single retry succeeded; no production jobs changed.
+
+2026-09-12T07:53:07.318952-05:00: C2/K8 full preflight 487252_8 completed successfully (1h32m06s). Its 500 atomic records / 2,500 pairs passed independent exact-CSV, metadata, group-manifest and gate audits. Final invalid seeds are 26/105/160 (10 pairs), all already assigned canonical chains. All three preflight audits now cover 1,500 records / 7,500 pairs; ten invalid groups / 35 pairs are reconciled in rho_preflight_v2/case_reconciliation.json. The two completed recoveries were rechecked against published hashes and cumulative QC, and all eight pending cases match original task IDs, evidence hashes and registered validation/publication chains. No new case remains unhandled. This does not complete the estimator experiment.
+
+2026-09-12T08:03:10.253627-05:00: first proactive independent output C2/K4 seed 105, rho=0, task 12105 completed as 491348_12105 (52m27s, exit 0). Its 14 rows passed original manifest identity, frozen fingerprints, independent scheduler metadata and finite positive-SE checks; full six-rho validation/publication remain pending. Separately, pending C2/K8 n=50 continuation 492860 was given an additional afterok dependency on seed-26 publication 493133 while preserving n=25 QC 492859. Actual before/after scheduler state was verified and saved. Source inspection confirms the unchanged ladder clears ROCE_BATCH_START and the frozen submitter dynamically starts at the first uncommitted seed, retaining cumulative checkpoint boundaries. No source, library, scientific parameters or seed IDs changed.
+
+2026-09-12T08:17:02.959491-05:00: shared-shift C1/K8 cumulative n=5 QC 450782 passed (18s, exit 0), after the final grouped task 450781_1002 completed successfully (8h23m04s). The independent checkpoint observer verified frozen family manifest/package/workflow values, six rho cells, the complete 14-method set, five unique replications per cell and zero implementation failures across 84 diagnostics. n=10 continuation 450784 was observed pending; no n=10 completion is inferred. All twelve blocks now have verified n=5 or higher checkpoints.
+
+2026-09-12T08:24:48.455445-05:00: shared-shift C1/K8 n=10 controller 450784 completed (4s), submitting only seeds 6-10 as group 497286, cumulative QC 497287, and n=25 continuation 497288. Both afterok dependencies were directly verified; all five array tasks were observed RUNNING. The submission audit is stored in its n010 ledger directory. Verified progress remains n=5.
+
+2026-09-12T08:24:48.455445-05:00: first proactive canonical publication verified: C2/K4 seed 105, all six independent tasks in array 491348 completed successfully (max 1h13m49s), per-case validation 493128 passed (6s), publication 493129 completed (3s). The frozen publisher check-only path reverified six source/production CSV byte hashes, the logical group-2105 commit, case plan, original task mapping, validation gate and original independent scheduler provenance. All 84 per-case diagnostics have one unique replicate and zero implementation failures. Cumulative n=200 QC remains pending; release 493168 and controller 481666 still wait for seed 160.
+
+2026-09-12T08:28:05.232421-05:00: C2/K4 seed 160 canonical publication verified: independent array 491349 completed all six tasks (max 1h19m27s), validation 493130 passed (6s), publication 493131 completed (4s). All 84 per-case diagnostics have one unique replication and zero implementation failures. The frozen publisher check-only path and independent receipt-hash checks verified all six original/production CSVs and group-2160 commit. Both seed 105 and 160 are now published and verified; release job 493168 is pending, and cumulative n=200 QC remains required.
+
+2026-09-12T08:31:33.997005-05:00: C2/K4 n=200 hold resolved. Release job 493168 completed successfully (6s); its receipt was checked against the sealed plan and both canonical publication receipts. A fresh scontrol query verified controller 481666 is COMPLETED with Reason=None, no longer JobHeldUser. Original n=100 QC had already completed; n=200 computation/QC remain separate pending work. The registry retains the resolved hold and the active auxiliary list now tracks the six remaining canonical cases.
+
+2026-09-12T08:36:28.744088-05:00: C2/K4 n=200 continuation 481666 completed (8s), submitting only seeds 101-200 as group 498743, QC 498744 and n=300 continuation 498745. Batch range, frozen fingerprints and dependencies were verified. Actual grouped task 498743_2105 completed by the normal already-committed skip path (7s); the six published canonical CSVs and commit remained byte-identical. Pending continuation 498745 was given seed-296 publication 493139 as an additional afterok prerequisite while retaining QC 498744.
+
+2026-09-12T08:36:28.744088-05:00: C2/K2 seed 282 independent array 493045 completed all six fits (max 1h07m05s); validation 493136 passed (6s) and publication 493137 completed (3s). All 84 per-case diagnostics are implementation-valid, and the frozen publisher check-only path plus receipt checks reverified original/production bytes, IDs and provenance. Three proactive cases are now published; five remain pending. Future cumulative n=300 QC is still required for seed 282.
+
+2026-09-12T08:45:11.721800-05:00: first shared-shift n=50 report audited, C1/K4. QC 477582 passed (33s), report 477583 completed (22s), n=100 continuation 477584 completed (4s). Independent checkpoint, core-statistic, paired-comparison and visual audits passed for 300 files / 4,200 method rows / 5,028 numeric comparisons (max discrepancy 4.89e-15). A coverage at rho=1.5/2/2.5 is 0.76/0.76/0.80 with MCSE about 0.060/0.060/0.057; these statistical deficits are retained without changing A, settings or the fixed 500-replicate design. The combined audit index now explicitly labels families and contains twelve audited reports.
+
+2026-09-12T08:47:10.828988-05:00: shared-shift C1/K4 n=100 submission verified: group 500081 covers only seeds 51-100, cumulative QC 500082 depends afterok on the array, and report 500083 plus n=200 continuation 500084 each depend afterok on QC. Frozen job-ledger fingerprints and all scheduler dependencies match the intended ladder. Verified progress remains n=50.
+
+2026-09-12T09:08:16.973667-05:00: C2/K2 cumulative n=100 QC 489115 passed (29s), report 489116 completed (29s), and n=200 continuation 489137 completed (6s). Independent checkpoint, core-statistic, paired-comparison and PDF visual audits passed for 600 inputs / 8,400 method rows / 9,228 numeric comparisons (max discrepancy 4.89e-15). Seed-26 recovery context and statistical warnings are retained. Thirteen stage reports are now audited; all six negative-transfer K2/K4 blocks have verified n=100 gates.
+
+2026-09-12T09:08:16.973667-05:00: C2/K4 seed 296 independent array 493046 completed all six fits (max 1h35m08s), validation 493138 passed (8s), and publication 493139 completed (3s). All 84 per-case diagnostics are implementation-valid. The frozen publisher check-only path reverified source/production bytes, original IDs, frozen provenance, validation inventory and group-2296 commit. Four proactive cases are now published; four remain pending. The publication prerequisite of n=300 controller 498745 is satisfied, without replacing its n=200 QC prerequisite.
+
+2026-09-12T09:09:24.830713-05:00: C2/K2 n=200 submission verified: only seeds 101-200 in group 502045, cumulative QC 502046 afterok for the array, and n=300 continuation 502047 afterok for QC. Original seed282 canonical publication and all production hashes were rechecked for that future interval; no new publication dependency is needed because it is already complete. Separately, C2/K4 n=300 controller 498745 still has its n=200 QC 498744 prerequisite after seed296 publication completed. No dependency was weakened.
+
+2026-09-12T09:12:44.422494-05:00: C2/K4 seed 380 independent array 494130 completed all six fits (max 1h34m08s), validation 494131 passed (8s), and publication 494133 completed (4s). All 84 per-case diagnostics are implementation-valid. The frozen publisher check-only path and receipt hashes verified exact source/production CSV bytes, IDs, provenance and group-2380 commit. Five proactive cases are now published; together with the two earlier seed-26 recoveries, all preflight-confirmed K2/K4 exceptions have canonical results. Only the three K8 cases remain pending. This does not replace future cumulative n=200/300/400/500 QC.
+
+2026-09-12T09:51:11.955700-05:00: first cumulative n=200 checkpoint verified, negative-transfer C1/K4. QC 483020 completed successfully (1m08s, exit 0). The independent checkpoint observer verified frozen manifest/package/workflow values, all six rho cells, the complete 14-method set, 200 unique replications per cell and zero implementation failures across 84 diagnostics. The earlier concurrent file probe ran before the scheduler query returned completion; reinspection found the canonical gate and all checks passed. n=300 continuation 483021 was observed pending. n=200 is an implementation checkpoint, not an additional statistical tuning/stopping stage.
+
+2026-09-12T09:54:08.525563-05:00: C1/K4 n=300 controller 483021 completed successfully (7s). Its frozen submission covers only seeds 201-300 as group 505861, cumulative QC 505862 and n=400 continuation 505863. Batch range, package/workflow fingerprints and both afterok dependencies were directly verified. Verified progress remains n=200; the full 500-replicate goal is active.
+
+2026-09-12T09:58:12.233073-05:00: first K8 canonical independent outputs inspected for seeds 26 and 105. 7 completed files passed original task/seed identity, frozen fingerprint checks, independent scheduler provenance, exact 14-method set, finite positive-SE checks and the K8 resource profile (32 cores, 2 nuisance-CV threads). Actual completed/running array states were queried. This is a partial-file integrity check only; full six-rho validation/publication remains pending. Record: proactive_canonical_v2/first_K8_outputs_integrity.json.
+
+2026-09-12T10:02:31.073651-05:00: negative-transfer C3/K8 cumulative n=10 QC 474630 passed (21s, exit 0), after final grouped task 474629_4009 completed successfully (5h38m53s). The independent checkpoint observer verified fixed family manifest/package/workflow fingerprints, six rho cells, exact 14-method sets, ten unique replications and zero implementation failures across all 84 diagnostics. n=25 continuation 474631 was observed pending. All nine negative-transfer blocks now have verified n=10 or higher checkpoints; the full 500-replicate goal remains active.
+
+2026-09-12T10:06:59.344343-05:00: shared-shift C1/K2 cumulative n=50 QC 491162 passed (35s), report 491163 completed (13s), and n=100 continuation 491164 completed (8s). Independent checkpoint, core-statistic, paired-comparison and PDF visual audits passed for 300 files / 4,200 method rows / 5,028 numeric comparisons (max discrepancy 4.89e-15). The earlier file probe ran before the scheduler query returned report completion; reinspection found all canonical outputs. A coverage at rho=1.5/2/2.5 is 0.70/0.74/0.82 with MCSE about 0.065/0.062/0.054; coverage/bias/RMSE review signals are retained without tuning or early stopping. Fourteen stage reports are now audited.
+
+2026-09-12T10:08:31.273140-05:00: negative_transfer C3/K8 n=25 submission verified: only seeds 11-25 as group 507127, cumulative QC 507129, and next continuation 507130. Frozen fingerprints and all afterok dependencies were directly checked. Verified completion remains at the prior rung.
+
+2026-09-12T10:08:31.362398-05:00: shared_shift C1/K2 n=100 submission verified: only seeds 51-100 as group 507124, cumulative QC 507125, report 507126, and next continuation 507128. Frozen fingerprints and all afterok dependencies were directly checked. Verified completion remains at the prior rung.
+
+2026-09-12T10:16:31.806937-05:00: first K8 canonical publication verified, C2/K8 seed 105. Array 491351 completed all six tasks (max 3h02m57s), validation 493134 passed (8s), publication 493135 completed (5s). The gate and all 84 implementation-valid method diagnostics were checked. A concurrent file probe briefly found no receipt while scheduler observation reached completion; reinspection found the complete receipt, expected success log and logical group2605 commit. The frozen publisher check-only path and independent receipt hashes verified all six source/production CSV bytes, original IDs and scheduler metadata, fixed provenance and validation records. No resubmission or output mutation occurred. Six proactive cases are now published; K8 seeds26/160 remain pending, and future cumulative n=200 QC remains required.
+
+2026-09-12T10:34:03.723618-05:00: new implementation incident, C2/K2 seed122/group1622. Task 502045_1622 failed at rho=2.5 (exit1, 1h17m01s) with no lambda converged and finite in every CV fold. No six-rho CSV bundle or commit exists. Downstream QC502046 and continuation502047 were held and verified. The complete prior data-only preflight recorded all five positive-rho pairs valid, distinguishing this from endpoint/RNG incidents. Canonical unchanged-executor probe512362 runs only original task5622 (seed122,rho2.5) into an isolated directory with unchanged package, manifest, settings and K2 resources. No recovery publication or tuning is authorized by this diagnostic result alone. Exact failure acknowledgement and log hashes are recorded; new/different failures still alert.
+
+## 0015 — 2026-09-17 — Nuisance solver: proximal-Newton path behind ROCE_NUISANCE_SOLVER  [DIAGNOSTIC / CANDIDATE]
+
+Context. Production v2 was cancelled on 2026-09-17 at the user's request after the n=500
+checkpoints showed TATE coverage 87-92% at K=4/8 (|bias|/empirical SD 0.6-1.0, mean SE /
+empirical SD 1.05-1.14) and per-task wall times of 92 min (K=2/4) to 4.5 h (K=8). This entry
+records the solver diagnosis and the candidate replacement. The default estimator, the frozen
+row set and every production artifact are unchanged.
+
+1. Correctness fixes on the default path (commit 2bf45eda): `screening_rule` is forwarded
+   through one-round rho reuse, reaggregation and the sensitivity grid, and propagated by
+   `.decorate_reaggregated_tate` (a fitted quadratic_bias estimator previously fell back to
+   soft_penalty when reaggregated); the target moment of the calibrated tilting loss applies
+   the same M_tau truncation as the source term (`.mean_glm_gradient_site_basis(M_tau = )`),
+   numerically inactive in the FACE DGP because |eta| < 2 < M_tau = 5; the
+   `fit_initial_density_ratio_cpp` declaration gains its missing M_tau argument.
+
+2. Where production time goes (single-threaded, C1 p=100, one source arm, 800-row block):
+   target initial outcome CV (glmnet) 0.5 s; initial-DR CV 1916 s; calibrated-DR CV 1801 s;
+   calibrated-outcome CV 1498 s; final refits about 1 s each. K=8 is 2.5x slower than K=4 only
+   because its CV threads drop from 5 to 2; msismall nodes have 128 cores.
+
+3. Mechanism. The exponential-tilting objective has no finite minimizer once lambda is small
+   enough: with p comparable to the treated sample size the target moment leaves the source
+   feature hull, so the penalized solution runs to PARAM_MAX with half the rows beyond M_tau.
+   Coordinate descent needs 500-5000 sweeps per fit there and the fail-fast rule drops the
+   tail; on the C1 seed-1 initial-DR path both solvers converge for lambda indices 1-36 and
+   fail at 37-39. The CV selection sits well inside the healthy region (index 16-18).
+
+4. Candidate solver (commit b8b1e3cd; `src/cv_utils.h`, `namespace ProximalNewton`,
+   `density_ratio_proximal_newton`, `glm_proximal_newton`, dispatched by
+   `density_ratio_cd_update` / `glm_cd_update`, enabled only by `ROCE_NUISANCE_SOLVER=newton`):
+   Levenberg-Marquardt damped proximal Newton, glmnet-style active-set inner coordinate
+   descent, inexact inner tolerance (1e-2, then 0.05 x previous step, floored at 0.1 x the
+   outer tolerance), Armijo backtracking on the exact penalized objective, compensated
+   gradient sums, and "solution at 0.99 x PARAM_MAX => not converged" so the CV eligibility
+   set equals the coordinate-descent set. The final outcome refit (`fit_general_glm_cpp`) is
+   unchanged.
+
+5. Paired validation, seed 1, C1 and C3, 2 CV threads, same data and fold ids:
+   - initial-DR and calibrated-DR paths: identical selected lambdas (0.1648/0.036108;
+     0.2212/0.047021), max|dgamma| <= 6.5e-6, objective differences <= 3e-12,
+     invalid/skipped fold-fit counts equal within 1; CV time 1209->101, 1085->130, 989->105,
+     1083->105 s (8-12x).
+   - calibrated-outcome path: same selected lambda index (0.068659, nnz 11; 0.097533, nnz 1),
+     max|dalpha| <= 4e-7; CV time 953->126 and 820->128 s (6-8x).
+   - tests: full suite under the default path 1858/0/19; the solver-relevant subset (15 files,
+     672 expectations) passes under both solvers.
+   - end-to-end replicate pairs on Slurm (C1/K2 seeds 9002/9004/9005, C3/K4 seed 9003; all
+     output columns): first Newton replicate C1/K2 seed 9005 took 4053 s (control-arm
+     nuisances 4046 s vs treated 1802 s); coordinate-descent twins still running.
+
+6. Decisions recorded 2026-09-17 (user): Newton does not change results within tolerance; K=8
+   may be submitted with 5 CV threads (80 CPUs); n_folds = 10 is adopted for the next
+   production design; commits are authorized. Pilot `pilot_C1_K8_f10` / `_f5` (seeds
+   9101-9110, Newton, `results/direct_tate_mc500_b5000/pilot_nfolds_K8_20260917/`) and the
+   C3/K4 seed-9001 fold smoke are in flight to size the n_folds=10 cost and its bias effect.
+
+7. Open: adopt Newton as the default and record the solver in result provenance instead of
+   an environment switch; whether a principled CV eligibility rule (no training row beyond
+   the truncation radius) should replace the accidental "coordinate descent failed" path
+   truncation (not needed for equivalence); the paper states five folds and describes the
+   truncated target moment inconsistently, so both need text changes once the design is fixed.

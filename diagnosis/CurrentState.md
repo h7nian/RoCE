@@ -1,168 +1,168 @@
 # Current state of RoCE (Robust Federated Causal Estimation)
 
-> **Single source of truth for what is true RIGHT NOW.**
-> This file is rewritten (not appended) on every successful iteration.
-> History lives in `HISTORY.md`.
->
-> Last updated: 2026-09-07
-> Last updating HISTORY entry: [#0002](HISTORY.md#0002) (DECIDED-PASS)
+Last updated: 2026-09-17. Active iteration: HISTORY #0015 (nuisance solver and
+n_folds redesign); #0014 (v2 recovery) is closed because production v2 was
+cancelled on 2026-09-17 at n=500 with coverage 87-92% at K=4/8.
+Historical decisions and superseded acceptance criteria remain in HISTORY.md.
 
----
+## Solver and speed (2026-09-17, HISTORY #0015)
 
-## 1. Method default (1-line summary per knob)
+- A proximal-Newton path for every L1-penalized nuisance fit is available
+  behind `ROCE_NUISANCE_SOLVER=newton` (default off). Paired validation shows
+  identical CV-selected lambdas, coefficients within 6.5e-6 and 6-12x lower
+  CV time; the user has accepted it as result-preserving.
+- Decisions: K=8 runs use 5 CV threads (80 CPUs); the next design uses ten
+  outer folds; both are being sized by `pilot_nfolds_K8_20260917`.
 
-- Estimand: target average treatment effect (TATE) `tau_t = mu^1_t - mu^0_t`.
-- Primary estimator: `run_tate_crossfit(communication_mode = "one_round")`, one
-  common source-weight vector per outer fold (FACE eq. 9 structure).
-- Nuisances: exponential-tilting site/treatment model and GLM outcome model,
-  both fitted on the working basis `phi(X)`; calibrated losses (Tan 2020);
-  two-level cross-fitting, 5 outer folds; `nlambda_init = 100`, `lambda` rule
-  `min`; truncation `M_tau = M_tau_inference = 5`.
-- Aggregation weights: `N_all * Var(eta) + sum_j (lambda t_j - 1)_+ |eta_j|`,
-  `lambda = AGG_WALD_LAMBDA = 1` (cutoff c = 1), soft-threshold solve.
-- Variance: site-centered pseudo-value variance with weights treated as fixed
-  (`se`). **Known deficit: omits the weight-learning term** (see §3).
-- Simulation DGP: FACE-style skew-normal covariates, binary outcome,
-  `rho = ate_deviation` log-odds treatment shift on source `s1`'s treated arm.
-  Working bases still differ across configurations in the package (C2/C3 drop
-  the quadratic block); the replacement (common basis, X-dagger
-  misspecification at strength 0.75) is validated (#0002) and awaits
-  migration (#0006).
+## Method and experiment contract
 
-> Authoritative spec: `docs/main.tex` + `docs/supplemental.tex` (Rule 13,
-> amendment A1). This section is a 1-line-per-knob restatement.
+- Primary method A: `run_tate_crossfit(communication_mode = "one_round")`,
+  common TATE source weights, `screening_rule = "soft_penalty"`, cutoff 1
+  (`aggregation_lambda = 1`). A remains the provisional primary method.
+- Rule B (`quadratic_bias`) is the pre-specified sensitivity estimator,
+  computed from the same nuisance fits; it does not replace A.
+- Reported `se` includes the delta-method weight-learning contribution.
+  `se_fixed_weights` remains a diagnostic. Migration #0005 is complete.
+- Both nuisance working bases are `[X - kappa, X^2]`. True-mechanism
+  X-dagger mixing has strength 0.75: C2 misspecifies outcome, C3 propensity,
+  C4 both. C1 is unchanged. Migration #0006 is complete.
+- Five outer folds, `nlambda_init = 100`, nuisance rule `min`,
+  `M_tau = M_tau_inference = 5`; comparison bootstrap draws = 5000.
+- Negative transfer: C1-C3 x K = 2/4/8 (9 blocks), treated-arm shift.
+  Shared shift: C1 x K = 2/4/8 (3 blocks), both-arm shift. Both families use
+  binary outcomes, p = 100, 1000 observations per site, and rho =
+  0/0.5/1/1.5/2/2.5, with 500 replicates per cell.
+- Method specification: `docs/main.tex` and `docs/supplemental.tex`.
 
-## 2. Headline numbers (multi-seed verified)
+## Verified results and their limits
 
-C1, p = 100, K = 2, 1000 observations per site, 100 independent seeds
-(v19 package; `results/direct_tate_mc500_b5000/independent_inference_pilot_v19/`):
+The v1 production artifacts have 25 replicates in every one of the 12
+blocks (1350 negative-transfer task CSVs and 450 shared-shift task CSVs).
+The library was reinstalled during v1; its current fingerprint 0d0de95d...
+no longer matches the results and reuse gates (4cbbf8b0...). V1 is stopped,
+retained at `results/direct_tate_mc500_b5000/production_20260908_v1/`, and
+excluded from v2 aggregation. No v2 numerical results exist yet.
 
-| rho | RoCE RMSE | target-only RMSE | RoCE coverage | analytic SE / empirical SD | RoCE bias |
-|---|---|---|---|---|---|
-| 0 | 0.0250 | 0.0348 | 0.93 | 1.00 | -0.012 |
-| 0.5 | 0.0259 | 0.0348 | 0.87 | 0.93 | +0.011 |
-| 1 | 0.0321 | 0.0348 | 0.82 | 0.77 | +0.011 |
-| 1.5 | 0.0332 | 0.0348 | 0.83 | 0.75 | -0.000 |
-| 2 | 0.0317 | 0.0348 | 0.90 | 0.83 | -0.007 |
-| 2.5 | 0.0301 | 0.0348 | 0.93 | 0.92 | -0.010 |
+The 100-seed C1/K2 pilot must be compared using the same SE definition:
 
-Target-only coverage 0.92. Mechanism (n=100 decomposition): at rho=1 source
-`s1` keeps mean fold weight 0.15 with Wald statistic 1-3, adding +0.023 bias;
-fold-weight SD 0.05-0.14 times discrepancy 0.13-0.20 is the missing SD.
+| rho | A weight-layer coverage | B weight-layer coverage |
+|---|---|---|
+| 0 | 0.93 | 0.93 |
+| 0.5 | 0.91 | 0.92 |
+| 1 | 0.88 | 0.93 |
+| 1.5 | 0.94 | 0.94 |
+| 2 | 0.93 | 0.94 |
+| 2.5 | 0.96 | 0.93 |
 
-**#0001 → #0005 (CLOSED 2026-09-08): delta-method weight-layer SE for the
-production soft-threshold rule, now the package's reported `se`, replayed on
-the same 100 seeds** — SE/SD 1.03 / 1.03 / 0.99 / 0.96 / 0.97 / 1.02, coverage
-0.93 / 0.91 / 0.88 / 0.94 / 0.93 / 0.96 for rho = 0 … 2.5; points unchanged;
-package equals the prototype to 6e-17.
+Sources: `diagnosis/out/weight_layer/v1/replay_summary.csv` and
+`diagnosis/out/quadratic_bias_rule/v1/rho_summary.csv`. Neither rule
+uniformly dominates on coverage. These are historical pilot results,
+not the new production estimates.
 
-**#0007 (CLOSED 2026-09-08): smooth quadratic-bias rule B on the same 100
-seeds** — bias −0.011 / +0.006 / +0.007 / +0.004 / +0.002 / +0.001, coverage
-0.93 / 0.92 / 0.93 / 0.94 / 0.94 / 0.93; reported alongside rule A as
-`<method>_ate_quadratic_bias`.
+Target-only diagnostics at p=100, K=4, n_target=1000, 500 replicates:
+C1 coverage 0.946, mean SE / empirical SD 1.010; C3 coverage 0.936,
+ratio 1.070. The overlapping 25 seeds match v1 production estimates and
+SEs to floating-point precision. C2 has no equivalent 500-replicate
+confirmation yet. Files live under `results/direct_tate_mc500_b5000/`
+`target_remainder_C{1,3}_20260910/`; their archived filenames start with
+`c3_target_remainder_` but their config columns distinguish C1 and C3.
+Increasing replicate count measures coverage more precisely; it does not
+change the estimator or guarantee nominal coverage.
 
-Common-basis DGP (#0006) single-seed C1–C4 refits (seed 20001, K = 2):
-weight-layer SE 0.0220 / 0.0223 / 0.0219 / 0.0214 vs fixed-weight SE 0.0216 /
-0.0218 / 0.0216 / 0.0214.
+## Active work and acceptance policy
 
-**#0010 production, n = 10 rung (2026-09-10; preliminary — the n = 50 rung is the
-pre-registered decision point).** RMSE and 95% coverage pooled over configs and K;
-rule A is the primary truncated-Wald rule, rule B the smooth quadratic-bias
-sensitivity rule.
+The user approved #0014 on 2026-09-11:
 
-Negative transfer, 90 replicates per rho:
+1. Repair rule propagation through reaggregation and rho reuse, protect
+   installed audit libraries, propagate submission failures, validate
+   diagnostic resume provenance, and synchronize C++ declarations.
+2. Run regression tests and full package checks, then freeze a new v2
+   source/workflow and library. Re-run A1-A5 on that version.
+3. Use fresh `production_20260911_v2` and `Rlib_production_20260911_v2`
+   directories under `results/direct_tate_mc500_b5000/`. Restart seeds
+   1-500; do not combine v1 and v2 results.
+4. Advance through 1/5/10/25/50/100/200/300/400/500. Implementation,
+   completeness and provenance failures pause the affected block.
+   Statistical warnings are recorded at 50/100/500 and do not stop the
+   fixed 500-replicate experiment. The earlier coverage go/no-go criteria
+   are superseded by this user-approved policy; they remain in HISTORY.
+5. Produce per-family/config/K/rho summaries and A-primary figures with
+   paired B and target-only comparisons and Monte Carlo uncertainty.
 
-| rho | RMSE A | cov A | RMSE B | cov B | RMSE target | cov target |
-|---|---|---|---|---|---|---|
-| 0 | 0.0177 | 0.92 | 0.0179 | 0.94 | 0.034 | 0.89 |
-| 0.5 | 0.0208 | 0.93 | 0.0208 | 0.93 | 0.034 | 0.89 |
-| 1 | 0.0262 | 0.90 | 0.0230 | 0.94 | 0.034 | 0.89 |
-| 1.5 | 0.0252 | 0.88 | 0.0223 | 0.91 | 0.034 | 0.89 |
-| 2 | 0.0235 | 0.88 | 0.0217 | 0.91 | 0.034 | 0.89 |
-| 2.5 | 0.0230 | 0.88 | 0.0214 | 0.91 | 0.034 | 0.89 |
+Current status: all A1-A5 gates PASSED on the frozen v2 package.
+A1 382288: zero test failures; A2 382289: Status: OK; A3 382290:
+both manifests passed. Package fingerprint:
+ad51045358861e41a461c2079ed7fdbdd29f52b91205d232da303fe74324f456.
+A4 382451/382452: 31/31 checks, verified output/sidecar checksums.
+A5 negative transfer 382492/382494: 14 rows x 756 fields, zero exact
+mismatches; A5 shared shift 382491/382493: likewise zero mismatches.
+Both six-rho validation groups also match archived v1 core numeric values
+for all 14 methods on seed 1; this is a regression check, not a coverage claim.
 
-Shared shift, 30 replicates per rho:
+Production progress (observed 2026-09-12T10:42:52.258021-05:00). Verified counts below require
+the actual per-block QC gate with matching frozen fingerprints. Submitted
+rungs are not completed replications. Job IDs and current targets are in
+`results/direct_tate_mc500_b5000/v2_progress.json` and `ladder_jobs/`.
 
-| rho | RMSE A | cov A | RMSE B | cov B | RMSE target | cov target |
-|---|---|---|---|---|---|---|
-| 0 | 0.0150 | 1.00 | 0.0158 | 1.00 | 0.036 | 0.87 |
-| 0.5 | 0.0185 | 0.90 | 0.0186 | 0.93 | 0.036 | 0.87 |
-| 1 | 0.0230 | 0.87 | 0.0231 | 0.90 | 0.036 | 0.87 |
-| 1.5 | 0.0275 | 0.73 | 0.0269 | 0.83 | 0.036 | 0.87 |
-| 2 | 0.0302 | 0.73 | 0.0277 | 0.83 | 0.036 | 0.87 |
-| 2.5 | 0.0312 | 0.83 | 0.0277 | 0.87 | 0.036 | 0.87 |
+| Family | Config | K | Verified replicates per rho | Submitted rung |
+|---|---|---|---|---|
+| negative_transfer | C1 | 2 | 200 | 300 |
+| negative_transfer | C1 | 4 | 200 | 300 |
+| negative_transfer | C1 | 8 | 10 | 25 |
+| negative_transfer | C2 | 2 | 100 | 200 |
+| negative_transfer | C2 | 4 | 100 | 200 |
+| negative_transfer | C2 | 8 | 10 | 25 |
+| negative_transfer | C3 | 2 | 100 | 200 |
+| negative_transfer | C3 | 4 | 100 | 200 |
+| negative_transfer | C3 | 8 | 10 | 25 |
+| shared_shift | C1 | 2 | 50 | 100 |
+| shared_shift | C1 | 4 | 50 | 100 |
+| shared_shift | C1 | 8 | 5 | 10 |
 
-Both rules beat target-only on RMSE at every rho in both families. Rule B covers at
-least as well as rule A in every cell — by 2–4 points under negative transfer, by
-10 points at the shared-shift intermediate range — and its RMSE is no worse for
-rho > 0; the cost is a slightly larger RMSE at rho = 0. This matches the mechanism:
-A selects (hard zeros, a discrete activation that adds weight variance near the Wald
-cutoff) while B shrinks continuously. The shared-shift under-coverage at rho = 1.5–2
-is the finding the scenario was built to expose and is reported, not tuned away.
+Each block advances only after its own implementation QC, through the fixed
+500-replicate ladder. Stage reports at n=50/100/500 include A/B/target metrics,
+paired MSE and coverage differences, and PDFs. Final family aggregation and
+FACE-style primary-A figures follow all n=500 QC/report jobs. Run-specific
+scripts and SHA-256 inventories live beside the results; the source snapshot
+and installed package are not changed during production.
 
-No RHC results exist for the current TATE estimator yet (#0012).
+The standalone weight-rule precision diagnostic
+is a reserve tool, not a second production run. RHC follows the simulation
+summary. No cutoff, DGP, nuisance or SE tuning is authorized by low coverage.
 
-## 3. Active issues (open iterations)
+## Operating rules and deferred work
 
-1. **#0001 Weight-layer influence for the soft-threshold rule** — Stage 1
-   DECIDED-PASS (HISTORY #0001). Next: Stage 2 migration (#0005a).
-2. **#0002 Common working basis + X-dagger misspecification pilot** — Stage 1
-   DECIDED-PASS: omega* = 0.75; C1 unchanged (2e-4). Next: Stage 2 (#0006).
-3. **#0003 Truncation alignment of the tilting calibrated loss** — Stage 1
-   IN-FLIGHT (candidate library; score check passed, C1 identity refit and
-   full tests pending).
-4. #0004 Inner-fold weight learning on calibrated nuisances: proposal is to
-   align the Supplement text with the implemented out-of-two-fold initial
-   plug-ins and run a bounded calibrated-inner sensitivity on C1/K2 instead
-   of a x4 nuisance cost in production — awaiting the user's answer.
-5. #0005 [MIGRATION] weight-layer variance into `R/` — CLOSED (DECIDED-PASS
-   2026-09-08; full suite clean in run 18573008, replay 18573009 exact).
-6. #0006 [MIGRATION] common-basis DGP with `misspecification_strength = 0.75`
-   — CLOSED (DECIDED-PASS 2026-09-08; four-configuration reproduction
-   18573010 exact).
-7. #0007 [MIGRATION] smooth quadratic-bias weight rule (`screening_rule =
-   "quadratic_bias"`, simulation row `<method>_ate_quadratic_bias` gated by
-   `include_quadratic_bias_rule = TRUE`, quadratic weight layer) — CLOSED
-   (DECIDED-PASS 2026-09-08; replay 18573011 exact).
-8. **#0008 [MIGRATION] truncation-aligned tilting loss into `src/`** — IN-FLIGHT
-   (patch applied to main 2026-09-08; #0003 (e)/(f) job 18576245 running; commits
-   with the production-library gate of #0010).
-9. #0009 [MIGRATION] schema freeze + shared-shift scenario — CLOSED
-   (DECIDED-PASS 2026-09-08, merged into main): `.tate_production_method_rows()`,
-   `deviation_mechanism = "both_arms"` (both-arm reuse refit), manifests with a
-   `deviation_mechanism` column and a `shared_shift` family (C1, K = 2/4/8),
-   staged gates pre-registered in HISTORY #0009 §4.
-10. **#0010 Production runs** — RUNNING since 2026-09-08: gates A1–A5 all passed
-    (tests, R CMD check, both manifest families, smoke, both reuse-equivalence
-    audits); 12 setting blocks launched at rung n = 1 (HISTORY #0010: production root
-    `results/direct_tate_mc500_b5000/production_20260908_v1/`, gates A1–A5,
-    per-setting grouped submissions with `ROCE_SETTING`, rungs
-    1/5/10/25/50/100/200/300/400/500) — starts after #0008 lands; #0011
-    aggregation, figures/tables, paper updates (substitute Rule 7c review
-    before numbers leave).
-11. #0012 RHC with the frozen package; #0013 cleanup (rename `screening_rule`
-    -> `weight_rule`, `direct_tate` -> `tate`, retire root `main.R`/`realdata.R`
-    legacy pipeline, README, archive `diagnosis/tate_common_weight`).
+- Never reinstall into a frozen production library. New builds use fresh
+  directories. Re-test an installed package with `ROCE_TEST_INSTALLED=1`.
+- Source/workflow fingerprints remain strict. Finish edits before gates;
+  changes during production require a new version and new gates.
+- R environment: `module load R/4.2.2-gcc-8.2.0-vp7tyde`,
+  `R_LIBS_USER=/users/0/zhan9381/Rlibs`; expensive checks run on Slurm.
+- Keep the existing manifests, per-K resources and same-seed rho reuse.
+- Inner calibrated-nuisance sensitivity, continuous C2/C4 validation,
+  worker-warning capture, API renaming, legacy cleanup, and one-vs-two-round
+  comparisons remain deferred. No new method is part of v2 recovery.
+- Overleaf `JASA/` is the advisor's review copy and is not modified.
 
-## 4. Parked for later (not v1 blockers)
+To resume: read HISTORY #0014, inspect the v2 gate files and job logs,
+query Slurm, and continue the highest incomplete stage above. Update this
+status from artifacts rather than prior conversational claims.
 
-- Continuous outcome under C2/C4 with `misspecification_strength > 0` is
-  unvalidated and heavy-tailed (#0006 review); production continuous cells are
-  C1-only. Add a continuous C2 sanity check before any such cell is run.
-
-- Worker warning capture (`warning_capture_complete = FALSE`): structured
-  capture candidate exists under `results/.../condition_capture_candidate.*`;
-  not deployed.
-- DR CV path tail skipping (about 17% of low-lambda candidates invalid per
-  replication): add a "selected lambda at valid-path boundary" diagnostic.
-- `AGG_WALD_LAMBDA` read from `ROCE_AGG_WALD_LAMBDA` at load time
-  (reproducibility hazard); make it an explicit argument.
-- One-round vs two-round communication comparison for the common-weight TATE.
-
-## 5. Standing rules (or link to skill RULES.md)
-
-Project-specific amendments (recorded in HISTORY #0001, Rule 27(f)):
-
-## 6. How to resume work (resume protocol)
-
-## 7. Project-specific resources
+<!-- v2-incidents-start -->
+Recovery status (2026-09-12T10:34:03.723618-05:00):
+- C2/K4 and C2/K2 seed 26: both resolved through frozen canonical independent fits, full n=50 validation, exact-byte publication, and replacement production QC. Both resumed n=100.
+- Original failed/cancelled jobs and replacement provenance remain recorded in `v2_incidents/` and `v2_recovery/`.
+- Fourteen stage reports have passed independent numerical and PDF review; see `results/direct_tate_mc500_b5000/production_20260911_v2/stage_report_audits/README.md`.
+- C2 data-only preflight 487252 is fully audited: all 1,500 planned config/K seed records and 7,500 positive-rho comparisons passed record/provenance checks. Ten groups cannot reuse (K2: 26/282; K4: 26/105/160/296/380; K8: 26/105/160). Two are already recovered and eight have registered canonical chains; no invalid case is unhandled. See `rho_preflight_v2/case_reconciliation.json`. This is separate from the 500-replication estimator experiment.
+- C2/K4 n=200 continuation 481666 completed after verified publication of canonical seeds 105 and 160; group 498743 is running, with cumulative QC 498744 pending. Release job 493168 passed (6s); receipt hashes and current scheduler state were checked. Eight proactive cases are registered; all five K2/K4 cases are published and verified, with two K8 cases still awaiting publication. See `proactive_canonical_v2/registry.json`.
+- C2/K8 n=50 continuation 492860 now requires both n=25 QC 492859 and canonical seed-26 publication 493133. The frozen submitter correctly starts at the first uncommitted seed and still audits the complete n=50 prefix.
+- Proactive C2/K4 seeds 105 and 160 passed per-case validation and exact-byte publication; both source/production CSV bundles and commit hashes were reverified. Cumulative n=200 QC is still pending.
+- C2/K2 seed 282 is validated, published and byte-verified; its future n=300 cumulative QC remains required. C2/K4 n=300 continuation 498745 additionally requires seed-296 publication 493139, preserving its n=200 QC dependency.
+- First shared-shift n=50 report (C1/K4) passed independent numerical/PDF audit. High-rho A coverage 0.76/0.76/0.80 is retained as an interim statistical review signal; A and parameters remain fixed through all 500 replications. See the combined stage-report audit index.
+- C2/K4 seed 296 is validated, published and byte-verified; the publication prerequisite for n=300 continuation 498745 is satisfied, while its original n=200 QC prerequisite remains required.
+- C2/K4 seed 380 is validated, published and byte-verified. All preflight-confirmed K2/K4 exceptions now have canonical results; ahead-of-rung results still require their full cumulative QC.
+- Shared-shift C1/K2 n=50 also passed numerical/PDF audit. High-rho A coverage 0.70/0.74/0.82 and RMSE findings are retained as interim review signals under the fixed 500-replication design.
+- First K8 canonical case, C2/K8 seed 105, is validated, published and byte-verified (493134/493135). Only K8 seeds 26 and 160 remain pending; future cumulative QC remains required.
+- OPEN incident: C2/K2 seed 122 (502045_1622) failed at rho=2.5 because no CV lambda was valid across all folds. No group outputs were committed. QC 502046 and n=300 continuation 502047 are paused. Frozen canonical task-5622 probe 512362 is staged separately; diagnosis is ongoing. The prior data-only reuse preflight was valid for this seed, so this is a distinct issue. See `v2_incidents/C2_K2_seed122.json`.
+Scientific parameters and A remain frozen. The full 500-replicate goal is incomplete.
+<!-- v2-incidents-end -->
