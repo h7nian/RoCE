@@ -1344,3 +1344,38 @@ row set and every production artifact are unchanged.
    needed for equivalence); the paper states five folds, describes the truncated target
    moment inconsistently and calls the solver "proximal coordinate descent", so all three
    need text changes once the design is fixed.
+
+## 0016 — 2026-09-17 — Production v3: proximal-Newton solver, ten outer folds, both families  [PRODUCTION]
+
+> previous related: [#0015](#0015) (solver, fold-count pilot), [#0010](#0010) (gate order),
+> [#0009](#0009) (frozen row set, families, pre-registered gates)
+
+Design (user decisions 2026-09-17: "n_site和p都不改", "方法需要和Overleaf一致",
+"可以尝试10折", "不影响结果就用" for the solver): identical to production v2 except
+`n_folds = 10` (`ROCE_N_FOLDS=10` at manifest build; commit 162035e3 parameterizes the
+builder and both audits) and the proximal-Newton nuisance solver, which the paired
+validations in #0015 show is result-equivalent within solver tolerance and is recorded per
+row as `nuisance_solver`. p = 100, 1000 observations per site, cutoff c = 1 from the locked
+grouped_cutoff_pilot gate, soft_penalty primary with the quadratic_bias sensitivity row,
+nuisance rule min, nlambda 100, M_tau = M_tau_inference = 5, B = 5000, seeds 1-500, the
+negative-transfer family C1-C3 x K = 2/4/8 and the shared-shift family C1 x K = 2/4/8,
+rho = 0/0.5/1/1.5/2/2.5. K = 8 blocks run with five CV threads (80 CPUs; nodes have 128
+cores). The 100-seed K=8 pilot (#0015) found only a 9% bias reduction from ten folds; the
+user chose to run the full grid with ten folds regardless. The paper text (five folds,
+solver name, truncated target moment) is to be updated by the user.
+
+Roots: `results/direct_tate_mc500_b5000/production_20260917_v3/` (shared-shift family
+under `.../shared_shift/`), frozen library `Rlib_production_20260917_v3`, check root
+`package_check_production_20260917_v3`. Tree 162035e3.
+
+Gates:
+- A1 tests + frozen library: job 1192654 [RUNNING].
+- A2 R CMD check (afterok A1): job 1192655 [PENDING].
+- A3 manifests, both families, `ROCE_N_FOLDS=10`: job 1192789 [PASS]; 27,000 and 9,000
+  rows, every row `n_folds = 10`, both `manifest_audit_passed.txt` written.
+- A4 smoke (C3/K4/rho 0) and its audit: chained to the A1 gate [PENDING].
+- A5 reuse equivalence, negative transfer (C3/K4/rho 2.5) and shared shift
+  (`ROCE_REUSE_CONFIG=C1`): chained to the A1 and A2 gates [PENDING].
+- B ladder: after A4/A5, `ROCE_NUISANCE_CV_THREADS=5 advance_production_ladder.sh ROOT LIB
+  CHECK_GATE` for all twelve blocks; rungs 1/5/10/25/50/100/200/300/400/500 with the
+  checkpoint audits of #0009 §4.
