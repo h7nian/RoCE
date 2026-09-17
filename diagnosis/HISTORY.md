@@ -1280,12 +1280,33 @@ row set and every production artifact are unchanged.
      (K=2 coordinate-descent replicate: production median 3347 s, pilot > 10000 s).
      `scripts/slurm/install_pilot_library.sh` installs from an immutable git-archive stage
      and refuses objects compiled with -O0; optimized re-measurements follow.
+   - Optimized (-O2) isolated micro-benchmark, same calibrated-outcome CV path and data as
+     above: coordinate descent 290 s at 1 thread and 59 s at 5 threads; proximal Newton
+     4.4 s and 1.3 s (66x and 46x); all four select lambda 0.068659. The -O0 penalty was
+     5x for coordinate descent but 55x for Newton (Eigen expression templates), which is
+     why the unoptimized comparisons above understated the gain.
+   - First optimized (-O2, `Rlib_newton_v5_20260917` from commit 941f9495) Newton replicate,
+     C1/K2 seed 9006, 20 CPUs: 133 s in total, one-round nuisances 127 s (control arm 127 s,
+     treated arm 68 s; CV sums over the four source-arm workers: initial DR 37 s, calibrated
+     DR 47 s, calibrated outcome 93 s), versus the production coordinate-descent median of
+     3347 s for the same replicate type. Estimates are ordinary (TATE 0.2123, SE 0.0244,
+     rule B 0.2131, target-only 0.1923, SE 0.0351). The unoptimized end-to-end twins
+     (seeds 9002-9005) and the C3/K4 seed-9001 fold smoke were cancelled after 2-4.5 h;
+     the replicate-level equivalence check is repeated on the optimized library with the
+     C1/K2 seed-9006 pair, and the fold-count question is answered by the K=8 pilot.
 
 6. Decisions recorded 2026-09-17 (user): Newton does not change results within tolerance; K=8
    may be submitted with 5 CV threads (80 CPUs); n_folds = 10 is adopted for the next
    production design; commits are authorized. Pilot `pilot_C1_K8_f10` / `_f5` (seeds
-   9101-9110, Newton, `results/direct_tate_mc500_b5000/pilot_nfolds_K8_20260917/`) and the
-   C3/K4 seed-9001 fold smoke are in flight to size the n_folds=10 cost and its bias effect.
+   9101-9110, Newton, `results/direct_tate_mc500_b5000/pilot_nfolds_K8_20260917/`) sizes the
+   n_folds=10 cost and its bias effect. Result on the optimized library (C1, K=8, rho=0,
+   80 CPUs, 5 CV threads; `pilot_nfolds_summary.csv`):
+   n_folds=5, 10 seeds: bias -0.0097 (MCSE 0.0039), empirical SD 0.0124, |bias|/SD 0.78,
+   RMSE 0.0153, coverage 9/10, mean SE / SD 1.08, 3.3 min per replicate;
+   n_folds=10, 8 seeds: bias -0.0059 (MCSE 0.0038), SD 0.0108, |bias|/SD 0.55, RMSE 0.0117,
+   coverage 8/8, ratio 1.26, 11.5 min per replicate. The direction matches the archived
+   K=4 evidence; the Monte Carlo error is still too large to size the fold effect, and a
+   100-seed pilot per fold count costs about one hour of wall time at 50 concurrent jobs.
 
 7. Adoption (user decision, 2026-09-17, "不影响结果就用"): the proximal-Newton path is the
    default for every nuisance fit; `ROCE_NUISANCE_SOLVER=coordinate_descent` restores the
