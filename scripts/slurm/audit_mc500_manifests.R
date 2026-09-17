@@ -36,12 +36,16 @@ n_configs <- length(family$configs)
 expected_primary_cutoff <- suppressWarnings(as.numeric(Sys.getenv(
   "ROCE_PRIMARY_CUTOFF", "1"
 )))
+expected_n_folds <- suppressWarnings(as.integer(Sys.getenv("ROCE_N_FOLDS", "5")))
 cutoff_selection_fingerprint <- tolower(trimws(Sys.getenv(
   "ROCE_CUTOFF_SELECTION_FINGERPRINT", ""
 )))
 
 if (is.na(expected_replications) || expected_replications < 1L) {
   stop("expected_replications must be a positive integer.", call. = FALSE)
+}
+if (is.na(expected_n_folds) || expected_n_folds < 2L) {
+  stop("ROCE_N_FOLDS must be one integer of at least 2.", call. = FALSE)
 }
 if (is.na(expected_bootstrap) || expected_bootstrap < 2L) {
   stop("expected_bootstrap must be an integer >= 2.", call. = FALSE)
@@ -130,7 +134,7 @@ assert_true(
     setequal(main$rho, c(0, 0.5, 1, 1.5, 2, 2.5)) &&
     all(abs(main$cutoff - expected_primary_cutoff) <= 1e-12) &&
     all(main$n_site == 1000L) &&
-    all(main$n_folds == 5L) && all(main$nlambda_init == 100L) &&
+    all(main$n_folds == expected_n_folds) && all(main$nlambda_init == 100L) &&
     all(main$n_bootstrap == expected_bootstrap) &&
     all(main$M_tau == 5) && all(main$M_tau_inference == 5),
   "main manifest contains an unexpected simulation parameter."

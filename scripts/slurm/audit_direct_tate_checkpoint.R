@@ -229,7 +229,9 @@ metadata_ok <- all(raw$experiment == experiment) &&
   !anyNA(expected_nlambda) &&
   all(as.integer(raw$nlambda_init) == as.integer(expected_nlambda)) &&
   all(as.integer(raw$target_anchor_nlambda) == 100L) &&
-  all(raw$n_site == 1000L) && all(raw$n_folds == 5L) &&
+  all(raw$n_site == 1000L) &&
+  all(as.integer(raw$n_folds) == as.integer(setting$n_folds[[1L]])) &&
+  length(unique(setting$n_folds)) == 1L &&
   all(raw$M_tau == 5) && all(raw$M_tau_inference == 5) &&
   all(tolower(raw$workflow_fingerprint) == expected_workflow_fingerprint) &&
   all(tolower(raw$manifest_fingerprint) == expected_manifest_fingerprint) &&

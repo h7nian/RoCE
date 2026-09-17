@@ -47,6 +47,10 @@ if (length(primary_cutoff) != 1L || !is.finite(primary_cutoff) ||
     primary_cutoff <= 0) {
   stop("ROCE_PRIMARY_CUTOFF must be one positive finite number.")
 }
+n_folds <- suppressWarnings(as.integer(Sys.getenv("ROCE_N_FOLDS", "5")))
+if (length(n_folds) != 1L || is.na(n_folds) || n_folds < 2L) {
+  stop("ROCE_N_FOLDS must be one integer of at least 2.")
+}
 
 methods <- paste(
   c(
@@ -91,7 +95,7 @@ make_grid <- function(experiment, configs, p_values, K_values, rho_values,
     stringsAsFactors = FALSE
   )
   grid$n_site <- 1000L
-  grid$n_folds <- 5L
+  grid$n_folds <- n_folds
   grid$nlambda_init <- nlambda_init
   grid$n_bootstrap <- 5000L
   grid$M_tau <- truncation_settings$M_tau[grid$truncation_index]
