@@ -1303,10 +1303,12 @@ row set and every production artifact are unchanged.
    80 CPUs, 5 CV threads; `pilot_nfolds_summary.csv`):
    n_folds=5, 10 seeds: bias -0.0097 (MCSE 0.0039), empirical SD 0.0124, |bias|/SD 0.78,
    RMSE 0.0153, coverage 9/10, mean SE / SD 1.08, 3.3 min per replicate;
-   n_folds=10, 8 seeds: bias -0.0059 (MCSE 0.0038), SD 0.0108, |bias|/SD 0.55, RMSE 0.0117,
-   coverage 8/8, ratio 1.26, 11.5 min per replicate. The direction matches the archived
-   K=4 evidence; the Monte Carlo error is still too large to size the fold effect, and a
-   100-seed pilot per fold count costs about one hour of wall time at 50 concurrent jobs.
+   n_folds=10, 10 seeds: bias -0.0095 (MCSE 0.0045), SD 0.0143, |bias|/SD 0.66, RMSE 0.0165,
+   coverage 9/10, ratio 0.96, 10-17 min per replicate (mean 12.4). With ten seeds the two
+   fold counts are indistinguishable (the first eight n_folds=10 seeds had suggested a
+   40% bias reduction, which the last two erased), so the fold effect at K=8 remains
+   unmeasured; a 100-seed pilot per fold count costs about one hour of wall time at 50
+   concurrent jobs and is the next step if the user wants it sized.
 
 7. Adoption (user decision, 2026-09-17, "不影响结果就用"): the proximal-Newton path is the
    default for every nuisance fit; `ROCE_NUISANCE_SOLVER=coordinate_descent` restores the
