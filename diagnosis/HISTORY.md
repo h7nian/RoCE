@@ -1290,7 +1290,16 @@ row set and every production artifact are unchanged.
      treated arm 68 s; CV sums over the four source-arm workers: initial DR 37 s, calibrated
      DR 47 s, calibrated outcome 93 s), versus the production coordinate-descent median of
      3347 s for the same replicate type. Estimates are ordinary (TATE 0.2123, SE 0.0244,
-     rule B 0.2131, target-only 0.1923, SE 0.0351). The unoptimized end-to-end twins
+     rule B 0.2131, target-only 0.1923, SE 0.0351). Its optimized coordinate-descent twin
+     (same seed, library and resources) took 3030 s, so the end-to-end ratio is 22.7x at
+     K=2; the TATE, rule-B and target-only estimates, standard errors and interval widths
+     agree to at least six significant figures (bias differs by 3e-8), and the columns
+     that differ are solver diagnostics (calibrated-outcome CV invalid/skipped fold-fit
+     counts, iteration counts, update ratios), i.e. the coordinate-descent failures in
+     the small-lambda tail that never reach the selected lambda. Across the 347
+     non-diagnostic numeric columns (estimates, standard errors, weights, per-source and
+     per-fold Wald statistics) the largest relative difference is 3e-5, consistent with
+     the 1e-4 / 1e-6 solver tolerances. The unoptimized end-to-end twins
      (seeds 9002-9005) and the C3/K4 seed-9001 fold smoke were cancelled after 2-4.5 h;
      the replicate-level equivalence check is repeated on the optimized library with the
      C1/K2 seed-9006 pair, and the fold-count question is answered by the K=8 pilot.
