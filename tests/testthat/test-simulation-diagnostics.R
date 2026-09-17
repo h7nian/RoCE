@@ -535,6 +535,23 @@ test_that("production scientific metadata enforces the audited p=100 design", {
     "audited p=100"
   )
   fixture$p <- 100L
+  fixture$n_folds <- 10L
+  expect_error(
+    RoCE:::.validate_face_production_scientific_metadata(fixture),
+    "audited p=100"
+  )
+  expect_invisible(
+    RoCE:::.validate_face_production_scientific_metadata(
+      fixture, expected_n_folds = 10L
+    )
+  )
+  expect_error(
+    RoCE:::.validate_face_production_scientific_metadata(
+      fixture, expected_n_folds = 1L
+    ),
+    "expected_n_folds"
+  )
+  fixture$n_folds <- 5L
   fixture$estimand_scope <- "treated_mean"
   expect_error(
     RoCE:::.validate_face_production_scientific_metadata(fixture),

@@ -76,7 +76,13 @@
   )
 }
 
-.validate_face_production_scientific_metadata <- function(results) {
+.validate_face_production_scientific_metadata <- function(results,
+                                                          expected_n_folds = 5L) {
+  if (length(expected_n_folds) != 1L || !is.numeric(expected_n_folds) ||
+      !is.finite(expected_n_folds) || expected_n_folds < 2 ||
+      expected_n_folds != as.integer(expected_n_folds)) {
+    stop("expected_n_folds must be one integer of at least 2.", call. = FALSE)
+  }
   required <- c(
     "dgp_type", "outcome_family", "heterogeneity_type", "estimand_type",
     "config", "rho", "deviation_mechanism", "p", "K", "n_site", "n_folds",
@@ -126,7 +132,7 @@
     results$p == 100L & results$dgp_type == "face" &
     results$config %in% c("C1", "C2", "C3") &
     results$K %in% c(2L, 4L, 8L) & results$n_site == 1000L &
-    results$n_folds == 5L &
+    results$n_folds == as.integer(expected_n_folds) &
     results$outcome_family == "binomial" &
     results$estimand_type == "superpopulation" &
     results$estimand_scope == expected_scope &

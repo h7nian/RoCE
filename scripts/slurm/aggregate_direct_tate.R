@@ -61,7 +61,14 @@ source(file.path("scripts", "slurm", "direct_tate_task_helpers.R"))
 source(file.path("scripts", "slurm", "simulation_qc_policy.R"))
 z_alpha_05 <- stats::qnorm(0.975)
 raw <- RoCE:::.read_simulation_result_files(files)
-RoCE:::.validate_face_production_scientific_metadata(raw)
+expected_n_folds <- suppressWarnings(as.integer(Sys.getenv("ROCE_N_FOLDS", "5")))
+if (length(expected_n_folds) != 1L || is.na(expected_n_folds) ||
+    expected_n_folds < 2L) {
+  stop("ROCE_N_FOLDS must be one integer of at least 2.", call. = FALSE)
+}
+RoCE:::.validate_face_production_scientific_metadata(
+  raw, expected_n_folds = expected_n_folds
+)
 provenance <- roce_result_provenance(raw, project_library)
 if (!provenance$passed) {
   stop("aggregate input failed package provenance: ", provenance$detail,

@@ -209,7 +209,13 @@ scheduler_provenance_ok <- isTRUE(tryCatch(
   roce_validate_scheduler_provenance(raw, require_slurm = TRUE),
   error = function(error) FALSE
 ))
-RoCE:::.validate_face_production_scientific_metadata(raw)
+expected_n_folds <- unique(as.integer(setting$n_folds))
+if (length(expected_n_folds) != 1L || is.na(expected_n_folds)) {
+  stop("the setting manifest must carry one outer fold count.", call. = FALSE)
+}
+RoCE:::.validate_face_production_scientific_metadata(
+  raw, expected_n_folds = expected_n_folds
+)
 expected_workflow_fingerprint <- tolower(trimws(Sys.getenv(
   "ROCE_WORKFLOW_FINGERPRINT", ""
 )))
@@ -230,8 +236,7 @@ metadata_ok <- all(raw$experiment == experiment) &&
   all(as.integer(raw$nlambda_init) == as.integer(expected_nlambda)) &&
   all(as.integer(raw$target_anchor_nlambda) == 100L) &&
   all(raw$n_site == 1000L) &&
-  all(as.integer(raw$n_folds) == as.integer(setting$n_folds[[1L]])) &&
-  length(unique(setting$n_folds)) == 1L &&
+  all(as.integer(raw$n_folds) == expected_n_folds) &&
   all(raw$M_tau == 5) && all(raw$M_tau_inference == 5) &&
   all(tolower(raw$workflow_fingerprint) == expected_workflow_fingerprint) &&
   all(tolower(raw$manifest_fingerprint) == expected_manifest_fingerprint) &&

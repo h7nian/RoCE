@@ -88,7 +88,14 @@ if (anyNA(raw$nuisance_lambda_rule) ||
     any(raw$nuisance_lambda_rule != "min")) {
   stop("production nuisance_lambda_rule must equal 'min'.", call. = FALSE)
 }
-RoCE:::.validate_face_production_scientific_metadata(raw)
+expected_n_folds <- suppressWarnings(as.integer(Sys.getenv("ROCE_N_FOLDS", "5")))
+if (length(expected_n_folds) != 1L || is.na(expected_n_folds) ||
+    expected_n_folds < 2L) {
+  stop("ROCE_N_FOLDS must be one integer of at least 2.", call. = FALSE)
+}
+RoCE:::.validate_face_production_scientific_metadata(
+  raw, expected_n_folds = expected_n_folds
+)
 roce_validate_production_resource_metadata(raw)
 provenance <- roce_result_provenance(raw, project_library)
 observed_workflows <- unique(tolower(trimws(
