@@ -1369,8 +1369,14 @@ under `.../shared_shift/`), frozen library `Rlib_production_20260917_v3`, check 
 `package_check_production_20260917_v3`. Tree 162035e3.
 
 Gates:
-- A1 tests + frozen library: job 1192654 [RUNNING].
-- A2 R CMD check (afterok A1): job 1192655 [PENDING].
+- A1 tests + frozen library: job 1192654 [FAIL] — one test failure against the installed
+  library (`test-tate-aggregation.R:627`, reaggregating a legacy fit without
+  `aggregation_screening_rule` must report soft_penalty): the #0015 decorator change copied
+  the field from the fitted object and so assigned NULL over the value the aggregation had
+  stored. The devtools test runs had skipped that test. Fixed in 1cc490b7 (the decorator no
+  longer touches the field); the un-gated library and its stage were removed and A1 was
+  relaunched as job 1193491 on tree 1cc490b7 [RUNNING].
+- A2 R CMD check (afterok A1): job 1192655 [CANCELLED with A1]; relaunched as 1193492.
 - A3 manifests, both families, `ROCE_N_FOLDS=10`: job 1192789 [PASS]; 27,000 and 9,000
   rows, every row `n_folds = 10`, both `manifest_audit_passed.txt` written.
 - A4 smoke (C3/K4/rho 0) and its audit: chained to the A1 gate [PENDING].
