@@ -1507,6 +1507,21 @@ fails fast if a job leaves the queue without its gate):
   through the controller, with the checkpoint audits of #0009 §4 and the decision reviews
   at n = 10/50/100.
 
+**Rung 1, K = 8: four blocks failed on resource provenance and were rerun.** The controller
+exported `ROCE_NUISANCE_CV_THREADS=5` for every block so that K = 8 would use 80 CPUs, but
+`roce_expected_production_cv_threads()` requires two nuisance-CV threads at K = 8 and five at
+K = 2/4, and the checkpoint audit enforces it through
+`roce_validate_result_resource_metadata()`. The four K = 8 group arrays completed (28-36 min
+on 80 CPUs) and their audits 1206319 / 1206322 / 1206324 / 1206343 all failed with "replicate
+metadata/provenance do not match the requested setting"; their n = 5 continuations
+(1206326/27/31/44) were cancelled by the unmet dependency, so those blocks stopped cleanly
+while the eight K = 2/4 blocks, whose five threads are correct, kept advancing. The controller
+no longer sets the variable at all: the submitter's own policy already gives five threads for
+K = 2/4 and two for K = 8, and allocates `2 * K * threads` CPUs (20/40/32). The 24 affected
+result files and their four group commit markers were moved to
+`superseded_k8_threads5_20260917T1721/` under each family root, the four rung-1 ladder records
+were set aside, and the blocks were resubmitted. K = 8 therefore runs on 32 CPUs, not 80.
+
 Expectation on the record, from the 100-seed pilot in #0015: ten folds cut the bias by only
 9%, and the coverage shortfall at K = 4/8 comes from second-order nuisance error at p = 100
 with 1000 observations per site, so this run is expected to land near 88-91% rather than 95%
