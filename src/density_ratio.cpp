@@ -7,10 +7,18 @@
 //   - select_lambda_cv_density_ratio_cpp:              CV for refined γ
 //   - select_lambda_cv_initial_density_ratio_cpp:      CV for initial γ
 //   - select_lambda_cv_calibrated_density_ratio_cpp:   CV for calibrated γ
+//   - nuisance_solver_cpp:                             Solver name for provenance
 // ============================================================================
 
 #include "optimization.h"
 #include "cv_utils.h"
+
+// Name of the nuisance solver in effect for this process (see
+// CVUtils::nuisance_use_proximal_newton), recorded in result provenance.
+// [[Rcpp::export]]
+std::string nuisance_solver_cpp() {
+    return CVUtils::nuisance_solver_name();
+}
 
 namespace {
 
@@ -115,7 +123,7 @@ List fit_unified_density_ratio_cpp(const MatrixXd& Z_site, const VectorXd& A_sou
     }
     
     // Pre-compute ψ'(η_i) for all treated units — this is CONSTANT across all
-    // coordinate descent iterations since it depends only on alpha_init (not gamma).
+    // solver iterations since it depends only on alpha_init (not gamma).
     // Eliminates O(n_treated * p_outcome) VectorXd allocation + dot product per (j,i) pair.
     MatrixXd W_outcome_int = prepend_intercept(W_outcome_treated);
     VectorXd eta_outcome = W_outcome_int * alpha_init;
@@ -140,7 +148,7 @@ List fit_unified_density_ratio_cpp(const MatrixXd& Z_site, const VectorXd& A_sou
     // also run with an infinite radius from R.
     double tilt_radius = calibrated ? M_tau : std::numeric_limits<double>::infinity();
     std::vector<bool> active(p_site, true);
-    CVUtils::DensityRatioCDResult fit = CVUtils::density_ratio_cd_update(
+    CVUtils::DensityRatioFitResult fit = CVUtils::density_ratio_penalized_fit(
         gamma, active, Z_site_treated, psi_prime_precomputed,
         static_cast<double>(n_treated) / n, mean_grad_psi, lambda,
         tilt_radius, tol, max_iter, false
@@ -190,7 +198,7 @@ List fit_initial_density_ratio_cpp(const MatrixXd& Z_site, const VectorXd& A_sou
     
     VectorXd psi_prime = VectorXd::Ones(n_treated);
     std::vector<bool> active(p, true);
-    CVUtils::DensityRatioCDResult fit = CVUtils::density_ratio_cd_update(
+    CVUtils::DensityRatioFitResult fit = CVUtils::density_ratio_penalized_fit(
         gamma, active, X_treated, psi_prime,
         static_cast<double>(n_treated) / n, mean_phi, lambda,
         M_tau, tol, max_iter, false
@@ -271,8 +279,8 @@ List select_lambda_cv_density_ratio_cpp(const MatrixXd& Z_site, const VectorXd& 
             int cv_max_iter = std::min(max_iter, NumericalConstants::CV_MAX_ITER);
             VectorXd gamma_before = gamma;
 
-            CVUtils::DensityRatioCDResult fit =
-                CVUtils::density_ratio_cd_update(
+            CVUtils::DensityRatioFitResult fit =
+                CVUtils::density_ratio_penalized_fit(
                     gamma, active, X_train_folds[fold], pp_train[fold],
                     static_cast<double>(n_treated) / n, mean_grad_psi,
                     lambda, std::numeric_limits<double>::infinity(),
@@ -373,8 +381,8 @@ List select_lambda_cv_initial_density_ratio_cpp(const MatrixXd& Z_site, const Ve
             int cv_max_iter = std::min(max_iter, NumericalConstants::CV_MAX_ITER);
             VectorXd gamma_before = gamma;
 
-            CVUtils::DensityRatioCDResult fit =
-                CVUtils::density_ratio_cd_update(
+            CVUtils::DensityRatioFitResult fit =
+                CVUtils::density_ratio_penalized_fit(
                     gamma, active, X_train_folds[fold], pp_train[fold],
                     static_cast<double>(n_treated) / n, mean_phi,
                     lambda, M_tau, cv_tol, cv_max_iter
@@ -482,8 +490,8 @@ List select_lambda_cv_calibrated_density_ratio_cpp(const MatrixXd& Z_site, const
             int cv_max_iter = std::min(max_iter, NumericalConstants::CV_MAX_ITER);
             VectorXd gamma_before = gamma;
 
-            CVUtils::DensityRatioCDResult fit =
-                CVUtils::density_ratio_cd_update(
+            CVUtils::DensityRatioFitResult fit =
+                CVUtils::density_ratio_penalized_fit(
                     gamma, active, X_train_folds[fold], pp_train[fold],
                     static_cast<double>(n_treated) / n, mean_grad_psi,
                     lambda, M_tau, cv_tol, cv_max_iter

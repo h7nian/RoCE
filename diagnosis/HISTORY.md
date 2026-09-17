@@ -1260,8 +1260,14 @@ row set and every production artifact are unchanged.
    - tests: full suite under the default path 1858/0/19; the solver-relevant subset (15 files,
      672 expectations) passes under both solvers.
    - end-to-end replicate pairs on Slurm (C1/K2 seeds 9002/9004/9005, C3/K4 seed 9003; all
-     output columns): first Newton replicate C1/K2 seed 9005 took 4053 s (control-arm
-     nuisances 4046 s vs treated 1802 s); coordinate-descent twins still running.
+     output columns): Newton replicates C1/K2 took 7096 s with exact inner solves (seed
+     9004) and 4053 s with the inexact inner tolerance (seed 9005; control-arm nuisances
+     4046 s vs treated 1802 s); coordinate-descent twins still running after 2-3 h.
+   - isolated compute-node micro-benchmark, one calibrated-outcome CV path (C1 seed-1 block):
+     Newton 244 s at 1 thread, 56 s at 5 threads; coordinate descent 407 s at 5 threads
+     (7.3x). Inside the full pipeline the same paths averaged about 246 s, so the
+     4-workers-x-5-threads configuration costs about 4x; a concurrent micro-benchmark is
+     measuring whether this is memory-bandwidth contention.
 
 6. Decisions recorded 2026-09-17 (user): Newton does not change results within tolerance; K=8
    may be submitted with 5 CV threads (80 CPUs); n_folds = 10 is adopted for the next
@@ -1269,8 +1275,17 @@ row set and every production artifact are unchanged.
    9101-9110, Newton, `results/direct_tate_mc500_b5000/pilot_nfolds_K8_20260917/`) and the
    C3/K4 seed-9001 fold smoke are in flight to size the n_folds=10 cost and its bias effect.
 
-7. Open: adopt Newton as the default and record the solver in result provenance instead of
-   an environment switch; whether a principled CV eligibility rule (no training row beyond
-   the truncation radius) should replace the accidental "coordinate descent failed" path
-   truncation (not needed for equivalence); the paper states five folds and describes the
-   truncated target moment inconsistently, so both need text changes once the design is fixed.
+7. Adoption (user decision, 2026-09-17, "不影响结果就用"): the proximal-Newton path is the
+   default for every nuisance fit; `ROCE_NUISANCE_SOLVER=coordinate_descent` restores the
+   original solver for paired audits, and `roce_annotate_direct_tate_rows` records
+   `nuisance_solver` in every production row. The full test suite passes under the new
+   default (1858 passed, 0 failed, 19 skipped). With the default flipped, the
+   solver-neutral names replace the coordinate-descent ones: `density_ratio_penalized_fit`
+   / `glm_penalized_fit` dispatch to `*_proximal_newton` or `*_coordinate_descent`, and the
+   result structs are `DensityRatioFitResult` / `GLMFitResult`.
+
+8. Open: whether a principled CV eligibility rule (no training row beyond the truncation
+   radius) should replace the accidental "coordinate descent failed" path truncation (not
+   needed for equivalence); the paper states five folds, describes the truncated target
+   moment inconsistently and calls the solver "proximal coordinate descent", so all three
+   need text changes once the design is fixed.

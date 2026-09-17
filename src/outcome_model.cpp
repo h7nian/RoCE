@@ -300,7 +300,7 @@ List select_lambda_cv_general_refined_outcome_cpp(const MatrixXd& W_outcome, con
             int cv_max_iter = std::min(max_iter, NumericalConstants::CV_MAX_ITER);
 
             VectorXd beta_before = beta;
-            CVUtils::GLMCDResult fit = CVUtils::glm_cd_update(
+            CVUtils::GLMFitResult fit = CVUtils::glm_penalized_fit(
                 beta, active, X_train_folds[fold], Y_train_folds[fold],
                 w_train_folds[fold], n_train, lambda, link, family,
                 cv_tol, cv_max_iter
@@ -413,7 +413,7 @@ List select_lambda_cv_calibrated_outcome_cpp(const MatrixXd& W_outcome, const Ve
             int cv_max_iter = std::min(max_iter, NumericalConstants::CV_MAX_ITER);
 
             VectorXd alpha_before = alpha;
-            CVUtils::GLMCDResult fit = CVUtils::glm_cd_update(
+            CVUtils::GLMFitResult fit = CVUtils::glm_penalized_fit(
                 alpha, active, X_train_folds[fold], Y_train_folds[fold],
                 w_train_folds[fold], n_train, lambda, link, family,
                 cv_tol, cv_max_iter

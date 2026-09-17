@@ -1,6 +1,7 @@
 #!/usr/bin/env Rscript
-# Compare paired replicate outputs produced under two density-ratio solvers
-# (ROCE_DR_SOLVER=cd vs newton): same seed, config, K and fold count.
+# Compare paired replicate outputs produced under the two nuisance solvers
+# (ROCE_NUISANCE_SOLVER=coordinate_descent vs the proximal-Newton default):
+# same seed, config, K and fold count. Expects <ROOT>/cd/raw and <ROOT>/newton/raw.
 #
 # usage: compare_solver_equivalence.R [ROOT]   (default results/.../solver_equiv_20260917)
 args <- commandArgs(trailingOnly = TRUE)

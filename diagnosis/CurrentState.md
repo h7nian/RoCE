@@ -7,10 +7,13 @@ Historical decisions and superseded acceptance criteria remain in HISTORY.md.
 
 ## Solver and speed (2026-09-17, HISTORY #0015)
 
-- A proximal-Newton path for every L1-penalized nuisance fit is available
-  behind `ROCE_NUISANCE_SOLVER=newton` (default off). Paired validation shows
-  identical CV-selected lambdas, coefficients within 6.5e-6 and 6-12x lower
-  CV time; the user has accepted it as result-preserving.
+- Every L1-penalized nuisance fit now uses the proximal-Newton solver by
+  default; `ROCE_NUISANCE_SOLVER=coordinate_descent` restores the original
+  coordinate descent for paired audits against earlier production runs, and
+  the production rows record the solver in `nuisance_solver`. Paired
+  validation shows identical CV-selected lambdas, coefficients within 6.5e-6
+  and 6-12x lower CV time; the user accepted it as result-preserving on
+  2026-09-17.
 - Decisions: K=8 runs use 5 CV threads (80 CPUs); the next design uses ten
   outer folds; both are being sized by `pilot_nfolds_K8_20260917`.
 

@@ -316,6 +316,7 @@ roce_annotate_direct_tate_rows <- function(
   }
   result$allocated_cores <- resource_plan$allocated_cores
   result$nuisance_cv_threads <- resource_plan$nuisance_cv_threads
+  result$nuisance_solver <- RoCE:::nuisance_solver_cpp()
   result$source_workers_per_arm <- resource_plan$source_workers
   result$parallel_treatment_arms <- resource_plan$parallel_treatment_arms
   result$fully_parallel_cores <- resource_plan$fully_parallel_cores

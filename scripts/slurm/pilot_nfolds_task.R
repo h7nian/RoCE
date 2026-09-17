@@ -66,6 +66,7 @@ result$pilot_n_folds <- n_folds
 result$pilot_elapsed_seconds <- proc.time()[["elapsed"]] - started
 result$pilot_allocated_cores <- allocated_cores
 result$pilot_cv_threads <- nuisance_cv_threads
+result$nuisance_solver <- RoCE:::nuisance_solver_cpp()
 tmp <- paste0(out_path, ".tmp")
 write.csv(result, tmp, row.names = FALSE)
 file.rename(tmp, out_path)

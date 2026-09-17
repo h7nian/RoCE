@@ -106,8 +106,8 @@ inline VectorXd compute_density_ratio_weights(
 //   - Treated unit filtering and early-return logic
 //   - Fold creation and train/val index splitting
 //   - Matrix/vector row slicing for fold data
-//   - GLM coordinate descent inner loop (outcome models)
-//   - Density ratio coordinate descent inner loop (DR models)
+//   - Penalized outcome-GLM fits (coordinate descent and proximal Newton)
+//   - Penalized density-ratio fits (coordinate descent and proximal Newton)
 //   - Score aggregation and best-lambda selection
 // ============================================================================
 
@@ -392,24 +392,30 @@ inline int cv_path_tail_after_failure(
     return std::max(0, n_lambda - path_position - 1);
 }
 
-// ---- Coordinate Descent Inner Loops ----
+// ---- Penalized nuisance fits: coordinate descent and proximal Newton ----
 
-struct GLMCDResult {
+struct GLMFitResult {
     bool converged = false;
     int iterations = 0;
     double max_update = NA_REAL;
     double convergence_threshold = NA_REAL;
 };
 
-// Solver switch for every L1-penalized nuisance fit (outcome GLM and density
-// ratio; CV folds and final refits).  ROCE_NUISANCE_SOLVER=newton selects the
-// proximal-Newton path; anything else keeps the coordinate-descent path.
+// Solver for every L1-penalized nuisance fit (outcome GLM and density ratio;
+// CV folds and final refits).  The proximal-Newton path is the default;
+// ROCE_NUISANCE_SOLVER=coordinate_descent selects the original coordinate
+// descent, which minimizes the same objectives and is kept for paired
+// equivalence audits against earlier production runs.
 inline bool nuisance_use_proximal_newton() {
     static const bool use_newton = [] {
         const char* value = std::getenv("ROCE_NUISANCE_SOLVER");
-        return value != nullptr && std::string(value) == "newton";
+        return value == nullptr || std::string(value) != "coordinate_descent";
     }();
     return use_newton;
+}
+
+inline const char* nuisance_solver_name() {
+    return nuisance_use_proximal_newton() ? "proximal_newton" : "coordinate_descent";
 }
 
 // Shared proximal-Newton tuning.  The Levenberg-Marquardt damping is relative
@@ -511,14 +517,14 @@ namespace ProximalNewton {
 // CV). Returning convergence metadata prevents a finite CV path from silently
 // accepting a lambda whose coordinate-descent refit exhausted its iteration
 // budget.
-inline GLMCDResult glm_coordinate_descent(
+inline GLMFitResult glm_coordinate_descent(
         VectorXd& beta, std::vector<bool>& active,
         const MatrixXd& X_train, const VectorXd& Y_train,
         const VectorXd& weights_train, int n_train,
         double lambda, LinkFunction link, GLMFamily family,
         double cv_tol, int cv_max_iter) {
     int p = beta.size();
-    GLMCDResult result;
+    GLMFitResult result;
 
     for (int iter = 0; iter < cv_max_iter; iter++) {
         VectorXd beta_old = beta;
@@ -600,7 +606,7 @@ inline GLMCDResult glm_coordinate_descent(
 // and accepts the step by an Armijo backtracking search on the complete
 // penalized objective.  The gradient (mu - y) x and working weight h'(eta) are
 // exact derivatives of the loss for the canonical links used in production.
-inline GLMCDResult glm_proximal_newton(
+inline GLMFitResult glm_proximal_newton(
         VectorXd& beta, std::vector<bool>& active,
         const MatrixXd& X_train, const VectorXd& Y_train,
         const VectorXd& weights_train, int n_train,
@@ -608,7 +614,7 @@ inline GLMCDResult glm_proximal_newton(
         double cv_tol, int cv_max_iter) {
     using namespace ProximalNewton;
     const int p = beta.size();
-    GLMCDResult result;
+    GLMFitResult result;
     const double inner_tol_final = std::max(0.1 * cv_tol, 1e-12);
     double inner_tol = std::max(inner_tol_final, inner_tol_initial);
 
@@ -726,7 +732,7 @@ inline GLMCDResult glm_proximal_newton(
     return result;
 }
 
-inline GLMCDResult glm_cd_update(
+inline GLMFitResult glm_penalized_fit(
         VectorXd& beta, std::vector<bool>& active,
         const MatrixXd& X_train, const VectorXd& Y_train,
         const VectorXd& weights_train, int n_train,
@@ -744,7 +750,7 @@ inline GLMCDResult glm_cd_update(
     );
 }
 
-struct DensityRatioCDResult {
+struct DensityRatioFitResult {
     bool converged = false;
     int iterations = 0;
     double max_update = NA_REAL;
@@ -782,7 +788,7 @@ inline double tilt_loss(double linear_predictor, double M_tau) {
 // n_s^{-1} sum_i I(A_i=a)(.) both for a complete sample and for an inner-CV
 // training fold.  A monotone backtracking search replaces the former ad-hoc
 // iteration-decaying cap, which could stall far above the requested tolerance.
-inline DensityRatioCDResult density_ratio_coordinate_descent(
+inline DensityRatioFitResult density_ratio_coordinate_descent(
         VectorXd& gamma, std::vector<bool>& active,
         const MatrixXd& X_train, const VectorXd& psi_prime_train,
         double source_scale, const VectorXd& mean_grad_psi, double lambda,
@@ -793,21 +799,21 @@ inline DensityRatioCDResult density_ratio_coordinate_descent(
 
     if (n_train <= 0 || psi_prime_train.size() != n_train) {
         throw std::runtime_error(
-            "density_ratio_cd_update: training rows and psi_prime must be non-empty and match."
+            "density_ratio_coordinate_descent: training rows and psi_prime must be non-empty and match."
         );
     }
     if (mean_grad_psi.size() != p) {
         throw std::runtime_error(
-            "density_ratio_cd_update: mean_grad_psi length must match gamma length."
+            "density_ratio_coordinate_descent: mean_grad_psi length must match gamma length."
         );
     }
     if (!std::isfinite(source_scale) || source_scale <= 0.0 || source_scale > 1.0) {
         throw std::runtime_error(
-            "density_ratio_cd_update: source_scale must be in (0, 1]."
+            "density_ratio_coordinate_descent: source_scale must be in (0, 1]."
         );
     }
 
-    DensityRatioCDResult result;
+    DensityRatioFitResult result;
     constexpr int max_backtracking_steps = 50;
     constexpr double backtracking_factor = 0.5;
 
@@ -948,7 +954,7 @@ inline DensityRatioCDResult density_ratio_coordinate_descent(
 // Armijo backtracking search on the complete penalized objective.  Tilt
 // weights and losses are the same functions as in the coordinate-descent path,
 // so both solvers minimize the identical objective.
-inline DensityRatioCDResult density_ratio_proximal_newton(
+inline DensityRatioFitResult density_ratio_proximal_newton(
         VectorXd& gamma, std::vector<bool>& active,
         const MatrixXd& X_train, const VectorXd& psi_prime_train,
         double source_scale, const VectorXd& mean_grad_psi, double lambda,
@@ -974,7 +980,7 @@ inline DensityRatioCDResult density_ratio_proximal_newton(
     }
 
     using namespace ProximalNewton;
-    DensityRatioCDResult result;
+    DensityRatioFitResult result;
     const double inner_tol_final = std::max(0.1 * convergence_tol, 1e-12);
     double inner_tol = std::max(inner_tol_final, inner_tol_initial);
 
@@ -1103,7 +1109,7 @@ inline DensityRatioCDResult density_ratio_proximal_newton(
     return result;
 }
 
-inline DensityRatioCDResult density_ratio_cd_update(
+inline DensityRatioFitResult density_ratio_penalized_fit(
         VectorXd& gamma, std::vector<bool>& active,
         const MatrixXd& X_train, const VectorXd& psi_prime_train,
         double source_scale, const VectorXd& mean_grad_psi, double lambda,
@@ -1126,7 +1132,7 @@ inline DensityRatioCDResult density_ratio_cd_update(
 // source_scale = n_treated / n_source rescales the treated-arm validation average
 // (Σ_{treated in val} ... / n_val) into the full-source empirical expectation
 // Ẽ_{s_j}[I(A=1) exp(-φ^T γ) ψ'] = (n_treated / n_source) * mean_{treated}[...] used by
-// the training objective (density_ratio_cd_update uses the same arm fraction times
+// the training objective (density_ratio_penalized_fit uses the same arm fraction times
 // a treated-fold mean) and by main.tex (eq:gamma_init,
 // eq:gamma_calibrated_loss). Without this factor the
 // validation loss is a treated-arm average that over-weights the exp term by

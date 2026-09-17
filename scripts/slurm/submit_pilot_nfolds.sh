@@ -5,6 +5,8 @@
 # env:   ROCE_PILOT_LIB (default results/direct_tate_mc500_b5000/Rlib_pilot_nfolds_20260917)
 #        ROCE_PILOT_ROOT (default results/direct_tate_mc500_b5000/pilot_nfolds_20260917)
 #        ROCE_NUISANCE_CV_THREADS (default 5), ROCE_SLURM_PARTITION (default msismall)
+#        ROCE_NUISANCE_SOLVER is passed through unchanged (set coordinate_descent
+#        for a paired audit against the original solver)
 set -euo pipefail
 
 CONFIG="$1"; K="$2"; N_FOLDS="$3"; SEED_START="$4"; SEED_END="$5"
