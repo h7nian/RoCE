@@ -2181,7 +2181,6 @@ run_tate_crossfit <- function(
   result$family <- fitted_tate$family
   result$M_tau <- fitted_tate$M_tau
   result$M_tau_inference <- M_tau_inference
-  result$aggregation_screening_rule <- fitted_tate$aggregation_screening_rule
   result$aggregation_lambda_selection <- lambda_selection
   result$aggregation_lambda_grid <- aggregation_lambda_grid
   result$method <- paste0(
