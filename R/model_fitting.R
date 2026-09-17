@@ -521,11 +521,16 @@ fit_initial_outcome <- function(W_outcome, Y, A, A_val = 1L, lambda = NULL,
 #' @param alpha Outcome-model parameters, including intercept.
 #' @param family_int Integer GLM family code, accepted for API symmetry.
 #' @param link_int Integer link code.
+#' @param M_tau Truncation radius applied to \eqn{\eta} before computing
+#'   \eqn{h'}. Use \code{Inf} (default) for the untruncated moment and the
+#'   training-stage \code{M_tau} for the calibrated moment, so that the target
+#'   and source sides of the calibration loss balance the same function.
 #' @return Numeric vector of length \code{ncol(Z_site) + 1}.
 #' @keywords internal
 .mean_glm_gradient_site_basis <- function(W_outcome, Z_site, alpha,
                                           family_int = FAMILY_BINOMIAL,
-                                          link_int = LINK_LOGIT) {
+                                          link_int = LINK_LOGIT,
+                                          M_tau = Inf) {
   W_mat <- as.matrix(W_outcome)
   Z_mat <- as.matrix(Z_site)
   alpha <- as.numeric(alpha)
@@ -544,6 +549,9 @@ fit_initial_outcome <- function(W_outcome, Y, A, A_val = 1L, lambda = NULL,
   }
 
   eta <- drop(cbind(1, W_mat) %*% alpha)
+  if (is.finite(M_tau)) {
+    eta <- pmax(pmin(eta, M_tau), -M_tau)
+  }
   h_prime <- switch(
     as.character(link_int),
     "0" = rep(1, length(eta)),

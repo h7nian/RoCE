@@ -1301,7 +1301,7 @@ run_crossfit <- function(data_split, n_folds = N_FOLDS_DEFAULT,
 
           mean_grad_psi_init <- .mean_glm_gradient_site_basis(
             target_fold_k2$W_outcome, target_fold_k2$Z_site,
-            alpha_init_k1_k2, family_int, link_int
+            alpha_init_k1_k2, family_int, link_int, M_tau = M_tau
           )
           target_summaries[[s]][[k2_key]] <- list(
             mean_grad_psi_init = mean_grad_psi_init,
@@ -1367,7 +1367,7 @@ run_crossfit <- function(data_split, n_folds = N_FOLDS_DEFAULT,
 
         mean_grad_psi_init <- .mean_glm_gradient_site_basis(
           target_calib_k2$W_outcome, target_calib_k2$Z_site,
-          alpha_init_k1_k2, family_int, link_int
+          alpha_init_k1_k2, family_int, link_int, M_tau = M_tau
         )
         mean_phi <- c(1, colMeans(target_train$Z_site))
 
@@ -1902,7 +1902,8 @@ run_tate_crossfit <- function(
               target_calibration$Z_site,
               alpha_init,
               glm_spec$family_int,
-              glm_spec$link_int
+              glm_spec$link_int,
+              M_tau = fitted_arm$M_tau
             ),
             alpha_init = alpha_init
           )
@@ -2050,6 +2051,7 @@ run_tate_crossfit <- function(
     lambda_selection = lambda_selection,
     lambda_rule = fitted_tate$aggregation_lambda_rule %||% "min",
     aggregation_lambda_grid = aggregation_lambda_grid,
+    screening_rule = fitted_tate$aggregation_screening_rule %||% "soft_penalty",
     verbose = verbose
   )
   result$communication_mode <- "one_round"
@@ -2179,6 +2181,7 @@ run_tate_crossfit <- function(
   result$family <- fitted_tate$family
   result$M_tau <- fitted_tate$M_tau
   result$M_tau_inference <- M_tau_inference
+  result$aggregation_screening_rule <- fitted_tate$aggregation_screening_rule
   result$aggregation_lambda_selection <- lambda_selection
   result$aggregation_lambda_grid <- aggregation_lambda_grid
   result$method <- paste0(
@@ -2331,6 +2334,7 @@ reaggregate_tate_crossfit <- function(
     lambda_selection = lambda_selection,
     lambda_rule = lambda_rule,
     aggregation_lambda_grid = aggregation_lambda_grid,
+    screening_rule = fitted_tate$aggregation_screening_rule %||% "soft_penalty",
     verbose = verbose
   )
   .decorate_reaggregated_tate(
@@ -2469,6 +2473,7 @@ reaggregate_tate_sensitivity_grid <- function(
         mu0_result = inference_fit$arm_results$mu0,
         lambda_selection = lambda,
         lambda_rule = inference_fit$aggregation_lambda_rule %||% "min",
+        screening_rule = inference_fit$aggregation_screening_rule %||% "soft_penalty",
         verbose = verbose
       )
       results[[index]] <- .decorate_reaggregated_tate(

@@ -31,7 +31,7 @@ List fit_unified_density_ratio_cpp(const MatrixXd& Z_site, const VectorXd& A_sou
 List fit_initial_density_ratio_cpp(const MatrixXd& Z_site, const VectorXd& A_source,
                                    const VectorXd& mean_phi,
                                    double lambda, int max_iter, double tol,
-                                   int A_val, const VectorXd& warm_start);
+                                   int A_val, double M_tau, const VectorXd& warm_start);
 
 // ============================================================================
 // Outcome model fitting (defined in outcome_model.cpp)
@@ -52,35 +52,40 @@ List select_lambda_cv_density_ratio_cpp(const MatrixXd& Z_site, const VectorXd& 
                                        const VectorXd& mean_grad_psi, const VectorXd& alpha_init,
                                        const VectorXd& lambda_grid, int n_folds,
                                        int max_iter, double tol,
-                                       int A_val = 1,
-                                       int family_int = 1, int link_int = 1);
+                                       int A_val,
+                                       int family_int, int link_int,
+                                       Rcpp::Nullable<Rcpp::NumericVector> cv_fold_id);
 
 List select_lambda_cv_initial_density_ratio_cpp(const MatrixXd& Z_site, const VectorXd& A_source,
                                                 const VectorXd& mean_phi,
                                                 const VectorXd& lambda_grid, int n_folds,
                                                 int max_iter, double tol,
-                                                int A_val);
+                                                int A_val, double M_tau,
+                                                Rcpp::Nullable<Rcpp::NumericVector> cv_fold_id);
 
 List select_lambda_cv_general_refined_outcome_cpp(const MatrixXd& W_outcome, const VectorXd& Y_source,
                                                  const VectorXd& A_source, const VectorXd& gamma_s,
                                                  int family_int, int link_int, const VectorXd& lambda_grid, 
                                                  int n_folds, int max_iter, double tol, int A_val,
-                                                 const MatrixXd& Z_site);
+                                                 const MatrixXd& Z_site,
+                                                 Rcpp::Nullable<Rcpp::NumericVector> cv_fold_id);
 
 List select_lambda_cv_calibrated_density_ratio_cpp(const MatrixXd& Z_site, const VectorXd& A_source,
                                                    const VectorXd& mean_grad_psi, const VectorXd& alpha_init,
                                                    const VectorXd& lambda_grid, int n_folds,
                                                    int max_iter, double tol, double M_tau,
                                                    const MatrixXd& W_outcome,
-                                                   int A_val = 1,
-                                                   int family_int = 1, int link_int = 1);
+                                                   int A_val,
+                                                   int family_int, int link_int,
+                                                   Rcpp::Nullable<Rcpp::NumericVector> cv_fold_id);
 
 List select_lambda_cv_calibrated_outcome_cpp(const MatrixXd& W_outcome, const VectorXd& Y_source,
                                              const VectorXd& A_source, const VectorXd& gamma_init,
                                              const VectorXd& lambda_grid, int n_folds,
                                              int max_iter, double tol, int A_val, double M_tau,
                                              const MatrixXd& Z_site,
-                                             int family_int = 1, int link_int = 1);
+                                             int family_int, int link_int,
+                                             Rcpp::Nullable<Rcpp::NumericVector> cv_fold_id);
 
 // ============================================================================
 // GLM fitting
