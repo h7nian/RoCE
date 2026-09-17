@@ -1390,19 +1390,45 @@ Gates:
   package_source_fingerprint e3d4c38c…; the frozen library compiles with -O2 -g0) and A2
   job 1195656 [PASS] (`r_cmd_check_passed.txt` written).
 - A4 smoke (C3/K4/rho 0): job 1194852 was cancelled with the second A1; the third-launch
-  smoke is job 1196352 (40 CPUs, five CV threads) [RUNNING]; its audit
-  (`audit_direct_tate_smoke.sh`, gate `direct_tate_smoke_audit_passed.txt` in
-  `smoke_final_direct_tate_raw/`) is chained to the smoke CSV.
+  smoke is job 1196352 (40 CPUs, five CV threads) [DONE]; its first audit (job 1198037)
+  [FAIL] on `p100_c3_smoke_metadata` because `audit_direct_tate_smoke.R` expected five
+  folds; the audit now reads `ROCE_EXPECT_N_FOLDS` (defaulting to `ROCE_N_FOLDS`, then 5)
+  and the reused-sensitivity aggregator reads `ROCE_N_FOLDS` (commit 386cea70), and the
+  audit was resubmitted as job 1199415 with `ROCE_N_FOLDS=10` [PASS]
+  (`direct_tate_smoke_audit_passed.txt`, all 32 checks; density-ratio stability: 0
+  line-search failures, max |gamma| 1.82).
 - A5 reuse equivalence. A first submission omitted the validation-root argument and wrote
   into the default `rho_reuse_equivalence_candidate` (jobs 1197268-1197270, cancelled, the
   directory removed; the shared-shift call was refused because that root was then
   non-empty). Resubmitted with the roots the ladder reads: negative transfer
   (C3/K4/rho 2.5) `production_20260917_v3/rho_reuse_equivalence_final`, jobs 1197361
-  (independent), 1197362 (grouped), 1197363 (audit); shared shift (`ROCE_REUSE_CONFIG=C1`,
-  C1/K4/rho 2.5) `production_20260917_v3/shared_shift/rho_reuse_equivalence_final`, jobs
-  1197364 / 1197365 / 1197366 [PENDING]. Invocation for the record:
+  (independent), 1197362 (grouped), 1197363 (audit) [PASS]: 14 rows x 1137 columns, 0 exact
+  mismatches; the single rho task took 798 s and the six-rho group 1133 s on 40 CPUs (4.2x
+  over six independent fits). Shared shift (`ROCE_REUSE_CONFIG=C1`, C1/K4/rho 2.5)
+  `production_20260917_v3/shared_shift/rho_reuse_equivalence_final`, jobs 1197364
+  (independent, done in 805 s) / 1197365 (grouped) / 1197366 (audit) [PENDING].
+  Invocation for the record:
   `ROCE_PROJECT_LIB=LIB ROCE_PACKAGE_CHECK_GATE=CHECK ROCE_NUISANCE_CV_THREADS=5
   submit_rho_reuse_equivalence.sh MANIFEST_ROOT MANIFEST_ROOT/rho_reuse_equivalence_final`.
-- B ladder: after A4/A5, `ROCE_NUISANCE_CV_THREADS=5 advance_production_ladder.sh ROOT LIB
-  CHECK_GATE` for all twelve blocks; rungs 1/5/10/25/50/100/200/300/400/500 with the
-  checkpoint audits of #0009 §4.
+- B ladder, launched 2026-09-17 once A4 and the negative-transfer A5 had passed. Rungs do
+  not advance by themselves: `advance_production_ladder.sh` submits one rung per call (the
+  six-rho group array plus its dependent checkpoint QC), so, as in v2, a run-specific
+  controller `results/direct_tate_mc500_b5000/run_v3_setting_ladder.sh` (adapted from
+  `run_v2_setting_ladder.sh`: exports `ROCE_NUISANCE_CV_THREADS=5`, queues no block
+  reports) submits each rung from the frozen source copy `source_production_20260917_v3`
+  (git archive of 386cea70; workflow fingerprint 358d93db… identical to the smoke and A5
+  gates; its `results` entry is a symlink to the live results tree; per-file SHA-256 in
+  `source_production_20260917_v3_manifest.json`), records job ids under
+  `ROOT/ladder_jobs/<C>_K<k>_n<NNN>/` (`controller_job.txt`, `submission.log`, `jobs.txt`),
+  refuses a duplicate rung, and queues the next rung's controller afterok its own QC.
+  Negative-transfer rung 1 (seed 1 x six rho per block) was submitted from the working tree
+  by `ROCE_NUISANCE_CV_THREADS=5 advance_production_ladder.sh ROOT LIB CHECK_GATE`
+  (20/40/80 CPUs for K = 2/4/8); group/QC jobs: C1 K2 1199801/1199802, K4 1199803/1199804,
+  K8 1199817/1199818; C2 K2 1199823/1199824, K4 1199825/1199826, K8 1199827/1199828; C3 K2
+  1199829/1199830, K4 1199831/1199832, K8 1199833/1199834. Their n = 5 controllers
+  1199888-1199891 and 1199893-1199897 wait afterok on the QC jobs. The three shared-shift
+  blocks were refused by that call (their A5 gate was still pending); their rung-1
+  controllers 1200006/1200007/1200008 (K = 2/4/8) wait afterok on the shared-shift A5 audit
+  1197366. Rungs 1/5/10/25/50/100/200/300/400/500 with the checkpoint audits of #0009 §4;
+  rho-group and QC logs in `results/direct_tate_mc500_b5000/logs/`, controller logs in
+  `ROOT/logs/*_ladder.{out,err}`.
