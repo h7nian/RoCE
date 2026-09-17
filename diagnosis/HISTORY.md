@@ -1264,10 +1264,22 @@ row set and every production artifact are unchanged.
      9004) and 4053 s with the inexact inner tolerance (seed 9005; control-arm nuisances
      4046 s vs treated 1802 s); coordinate-descent twins still running after 2-3 h.
    - isolated compute-node micro-benchmark, one calibrated-outcome CV path (C1 seed-1 block):
-     Newton 244 s at 1 thread, 56 s at 5 threads; coordinate descent 407 s at 5 threads
-     (7.3x). Inside the full pipeline the same paths averaged about 246 s, so the
-     4-workers-x-5-threads configuration costs about 4x; a concurrent micro-benchmark is
-     measuring whether this is memory-bandwidth contention.
+     Newton 244 s at 1 thread, 56 s at 5 threads; coordinate descent 1558 s at 1 thread,
+     407 s at 5 threads (6.4x and 7.3x). Four concurrent 5-thread processes in one
+     20-CPU job take 56-67 s (Newton) and 368-373 s (coordinate descent) per path, so
+     there is no memory-bandwidth contention; the higher per-path averages inside the
+     pipeline come from the larger control-arm fits (about 60% of rows) and R-level
+     bookkeeping between fits.
+
+   - CAVEAT on every timing above: the working-tree objects were compiled by
+     devtools::load_all with pkgbuild's debug flags (`-O2 -O0`, the last one wins) and the
+     ad-hoc pilot libraries (`Rlib_newton*_20260917`) were installed with `R CMD INSTALL .`,
+     which reused those objects; the production library is a clean `-O2 -g0` build. The
+     solver ratios were measured under equal conditions, but the absolute times are
+     unoptimized and explain why the pilot harness ran about 3x slower than production
+     (K=2 coordinate-descent replicate: production median 3347 s, pilot > 10000 s).
+     `scripts/slurm/install_pilot_library.sh` installs from an immutable git-archive stage
+     and refuses objects compiled with -O0; optimized re-measurements follow.
 
 6. Decisions recorded 2026-09-17 (user): Newton does not change results within tolerance; K=8
    may be submitted with 5 CV threads (80 CPUs); n_folds = 10 is adopted for the next
