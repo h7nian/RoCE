@@ -1315,9 +1315,20 @@ row set and every production artifact are unchanged.
    n_folds=10, 10 seeds: bias -0.0095 (MCSE 0.0045), SD 0.0143, |bias|/SD 0.66, RMSE 0.0165,
    coverage 9/10, ratio 0.96, 10-17 min per replicate (mean 12.4). With ten seeds the two
    fold counts are indistinguishable (the first eight n_folds=10 seeds had suggested a
-   40% bias reduction, which the last two erased), so the fold effect at K=8 remains
-   unmeasured; a 100-seed pilot per fold count costs about one hour of wall time at 50
-   concurrent jobs and is the next step if the user wants it sized.
+   40% bias reduction, which the last two erased). Extended to 100 seeds per fold count
+   (seeds 9101-9200, same library, 25 concurrent jobs per array, about 75 min wall):
+   n_folds=5: bias -0.01081 (MCSE 0.00118), SD 0.0118, |bias|/SD 0.92, RMSE 0.0160,
+   coverage 0.90 (MCSE 0.03), mean SE / SD 1.16, 3.5 min per replicate;
+   n_folds=10: bias -0.00987 (MCSE 0.00118), SD 0.0118, |bias|/SD 0.83, RMSE 0.0154,
+   coverage 0.92 (MCSE 0.03), ratio 1.17, 12.1 min per replicate.
+   Paired on the same seeds, ten folds change the bias by +0.00094 (paired MCSE 0.00050,
+   t = 1.9), i.e. a 9% reduction, and the estimates correlate 0.91 across fold counts.
+   Conclusion: at K=8/C1 the fold count is not the lever; the bias that drives the
+   under-coverage is the second-order nuisance error at p=100 with 1000 observations per
+   site, which ten folds barely change (calibration uses 90% instead of 80% of the outer
+   training data). The archived 3x K=4 contrast was between different estimator versions
+   and DGPs and does not transfer. Target-only in the same pilot: bias -0.004, SD 0.028,
+   coverage 0.97 for both fold counts.
 
 7. Adoption (user decision, 2026-09-17, "不影响结果就用"): the proximal-Newton path is the
    default for every nuisance fit; `ROCE_NUISANCE_SOLVER=coordinate_descent` restores the

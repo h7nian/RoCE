@@ -14,8 +14,15 @@ Historical decisions and superseded acceptance criteria remain in HISTORY.md.
   validation shows identical CV-selected lambdas, coefficients within 6.5e-6
   and 6-12x lower CV time; the user accepted it as result-preserving on
   2026-09-17.
-- Decisions: K=8 runs use 5 CV threads (80 CPUs); the next design uses ten
-  outer folds; both are being sized by `pilot_nfolds_K8_20260917`.
+- Decisions: K=8 runs use 5 CV threads (80 CPUs). Ten outer folds were adopted
+  provisionally, but the 100-seed K=8/C1 pilot (`pilot_nfolds_K8_20260917`,
+  HISTORY #0015) shows they cut the bias by only 9% (paired t = 1.9) at 3.5x
+  the cost, with coverage 0.90 -> 0.92; the under-coverage at K=8 is the
+  second-order nuisance error at p=100 with 1000 observations per site, and
+  the fold count is not the lever. The design decision is open.
+- Optimized replicate cost (Newton, -O2, `Rlib_newton_v5_20260917`): K=2 about
+  2 min on 20 CPUs, K=8 about 3.5 min (five folds) or 12 min (ten folds) on
+  80 CPUs, versus 56 min and 2.5 h for the coordinate-descent production v2.
 
 ## Method and experiment contract
 
