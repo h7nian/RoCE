@@ -1,12 +1,16 @@
 # Current state of RoCE (Robust Federated Causal Estimation)
 
-Last updated: 2026-09-17. Active iteration: HISTORY #0016 (production v3:
-proximal-Newton solver, ten outer folds, both families, tree 162035e3);
+Last updated: 2026-09-17. Active iteration: HISTORY #0017 (production v4:
+proximal-Newton solver, ten outer folds, both families, tree 534c26f2).
+#0016 (production v3) is closed: its checkpoint QC would have failed because
+the package's production-metadata validator hard-coded five folds, so the run
+was relaunched as v4 with the validator taking the design's fold count.
 #0015 (solver diagnosis) is closed; #0014 (v2 recovery) is closed because
 production v2 was cancelled on 2026-09-17 at n=500 with coverage 87-92% at
-K=4/8. Production v3 roots: `results/direct_tate_mc500_b5000/`
-`production_20260917_v3/` (+ `shared_shift/`), library
-`Rlib_production_20260917_v3`, check root `package_check_production_20260917_v3`.
+K=4/8. Production v4 roots: `results/direct_tate_mc500_b5000/`
+`production_20260917_v4/` (+ `shared_shift/`), library
+`Rlib_production_20260917_v4`, check root `package_check_production_20260917_v4`,
+frozen source copy `source_production_20260917_v4`.
 Historical decisions and superseded acceptance criteria remain in HISTORY.md.
 
 ## Solver and speed (2026-09-17, HISTORY #0015)

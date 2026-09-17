@@ -1347,6 +1347,10 @@ row set and every production artifact are unchanged.
 
 ## 0016 — 2026-09-17 — Production v3: proximal-Newton solver, ten outer folds, both families  [PRODUCTION]
 
+> Superseded by [#0017](#0017) (production v4) on 2026-09-17: the checkpoint QC path
+> calls the package's production-metadata validator, which still hard-coded five folds,
+> so no v3 rung could have passed review. The v3 root carries `SUPERSEDED_BY_V4.md`.
+
 > previous related: [#0015](#0015) (solver, fold-count pilot), [#0010](#0010) (gate order),
 > [#0009](#0009) (frozen row set, families, pre-registered gates)
 
@@ -1432,3 +1436,44 @@ Gates:
   1197366. Rungs 1/5/10/25/50/100/200/300/400/500 with the checkpoint audits of #0009 §4;
   rho-group and QC logs in `results/direct_tate_mc500_b5000/logs/`, controller logs in
   `ROOT/logs/*_ladder.{out,err}`.
+
+## 0017 — 2026-09-17 — Production v4: fold-count validator fix, fourth gate launch  [PRODUCTION]
+
+> previous related: [#0016](#0016) (v3 design and the three gate launches), [#0015](#0015)
+> (solver), [#0010](#0010) (gate order)
+
+Same design as #0016 (ten outer folds, proximal-Newton solver, p = 100, K = 2/4/8, cutoff
+1, seeds 1-500, both families). Only the package changed:
+`.validate_face_production_scientific_metadata()` now takes `expected_n_folds`
+(default 5) instead of hard-coding five folds; `audit_direct_tate_checkpoint.R` passes the
+setting manifest's fold count (and reuses that value for its own metadata check), and
+`aggregate_direct_tate.R` / `diagnose_direct_tate_settings.R` read `ROCE_N_FOLDS` like the
+other drivers. `test-simulation-diagnostics.R` covers the argument (250 tests pass on the
+working tree). Commit 534c26f2. Found after the v3 rung-1 arrays had been queued: the QC
+job calls that validator on the raw rows, so every ten-fold checkpoint would have stopped
+with "must use the audited p=100 design grid". The v3 rung-1 arrays (1199801-1199833),
+their QC jobs and the shared-shift A5 chain (1197365/1197366) could not be cancelled from
+the session (the permission classifier refused `scancel` twice) and were left to finish;
+their output carries the v3 package fingerprint and stays under the v3 root. Because the
+package fingerprint changes, every fingerprint-bound gate is rerun under new names.
+
+Roots: `results/direct_tate_mc500_b5000/production_20260917_v4/` (shared-shift family under
+`.../shared_shift/`), frozen library `Rlib_production_20260917_v4`, check root
+`package_check_production_20260917_v4`, frozen source copy `source_production_20260917_v4`
+(git archive of 534c26f2, `results` symlinked to the live tree, per-file SHA-256 in
+`source_production_20260917_v4_manifest.json`; workflow fingerprint 358d93db…, unchanged
+from v3 because none of the ten fingerprinted workflow scripts changed). Controller
+`run_v4_setting_ladder.sh` (the v3 controller with v4 paths; see #0016 for how it records
+`ladder_jobs/` and chains rungs afterok their QC).
+
+Gate chain (one sequential session-side script, `chain_v4.sh`, waits on gate files and
+fails fast if a job leaves the queue without its gate):
+- A1 tests + frozen library: job 1200885 [PENDING].
+- A2 R CMD check (afterok A1): job 1200890 [PENDING].
+- A3 manifests, both families, `ROCE_N_FOLDS=10`: job 1200891 [PENDING].
+- A4 smoke (C3/K4/rho 0, 40 CPUs, five CV threads) after A1 + A3; its audit with
+  `ROCE_N_FOLDS=10` after the smoke CSV.
+- A5 reuse equivalence, both families, after A2, with the validation roots the ladder
+  reads (`.../rho_reuse_equivalence_final`).
+- B: twelve rung-1 controllers (`roce_v4_<family>_<C>K<k>_n1`) once the smoke audit and
+  both A5 gates exist; rungs then self-chain through the controller.
