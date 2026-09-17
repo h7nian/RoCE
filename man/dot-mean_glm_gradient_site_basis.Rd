@@ -9,7 +9,8 @@
   Z_site,
   alpha,
   family_int = FAMILY_BINOMIAL,
-  link_int = LINK_LOGIT
+  link_int = LINK_LOGIT,
+  M_tau = Inf
 )
 }
 \arguments{
@@ -22,6 +23,11 @@
 \item{family_int}{Integer GLM family code, accepted for API symmetry.}
 
 \item{link_int}{Integer link code.}
+
+\item{M_tau}{Truncation radius applied to \eqn{\eta} before computing
+\eqn{h'}. Use \code{Inf} (default) for the untruncated moment and the
+training-stage \code{M_tau} for the calibrated moment, so that the target
+and source sides of the calibration loss balance the same function.}
 }
 \value{
 Numeric vector of length \code{ncol(Z_site) + 1}.
