@@ -1377,7 +1377,13 @@ Gates:
   longer touches the field); the un-gated library and its stage were removed and A1 was
   relaunched as job 1193491 on tree 1cc490b7 [PASS]: package_tests=passed,
   package_fingerprint f8bd1f88…, package_source_fingerprint 9dfb3e48….
-- A2 R CMD check (afterok A1): job 1192655 [CANCELLED with A1]; relaunched as 1193492.
+- A2 R CMD check (afterok A1): job 1192655 [CANCELLED with A1]; relaunched as 1193492
+  [FAIL, Status: 1 WARNING]: code/documentation mismatch for
+  `.mean_glm_gradient_site_basis` (the #0015 `M_tau` argument had no regenerated Rd).
+  Documentation regenerated (commit after 1cc490b7). Because `man/` is part of the
+  package source fingerprint, the A1 library and gate were discarded and A1/A2 were
+  relaunched a third time on tree b2ef34ef as jobs 1195655 (A1) and 1195656 (A2, afterok);
+  the first smoke task (1194852) was cancelled with them.
 - A3 manifests, both families, `ROCE_N_FOLDS=10`: job 1192789 [PASS]; 27,000 and 9,000
   rows, every row `n_folds = 10`, both `manifest_audit_passed.txt` written.
 - A4 smoke (C3/K4/rho 0): job 1194852 (40 CPUs, five CV threads, library
