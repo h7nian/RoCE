@@ -1386,11 +1386,23 @@ Gates:
   the first smoke task (1194852) was cancelled with them.
 - A3 manifests, both families, `ROCE_N_FOLDS=10`: job 1192789 [PASS]; 27,000 and 9,000
   rows, every row `n_folds = 10`, both `manifest_audit_passed.txt` written.
-- A4 smoke (C3/K4/rho 0): job 1194852 (40 CPUs, five CV threads, library
-  `Rlib_production_20260917_v3`, compile flags -O2 -g0 verified) [PENDING]; its audit is
-  chained to the smoke CSV.
-- A5 reuse equivalence, negative transfer (C3/K4/rho 2.5) and shared shift
-  (`ROCE_REUSE_CONFIG=C1`): chained to the A1 and A2 gates [PENDING].
+- Third launch on tree b2ef34ef: A1 job 1195655 [PASS] (package_fingerprint 5915d971…,
+  package_source_fingerprint e3d4c38c…; the frozen library compiles with -O2 -g0) and A2
+  job 1195656 [PASS] (`r_cmd_check_passed.txt` written).
+- A4 smoke (C3/K4/rho 0): job 1194852 was cancelled with the second A1; the third-launch
+  smoke is job 1196352 (40 CPUs, five CV threads) [RUNNING]; its audit
+  (`audit_direct_tate_smoke.sh`, gate `direct_tate_smoke_audit_passed.txt` in
+  `smoke_final_direct_tate_raw/`) is chained to the smoke CSV.
+- A5 reuse equivalence. A first submission omitted the validation-root argument and wrote
+  into the default `rho_reuse_equivalence_candidate` (jobs 1197268-1197270, cancelled, the
+  directory removed; the shared-shift call was refused because that root was then
+  non-empty). Resubmitted with the roots the ladder reads: negative transfer
+  (C3/K4/rho 2.5) `production_20260917_v3/rho_reuse_equivalence_final`, jobs 1197361
+  (independent), 1197362 (grouped), 1197363 (audit); shared shift (`ROCE_REUSE_CONFIG=C1`,
+  C1/K4/rho 2.5) `production_20260917_v3/shared_shift/rho_reuse_equivalence_final`, jobs
+  1197364 / 1197365 / 1197366 [PENDING]. Invocation for the record:
+  `ROCE_PROJECT_LIB=LIB ROCE_PACKAGE_CHECK_GATE=CHECK ROCE_NUISANCE_CV_THREADS=5
+  submit_rho_reuse_equivalence.sh MANIFEST_ROOT MANIFEST_ROOT/rho_reuse_equivalence_final`.
 - B ladder: after A4/A5, `ROCE_NUISANCE_CV_THREADS=5 advance_production_ladder.sh ROOT LIB
   CHECK_GATE` for all twelve blocks; rungs 1/5/10/25/50/100/200/300/400/500 with the
   checkpoint audits of #0009 §4.
