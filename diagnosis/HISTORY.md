@@ -1459,12 +1459,28 @@ package fingerprint changes, every fingerprint-bound gate is rerun under new nam
 
 Roots: `results/direct_tate_mc500_b5000/production_20260917_v4/` (shared-shift family under
 `.../shared_shift/`), frozen library `Rlib_production_20260917_v4`, check root
-`package_check_production_20260917_v4`, frozen source copy `source_production_20260917_v4`
-(git archive of 534c26f2, `results` symlinked to the live tree, per-file SHA-256 in
-`source_production_20260917_v4_manifest.json`; workflow fingerprint 358d93db…, unchanged
-from v3 because none of the ten fingerprinted workflow scripts changed). Controller
-`run_v4_setting_ladder.sh` (the v3 controller with v4 paths; see #0016 for how it records
+`package_check_production_20260917_v4`, provenance snapshot `source_production_20260917_v4`
+(git archive of 534c26f2 plus the two generated Rcpp binding files, `results` symlinked to
+the live tree, per-file SHA-256 in `source_production_20260917_v4_manifest.json`; workflow
+fingerprint 358d93db…, unchanged from v3 because none of the ten fingerprinted workflow
+scripts changed). Controller `run_v4_setting_ladder.sh` (see #0016 for how it records
 `ladder_jobs/` and chains rungs afterok their QC).
+
+**The project root must be the working tree, not a copy.** The v3 shared-shift controllers
+(1200006-1200008) died on `gate mismatch … package_source_fingerprint`, and the diagnosis
+generalises to two independent traps, both found and fixed before any v4 rung was submitted:
+`git archive` omits `R/RcppExports.R` and `src/RcppExports.cpp` (generated, gitignored), so a
+copy's `roce_package_source_fingerprint` differs; and the submitter's `TEST_SUITE_FINGERPRINT`
+runs `sha256sum` over `${PROJECT_ROOT}/tests` with absolute paths, so its value is
+path-dependent and a copy at any other path can never match a gate produced from the working
+tree. (v2 worked because its A1 ran from its copy.) The v4 controller therefore sets
+`ROCE_PROJECT_ROOT` to the working tree, where all four checked values match their gates:
+package 7941ad2e…, package_source 005e3de6…, test_suite dfdc0fc0…, workflow 358d93db….
+**Consequence: while v4 is open, nothing under `scripts/slurm/` or `R/` may be edited in the
+working tree.** Rung and QC jobs read those files when they start, which is exactly how the
+retired v3 QC jobs died: `audit_direct_tate_checkpoint.R` had already been updated to pass
+`expected_n_folds` while the v3 library still held the old validator, so job 1199802 stopped
+with `unused argument (expected_n_folds = expected_n_folds)`.
 
 Gate chain (one sequential session-side script, `chain_v4.sh`, waits on gate files and
 fails fast if a job leaves the queue without its gate):
