@@ -1491,5 +1491,24 @@ fails fast if a job leaves the queue without its gate):
   `ROCE_N_FOLDS=10` after the smoke CSV.
 - A5 reuse equivalence, both families, after A2, with the validation roots the ladder
   reads (`.../rho_reuse_equivalence_final`).
-- B: twelve rung-1 controllers (`roce_v4_<family>_<C>K<k>_n1`) once the smoke audit and
-  both A5 gates exist; rungs then self-chain through the controller.
+- A4 smoke (C3/K4/rho 0, 40 CPUs, five CV threads): task 1201353 [DONE, 13 m 14 s], audit
+  1203763 [PASS] (all 32 checks; ten folds, `nuisance_solver=proximal_newton`, fourteen
+  methods with finite SEs).
+- A5 reuse equivalence [PASS, both families], 14 rows x 1137 columns, 0 exact mismatches:
+  negative transfer 1202806 / 1202807 / 1202808 (767 s independent, 1211 s for the six-rho
+  group, 3.8x) and shared shift 1202810 / 1202811 / 1202813 (3.0x).
+- B rung 1, all twelve blocks, submitted 2026-09-17 16:07 by the twelve controllers
+  1206157-1206168 [all COMPLETED, no stderr]. Group / QC / n=5 continuation per block:
+  C1 K2 1206337/1206340/1206347, K4 1206336/1206345/1206349, K8 1206314/1206319/1206331;
+  C2 K2 1206317/1206320/1206328, K4 1206318/1206321/1206330, K8 1206316/1206322/1206327;
+  C3 K2 1206338/1206341/1206346, K4 1206335/1206342/1206348, K8 1206339/1206343/1206344;
+  shared shift C1 K2 1206329/1206332/1206333, K4 1206315/1206323/1206325,
+  K8 1206313/1206324/1206326. Rungs 1/5/10/25/50/100/200/300/400/500 then self-chain
+  through the controller, with the checkpoint audits of #0009 §4 and the decision reviews
+  at n = 10/50/100.
+
+Expectation on the record, from the 100-seed pilot in #0015: ten folds cut the bias by only
+9%, and the coverage shortfall at K = 4/8 comes from second-order nuisance error at p = 100
+with 1000 observations per site, so this run is expected to land near 88-91% rather than 95%
+at the larger source counts. It is the clean ten-fold, paper-consistent run the user asked
+for, not a fix for the coverage gap.
