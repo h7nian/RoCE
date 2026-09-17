@@ -32,6 +32,10 @@ source(file.path("scripts", "slurm", "result_provenance.R"))
 source(file.path("scripts", "slurm", "resource_topology.R"))
 source(file.path("scripts", "slurm", "simulation_qc_policy.R"))
 source(file.path("scripts", "slurm", "atomic_output.R"))
+expected_n_folds <- suppressWarnings(as.integer(Sys.getenv("ROCE_N_FOLDS", "5")))
+if (length(expected_n_folds) != 1L || is.na(expected_n_folds) || expected_n_folds < 2L) {
+  stop("ROCE_N_FOLDS must be one integer of at least 2.", call. = FALSE)
+}
 
 read_task_directory <- function(path, label) {
   files <- list.files(
@@ -161,7 +165,7 @@ sidecar_metadata_ok <-
   sidecar$experiment == "c3_reused_sensitivity" &
   sidecar$config == "C3" & sidecar$p == 100L & sidecar$K == 4L &
   sidecar$rho %in% c(0, 2.5) & sidecar$n_site == 1000L &
-  sidecar$n_folds == 5L & sidecar$n_bootstrap == 5000L &
+  sidecar$n_folds == expected_n_folds & sidecar$n_bootstrap == 5000L &
   sidecar$M_tau == 5 & sidecar$dgp_type == "face" &
   sidecar$outcome_family == "binomial" &
   sidecar$estimand_type == "superpopulation" &
@@ -202,7 +206,7 @@ fitting_metadata_ok <-
   fitting$config == "C3" & fitting$p == 100L & fitting$K == 4L &
   fitting$rho %in% c(0, 2.5) &
   abs(fitting$cutoff - primary_cutoff) <= 1e-12 &
-  fitting$n_site == 1000L & fitting$n_folds == 5L &
+  fitting$n_site == 1000L & fitting$n_folds == expected_n_folds &
   fitting$n_bootstrap == 5000L & fitting$M_tau %in% c(4, 6) &
   fitting$M_tau_inference == 5
 if (!all(!is.na(fitting_metadata_ok) & fitting_metadata_ok)) {

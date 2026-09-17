@@ -25,6 +25,14 @@ if (length(expected_nlambda) != 1L || is.na(expected_nlambda) ||
   stop("ROCE_EXPECT_NLAMBDA must be one integer of at least 2.",
        call. = FALSE)
 }
+expected_n_folds <- suppressWarnings(as.integer(
+  Sys.getenv("ROCE_EXPECT_N_FOLDS", "5")
+))
+if (length(expected_n_folds) != 1L || is.na(expected_n_folds) ||
+    expected_n_folds < 2L) {
+  stop("ROCE_EXPECT_N_FOLDS must be one integer of at least 2.",
+       call. = FALSE)
+}
 result_path <- file.path(output_root, "task_000001.csv")
 if (!file.exists(result_path)) {
   stop("smoke result not found: ", result_path, call. = FALSE)
@@ -208,7 +216,7 @@ if (length(missing_columns) == 0L) {
     all(result$K == 4L) && all(result$rho == 0) &&
     all(abs(result$cutoff - expected_primary_cutoff) <= tolerance) &&
     all(abs(result$primary_cutoff - expected_primary_cutoff) <= tolerance) &&
-    all(result$n_site == 1000L) && all(result$n_folds == 5L) &&
+    all(result$n_site == 1000L) && all(result$n_folds == expected_n_folds) &&
     all(abs(
       result$aggregation_lambda - 1 / expected_primary_cutoff
     ) <= tolerance) &&
