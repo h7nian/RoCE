@@ -401,11 +401,117 @@ struct GLMCDResult {
     double convergence_threshold = NA_REAL;
 };
 
+// Solver switch for every L1-penalized nuisance fit (outcome GLM and density
+// ratio; CV folds and final refits).  ROCE_NUISANCE_SOLVER=newton selects the
+// proximal-Newton path; anything else keeps the coordinate-descent path.
+inline bool nuisance_use_proximal_newton() {
+    static const bool use_newton = [] {
+        const char* value = std::getenv("ROCE_NUISANCE_SOLVER");
+        return value != nullptr && std::string(value) == "newton";
+    }();
+    return use_newton;
+}
+
+// Shared proximal-Newton tuning.  The Levenberg-Marquardt damping is relative
+// to the largest Hessian diagonal: a weighted Gram matrix is near-singular
+// when p approaches the fitting sample size, so an undamped Newton direction
+// can be arbitrarily long in flat directions and defeat the backtracking
+// search.  Backtracking keeps iterates strictly inside the coefficient box, so
+// a solution pinned at the bound sits just below PARAM_MAX; such a solution is
+// reported as non-converged because coordinate descent never certifies
+// convergence there either, which keeps the CV eligibility rule solver-invariant.
+namespace ProximalNewton {
+    constexpr int inner_max_sweeps = 1000;
+    constexpr int max_backtracking_steps = 30;
+    constexpr double backtracking_factor = 0.5;
+    constexpr double armijo_constant = 1e-4;
+    constexpr double damping_initial = 1e-3;
+    constexpr double damping_minimum = 1e-6;
+    constexpr double damping_maximum = 1e6;
+    constexpr double damping_growth = 10.0;
+    constexpr double damping_decay = 0.3;
+    constexpr double bound_fraction = 0.99;
+    // Inexact Newton: the quadratic model is solved only to a fraction of the
+    // previous step length, tightening to the final tolerance as the outer
+    // iteration converges.
+    constexpr double inner_tol_initial = 1e-2;
+    constexpr double inner_tol_step_fraction = 0.05;
+
+    // Minimize grad'delta + delta'(H + ridge I) delta / 2 + lambda * ||theta + delta||_1
+    // over delta by coordinate descent, where H = X' diag(curvature) X.
+    // curvature_X = diag(curvature) X and hessian_diag = diag(H) are
+    // precomputed by the caller; z = X delta is kept incrementally.
+    // Sweeps alternate glmnet-style: one complete sweep fixes the active set
+    // (nonzero coordinates plus the intercept), the active set is iterated to
+    // tolerance, and a further complete sweep certifies the remaining
+    // coordinates' optimality conditions.
+    inline void inner_coordinate_descent(
+            VectorXd& delta, VectorXd& z_vec, const VectorXd& theta,
+            const VectorXd& gradient, const VectorXd& hessian_diag,
+            const MatrixXd& X, const MatrixXd& curvature_X,
+            double ridge, double lambda, double inner_tol) {
+        const int p = theta.size();
+        delta.setZero();
+        z_vec.setZero();
+        auto update_coordinate = [&](int j) {
+            const double curvature_j = std::max(
+                hessian_diag(j) + ridge, NumericalConstants::HESSIAN_FLOOR
+            );
+            const double partial = gradient(j) +
+                curvature_X.col(j).dot(z_vec) + ridge * delta(j);
+            const double current = theta(j) + delta(j);
+            const double proposal = current - partial / curvature_j;
+            const double updated = (j == 0) ? proposal :
+                soft_threshold_cpp(proposal, lambda / curvature_j);
+            const double change = updated - current;
+            if (change != 0.0) {
+                delta(j) += change;
+                z_vec += change * X.col(j);
+            }
+            return std::abs(change);
+        };
+
+        std::vector<int> active_set;
+        active_set.reserve(p);
+        int sweeps = 0;
+        while (sweeps < inner_max_sweeps) {
+            double max_update = 0.0;
+            sweeps++;
+            active_set.clear();
+            for (int j = 0; j < p; j++) {
+                max_update = std::max(max_update, update_coordinate(j));
+                if (j == 0 || theta(j) + delta(j) != 0.0) active_set.push_back(j);
+            }
+            if (max_update <= inner_tol) break;
+
+            bool active_converged = false;
+            while (sweeps < inner_max_sweeps) {
+                double max_active_update = 0.0;
+                sweeps++;
+                for (int j : active_set) {
+                    max_active_update = std::max(max_active_update, update_coordinate(j));
+                }
+                if (max_active_update <= inner_tol) {
+                    active_converged = true;
+                    break;
+                }
+            }
+            if (!active_converged) break;
+        }
+    }
+
+    inline double l1_penalty(const VectorXd& theta, double lambda) {
+        double total = 0.0;
+        for (int j = 1; j < theta.size(); j++) total += std::abs(theta(j));
+        return lambda * total;
+    }
+}
+
 // L1-penalized GLM coordinate descent (shared by refined & calibrated outcome
 // CV). Returning convergence metadata prevents a finite CV path from silently
 // accepting a lambda whose coordinate-descent refit exhausted its iteration
 // budget.
-inline GLMCDResult glm_cd_update(
+inline GLMCDResult glm_coordinate_descent(
         VectorXd& beta, std::vector<bool>& active,
         const MatrixXd& X_train, const VectorXd& Y_train,
         const VectorXd& weights_train, int n_train,
@@ -487,6 +593,157 @@ inline GLMCDResult glm_cd_update(
     return result;
 }
 
+// Proximal-Newton solver for the same L1-penalized weighted GLM objective
+// (1/n) sum_i w_i loss(y_i, h(eta_i)) + lambda ||beta_{-0}||_1.  Each outer
+// step builds the IRLS quadratic model at the current beta, minimizes model +
+// L1 penalty by coordinate descent (no link evaluations inside the inner loop),
+// and accepts the step by an Armijo backtracking search on the complete
+// penalized objective.  The gradient (mu - y) x and working weight h'(eta) are
+// exact derivatives of the loss for the canonical links used in production.
+inline GLMCDResult glm_proximal_newton(
+        VectorXd& beta, std::vector<bool>& active,
+        const MatrixXd& X_train, const VectorXd& Y_train,
+        const VectorXd& weights_train, int n_train,
+        double lambda, LinkFunction link, GLMFamily family,
+        double cv_tol, int cv_max_iter) {
+    using namespace ProximalNewton;
+    const int p = beta.size();
+    GLMCDResult result;
+    const double inner_tol_final = std::max(0.1 * cv_tol, 1e-12);
+    double inner_tol = std::max(inner_tol_final, inner_tol_initial);
+
+    auto loss_value = [&](const VectorXd& eta) {
+        StableAccumulator acc;
+        for (int i = 0; i < n_train; i++) {
+            const double mu_i = GLMUtils::response_function(eta(i), link);
+            acc.add(weights_train(i) * GLMUtils::calculate_loss(Y_train(i), mu_i, family) / n_train);
+        }
+        return acc.value();
+    };
+
+    VectorXd eta = X_train * beta;
+    double objective = loss_value(eta) + l1_penalty(beta, lambda);
+
+    VectorXd residual_vec(n_train), curvature_vec(n_train);
+    VectorXd gradient(p), hessian_diag(p), delta(p), z_vec(n_train);
+    MatrixXd curvature_X(n_train, p);
+    double damping = damping_initial;
+
+    for (int iter = 0; iter < cv_max_iter; iter++) {
+        VectorXd beta_old = beta;
+
+        for (int i = 0; i < n_train; i++) {
+            const double mu_i = GLMUtils::response_function(eta(i), link);
+            residual_vec(i) = weights_train(i) *
+                GLMUtils::nll_gradient_residual(Y_train(i), mu_i, link) / n_train;
+            curvature_vec(i) = weights_train(i) *
+                GLMUtils::irls_working_weight(eta(i), link, family) / n_train;
+        }
+        for (int j = 0; j < p; j++) {
+            StableAccumulator acc;
+            for (int i = 0; i < n_train; i++) acc.add(X_train(i, j) * residual_vec(i));
+            gradient(j) = acc.value();
+        }
+        curvature_X = curvature_vec.asDiagonal() * X_train;
+        double hessian_scale = NumericalConstants::HESSIAN_FLOOR;
+        for (int j = 0; j < p; j++) {
+            hessian_diag(j) = curvature_X.col(j).dot(X_train.col(j));
+            hessian_scale = std::max(hessian_scale, hessian_diag(j));
+        }
+
+        bool accepted = false;
+        bool stationary = false;
+        while (!accepted) {
+            inner_coordinate_descent(
+                delta, z_vec, beta, gradient, hessian_diag, X_train, curvature_X,
+                damping * hessian_scale, lambda, inner_tol
+            );
+            const double model_decrease = gradient.dot(delta) +
+                (l1_penalty(beta + delta, lambda) - l1_penalty(beta, lambda));
+            if (delta.lpNorm<Eigen::Infinity>() == 0.0 || model_decrease >= 0.0) {
+                stationary = true;
+                break;
+            }
+
+            double step = 1.0;
+            for (int backtrack = 0; backtrack < max_backtracking_steps; backtrack++) {
+                VectorXd beta_candidate = beta + step * delta;
+                if (beta_candidate.lpNorm<Eigen::Infinity>() > NumericalConstants::PARAM_MAX) {
+                    step *= backtracking_factor;
+                    continue;
+                }
+                VectorXd eta_candidate = eta + step * z_vec;
+                const double objective_candidate =
+                    loss_value(eta_candidate) + l1_penalty(beta_candidate, lambda);
+                const double sufficient = objective + armijo_constant * step * model_decrease +
+                    1e-12 * (1.0 + std::abs(objective));
+                if (std::isfinite(objective_candidate) && objective_candidate <= sufficient) {
+                    beta = beta_candidate;
+                    eta = eta_candidate;
+                    objective = objective_candidate;
+                    accepted = true;
+                    break;
+                }
+                step *= backtracking_factor;
+            }
+
+            if (!accepted) {
+                if (damping >= damping_maximum) break;
+                damping = std::min(damping * damping_growth, damping_maximum);
+            } else if (step == 1.0) {
+                damping = std::max(damping * damping_decay, damping_minimum);
+            }
+        }
+
+        result.iterations = iter + 1;
+        result.max_update = (beta - beta_old).lpNorm<Eigen::Infinity>();
+        result.convergence_threshold = convergence_threshold_cpp(beta, cv_tol);
+        if (stationary) {
+            result.converged = true;
+            break;
+        }
+        if (!accepted) break;
+        // Reaching the coefficient bound is final (see below); stop iterating.
+        if (beta.lpNorm<Eigen::Infinity>() >= NumericalConstants::PARAM_MAX * bound_fraction) {
+            break;
+        }
+        if (check_convergence_cpp(beta_old, beta, cv_tol)) {
+            result.converged = true;
+            break;
+        }
+        inner_tol = std::min(
+            inner_tol_initial,
+            std::max(inner_tol_final, inner_tol_step_fraction * result.max_update)
+        );
+    }
+
+    if (beta.lpNorm<Eigen::Infinity>() >= NumericalConstants::PARAM_MAX * bound_fraction) {
+        result.converged = false;
+    }
+    for (int j = 1; j < p; j++) {
+        active[j] = std::abs(beta(j)) > NumericalConstants::ACTIVE_SET_THRESHOLD;
+    }
+    return result;
+}
+
+inline GLMCDResult glm_cd_update(
+        VectorXd& beta, std::vector<bool>& active,
+        const MatrixXd& X_train, const VectorXd& Y_train,
+        const VectorXd& weights_train, int n_train,
+        double lambda, LinkFunction link, GLMFamily family,
+        double cv_tol, int cv_max_iter) {
+    if (nuisance_use_proximal_newton()) {
+        return glm_proximal_newton(
+            beta, active, X_train, Y_train, weights_train, n_train,
+            lambda, link, family, cv_tol, cv_max_iter
+        );
+    }
+    return glm_coordinate_descent(
+        beta, active, X_train, Y_train, weights_train, n_train,
+        lambda, link, family, cv_tol, cv_max_iter
+    );
+}
+
 struct DensityRatioCDResult {
     bool converged = false;
     int iterations = 0;
@@ -525,7 +782,7 @@ inline double tilt_loss(double linear_predictor, double M_tau) {
 // n_s^{-1} sum_i I(A_i=a)(.) both for a complete sample and for an inner-CV
 // training fold.  A monotone backtracking search replaces the former ad-hoc
 // iteration-decaying cap, which could stall far above the requested tolerance.
-inline DensityRatioCDResult density_ratio_cd_update(
+inline DensityRatioCDResult density_ratio_coordinate_descent(
         VectorXd& gamma, std::vector<bool>& active,
         const MatrixXd& X_train, const VectorXd& psi_prime_train,
         double source_scale, const VectorXd& mean_grad_psi, double lambda,
@@ -682,6 +939,186 @@ inline DensityRatioCDResult density_ratio_cd_update(
     }
 
     return result;
+}
+
+// Proximal-Newton solver for the same L1-penalized density-ratio objective.
+// Each outer step builds the exact diagonal-weighted quadratic model of the
+// smooth part at the current gamma, minimizes model + L1 penalty by coordinate
+// descent (no exponentials inside the inner loop), and accepts the step by an
+// Armijo backtracking search on the complete penalized objective.  Tilt
+// weights and losses are the same functions as in the coordinate-descent path,
+// so both solvers minimize the identical objective.
+inline DensityRatioCDResult density_ratio_proximal_newton(
+        VectorXd& gamma, std::vector<bool>& active,
+        const MatrixXd& X_train, const VectorXd& psi_prime_train,
+        double source_scale, const VectorXd& mean_grad_psi, double lambda,
+        double M_tau, double convergence_tol, int max_iter,
+        bool use_active_set = true) {
+    const int p = gamma.size();
+    const int n_train = X_train.rows();
+
+    if (n_train <= 0 || psi_prime_train.size() != n_train) {
+        throw std::runtime_error(
+            "density_ratio_proximal_newton: training rows and psi_prime must be non-empty and match."
+        );
+    }
+    if (mean_grad_psi.size() != p) {
+        throw std::runtime_error(
+            "density_ratio_proximal_newton: mean_grad_psi length must match gamma length."
+        );
+    }
+    if (!std::isfinite(source_scale) || source_scale <= 0.0 || source_scale > 1.0) {
+        throw std::runtime_error(
+            "density_ratio_proximal_newton: source_scale must be in (0, 1]."
+        );
+    }
+
+    using namespace ProximalNewton;
+    DensityRatioCDResult result;
+    const double inner_tol_final = std::max(0.1 * convergence_tol, 1e-12);
+    double inner_tol = std::max(inner_tol_final, inner_tol_initial);
+
+    auto source_loss_value = [&](const VectorXd& g) {
+        StableAccumulator acc;
+        for (int i = 0; i < n_train; i++) {
+            acc.add(source_scale * psi_prime_train(i) * tilt_loss(g(i), M_tau) / n_train);
+        }
+        return acc.value();
+    };
+
+    VectorXd g_vec = X_train * gamma;
+    double objective = mean_grad_psi.dot(gamma) + source_loss_value(g_vec) +
+        l1_penalty(gamma, lambda);
+
+    VectorXd weight_vec(n_train), curvature_vec(n_train);
+    VectorXd gradient(p), hessian_diag(p), delta(p), z_vec(n_train);
+    MatrixXd curvature_X(n_train, p);
+    double damping = damping_initial;
+
+    for (int iter = 0; iter < max_iter; iter++) {
+        VectorXd gamma_old = gamma;
+
+        for (int i = 0; i < n_train; i++) {
+            const double tilt = source_scale * psi_prime_train(i) *
+                tilt_weight(g_vec(i), M_tau) / n_train;
+            weight_vec(i) = tilt;
+            // The truncated loss is linear, hence flat, beyond the radius.
+            curvature_vec(i) = (std::abs(g_vec(i)) < M_tau) ? tilt : 0.0;
+        }
+        // Compensated column sums keep an exactly balanced moment at an exact
+        // zero gradient, as the coordinate-descent path does.
+        for (int j = 0; j < p; j++) {
+            StableAccumulator acc;
+            for (int i = 0; i < n_train; i++) acc.add(X_train(i, j) * weight_vec(i));
+            gradient(j) = mean_grad_psi(j) - acc.value();
+        }
+        curvature_X = curvature_vec.asDiagonal() * X_train;
+        double hessian_scale = NumericalConstants::HESSIAN_FLOOR;
+        for (int j = 0; j < p; j++) {
+            hessian_diag(j) = curvature_X.col(j).dot(X_train.col(j));
+            hessian_scale = std::max(hessian_scale, hessian_diag(j));
+        }
+
+        bool accepted = false;
+        bool stationary = false;
+        while (!accepted) {
+            inner_coordinate_descent(
+                delta, z_vec, gamma, gradient, hessian_diag, X_train, curvature_X,
+                damping * hessian_scale, lambda, inner_tol
+            );
+            const double model_decrease = gradient.dot(delta) +
+                (l1_penalty(gamma + delta, lambda) - l1_penalty(gamma, lambda));
+            if (delta.lpNorm<Eigen::Infinity>() == 0.0 || model_decrease >= 0.0) {
+                stationary = true;
+                break;
+            }
+
+            double step = 1.0;
+            for (int backtrack = 0; backtrack < max_backtracking_steps; backtrack++) {
+                VectorXd gamma_candidate = gamma + step * delta;
+                if (gamma_candidate.lpNorm<Eigen::Infinity>() > NumericalConstants::PARAM_MAX) {
+                    step *= backtracking_factor;
+                    continue;
+                }
+                VectorXd g_candidate = g_vec + step * z_vec;
+                const double objective_candidate = mean_grad_psi.dot(gamma_candidate) +
+                    source_loss_value(g_candidate) + l1_penalty(gamma_candidate, lambda);
+                const double sufficient = objective + armijo_constant * step * model_decrease +
+                    1e-12 * (1.0 + std::abs(objective));
+                if (std::isfinite(objective_candidate) && objective_candidate <= sufficient) {
+                    gamma = gamma_candidate;
+                    g_vec = g_candidate;
+                    objective = objective_candidate;
+                    accepted = true;
+                    break;
+                }
+                step *= backtracking_factor;
+            }
+
+            if (!accepted) {
+                if (damping >= damping_maximum) break;
+                damping = std::min(damping * damping_growth, damping_maximum);
+            } else if (step == 1.0) {
+                damping = std::max(damping * damping_decay, damping_minimum);
+            }
+        }
+
+        result.iterations = iter + 1;
+        result.max_update = (gamma - gamma_old).lpNorm<Eigen::Infinity>();
+        result.convergence_threshold = convergence_threshold_cpp(gamma, convergence_tol);
+        if (stationary) {
+            result.converged = true;
+            break;
+        }
+        if (!accepted) {
+            result.line_search_failures++;
+            break;
+        }
+        // Reaching the coefficient bound is final (see below); stop iterating.
+        if (gamma.lpNorm<Eigen::Infinity>() >= NumericalConstants::PARAM_MAX * bound_fraction) {
+            break;
+        }
+        if (check_convergence_cpp(gamma_old, gamma, convergence_tol)) {
+            result.converged = true;
+            break;
+        }
+        inner_tol = std::min(
+            inner_tol_initial,
+            std::max(inner_tol_final, inner_tol_step_fraction * result.max_update)
+        );
+    }
+
+    // A solution pinned at the coefficient bound is the exponential-tilting
+    // analogue of logistic separation: the truncated loss is linear beyond the
+    // radius, so the penalized objective keeps decreasing toward the bound.
+    if (gamma.lpNorm<Eigen::Infinity>() >= NumericalConstants::PARAM_MAX * bound_fraction) {
+        result.converged = false;
+    }
+
+    if (use_active_set) {
+        for (int j = 1; j < p; j++) {
+            active[j] = std::abs(gamma(j)) > NumericalConstants::ACTIVE_SET_THRESHOLD;
+        }
+    }
+    return result;
+}
+
+inline DensityRatioCDResult density_ratio_cd_update(
+        VectorXd& gamma, std::vector<bool>& active,
+        const MatrixXd& X_train, const VectorXd& psi_prime_train,
+        double source_scale, const VectorXd& mean_grad_psi, double lambda,
+        double M_tau, double convergence_tol, int max_iter,
+        bool use_active_set = true) {
+    if (nuisance_use_proximal_newton()) {
+        return density_ratio_proximal_newton(
+            gamma, active, X_train, psi_prime_train, source_scale, mean_grad_psi,
+            lambda, M_tau, convergence_tol, max_iter, use_active_set
+        );
+    }
+    return density_ratio_coordinate_descent(
+        gamma, active, X_train, psi_prime_train, source_scale, mean_grad_psi,
+        lambda, M_tau, convergence_tol, max_iter, use_active_set
+    );
 }
 
 // Density ratio validation loss: grad^T γ + source_scale * Ẽ_val[exp(-φ^T γ) ψ']
