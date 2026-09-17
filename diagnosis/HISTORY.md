@@ -1375,11 +1375,14 @@ Gates:
   the field from the fitted object and so assigned NULL over the value the aggregation had
   stored. The devtools test runs had skipped that test. Fixed in 1cc490b7 (the decorator no
   longer touches the field); the un-gated library and its stage were removed and A1 was
-  relaunched as job 1193491 on tree 1cc490b7 [RUNNING].
+  relaunched as job 1193491 on tree 1cc490b7 [PASS]: package_tests=passed,
+  package_fingerprint f8bd1f88…, package_source_fingerprint 9dfb3e48….
 - A2 R CMD check (afterok A1): job 1192655 [CANCELLED with A1]; relaunched as 1193492.
 - A3 manifests, both families, `ROCE_N_FOLDS=10`: job 1192789 [PASS]; 27,000 and 9,000
   rows, every row `n_folds = 10`, both `manifest_audit_passed.txt` written.
-- A4 smoke (C3/K4/rho 0) and its audit: chained to the A1 gate [PENDING].
+- A4 smoke (C3/K4/rho 0): job 1194852 (40 CPUs, five CV threads, library
+  `Rlib_production_20260917_v3`, compile flags -O2 -g0 verified) [PENDING]; its audit is
+  chained to the smoke CSV.
 - A5 reuse equivalence, negative transfer (C3/K4/rho 2.5) and shared shift
   (`ROCE_REUSE_CONFIG=C1`): chained to the A1 and A2 gates [PENDING].
 - B ladder: after A4/A5, `ROCE_NUISANCE_CV_THREADS=5 advance_production_ladder.sh ROOT LIB
