@@ -1534,6 +1534,27 @@ rung-1 arrays keep their 24-hour request: cancelling and resubmitting them was n
 from the session, because the permission classifier refused `scancel` (the same refusal that
 left the retired v3 jobs running).
 
+**C2/K4 seed 26 tripped the rho-reuse guard again; the block is stalled at n = 25.** At the
+n = 50 rung, array element 1220014_2026 failed after 23 minutes with
+`.refit_one_round_crossfit_sources: outcome changed at non-refitted site 't'` for rho = 2 and
+2.5, so QC 1220015 and continuation 1220016 cannot run. This is the identical, deterministic
+condition recorded for v2 on 2026-09-12 (`v2_incidents/C2_K4_seed026.json`, and separately
+C2/K2 seeds 26 and 122): at those rho a deviated-arm probability reaches exactly 1, `rbinom`
+consumes one fewer uniform, the random stream shifts, and target outcomes change in hundreds
+of rows even though target probabilities do not. The guard is correct and the estimator is
+not at fault; the six-rho reuse optimisation simply cannot be used for such a seed. v2
+recovered by running the six affected primary tasks as independent fits and publishing them
+into the production tree exact-byte, but that bespoke publication tooling was not preserved.
+
+To stop discovering these one rung at a time over days, a read-only sweep was written beside
+the results (`probe_v4_rho_reuse_seeds.R` / `.sh`, output `rho_reuse_seed_probe_v4/`): it only
+generates data, and reports per seed which rho change the target or non-deviated-source
+outcomes. It reproduces C2/K4 seed 26 at rho 2 and 2.5 exactly, costs about 16 s per seed, and
+was submitted as array 1224086 over all twelve blocks (both deviation mechanisms, seeds
+1-500). An earlier submission of the same sweep, array 1224016, predates the shared-shift
+extension and will fail immediately on argument validation; it could not be cancelled because
+`scancel` is refused in this session.
+
 Expectation on the record, from the 100-seed pilot in #0015: ten folds cut the bias by only
 9%, and the coverage shortfall at K = 4/8 comes from second-order nuisance error at p = 100
 with 1000 observations per site, so this run is expected to land near 88-91% rather than 95%
