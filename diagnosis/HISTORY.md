@@ -1597,6 +1597,26 @@ therefore on the critical path for a complete 500-seed C2 grid.
   `run_direct_tate_rho_group_task.R` writes, so rerunning the rung skips that group. The
   stalled rung's `ladder_jobs` record must then be removed and its controller resubmitted.
 
+**First n = 100 checkpoints (2026-09-17, four negative-transfer blocks: C1/K2, C1/K4, C3/K2,
+C3/K4; 24 rho cells).** For `one_round_crossfit_ate`, mean coverage 0.929, range 0.88-0.97,
+with 21 of 24 cells inside 0.95 +/- 0.045 (two MC standard errors; the MC standard error at
+n = 100 is about 0.022). The three cells outside are all low: C3/K4 rho = 0 at 0.88,
+C3/K2 rho = 0 at 0.90 and C3/K4 rho = 1 at 0.90. Interval widths run 0.069-0.127 and no block
+had a non-converged nuisance replication.
+
+The important diagnostic is that `se_to_empirical_sd` sits at 0.97-1.13 everywhere, so the
+reported standard error is accurate or mildly conservative: **the coverage shortfall is
+driven by bias, not by an underestimated standard error.** The worst cells are exactly the
+rho = 0 cells, where the bias is -0.011 to -0.015; at C1/K4 rho = 0 that is a bias/SD ratio of
+about 0.64, which maps to roughly 0.92 coverage, matching what is observed. This is the
+second-order nuisance error of [#0015](#0015) and is consistent with the coverage root-cause
+note, now measured rather than inferred.
+
+Efficiency is as hoped: mean RMSE 0.0253 for the method against 0.0336 for `target_only_ate`,
+a ratio of 0.75. Both K = 8 and all three C2 blocks are still missing from this picture, and
+K = 8 is expected to be the worst case, so this is an encouraging but incomplete read. It is
+already better than production v2, which ran 87-92% at K = 4/8.
+
 Expectation on the record, from the 100-seed pilot in #0015: ten folds cut the bias by only
 9%, and the coverage shortfall at K = 4/8 comes from second-order nuisance error at p = 100
 with 1000 observations per site, so this run is expected to land near 88-91% rather than 95%
