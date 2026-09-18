@@ -1564,6 +1564,23 @@ C2/K8 will stall the same way when it reaches n = 50.
 C2/K2 seed 26 then failed the same way at its own n = 50 rung (1222894_1526), matching the
 second v2 incident exactly, so two blocks are stalled at n = 25.
 
+**The sweep covers only one of two known failure classes.** v2's third incident, C2/K2 seed
+122 (`v2_incidents/C2_K2_seed122.json`), is a different failure: `aggregate_cv_results: no
+lambda converged with a finite validation loss across every CV fold` at rho = 2.5. Its own
+record states `data_preflight_reuse_valid_for_all_five_positive_rhos = true`, so the reuse
+sweep is right not to flag it, and this v4 sweep likewise did not. That incident was left
+`status = investigating_cv_no_valid_lambda`, `root_cause_confirmed = false`, when v2 was
+retired, so it is still unexplained. It is almost certainly the exponential-tilting
+degeneracy of #0015: at small lambda the tilt objective has no finite minimiser once the
+target moment leaves the source feature hull, the solver crawls to PARAM_MAX and the lambda
+is marked non-converged, and if that happens for every lambda in every fold the CV has
+nothing to select. The proximal-Newton solver reproduces the coordinate-descent eligible set
+exactly (#0015), so v4 should hit this at C2/K2 seed 122 at the n = 200 rung.
+**Independent refitting does not help this class**: it is not a reuse artifact, so the
+recovery tooling below does not apply to it, and there is at present no way to produce that
+replicate under the frozen estimator. The open CV-eligibility question from #0015 is
+therefore on the critical path for a complete 500-seed C2 grid.
+
 **Recovery tooling, rebuilt beside the results** (v2's was not preserved):
 - `recover_reuse_guard_seed.sh FAMILY CONFIG K SEED` submits the seed's six rho as
   independent fits, one array element per row of the *production* manifest, so the manifest
