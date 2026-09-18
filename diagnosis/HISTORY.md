@@ -1562,7 +1562,10 @@ tripping the guard in all three C2 blocks (K = 2, 4 and 8) and in no C1 or C3 bl
 C2/K8 will stall the same way when it reaches n = 50.
 
 C2/K2 seed 26 then failed the same way at its own n = 50 rung (1222894_1526), matching the
-second v2 incident exactly, so two blocks are stalled at n = 25.
+second v2 incident exactly, and C2/K8 seed 26 followed at its n = 50 rung (1248768_2526,
+32 CPUs, two CV threads), so all three C2 blocks are stalled at n = 25. The C2/K8 failure
+arrived hours after the sweep had already listed it, which is the point of the sweep: every
+remaining stall is now known in advance with its recovery computed and verified.
 
 **Sweep result (array 1224086, all 12 blocks x 500 seeds = 6000 seed-blocks, complete).**
 Exactly 10 seed-blocks (0.17%) would trip the reuse guard, every one of them in C2 and none
