@@ -1577,7 +1577,7 @@ in C1, C3 or the shared-shift family:
 So the C2 blocks need **ten** recoveries in total, one per row of that table. Every other
 block runs to n = 500 untouched by this class. (An earlier version of this entry said eight,
 miscounting the three seed-26 blocks as two; the C2/K8 seed-26 recovery was submitted late,
-as job 1247803, once the verification sweep over the recovery directories exposed the gap.)
+as job 1248853, once the verification sweep over the recovery directories exposed the gap.)
 
 **The sweep covers only one of two known failure classes.** v2's third incident, C2/K2 seed
 122 (`v2_incidents/C2_K2_seed122.json`), is a different failure: `aggregate_cv_results: no
