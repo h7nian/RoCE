@@ -1564,6 +1564,20 @@ C2/K8 will stall the same way when it reaches n = 50.
 C2/K2 seed 26 then failed the same way at its own n = 50 rung (1222894_1526), matching the
 second v2 incident exactly, so two blocks are stalled at n = 25.
 
+**Sweep result (array 1224086, all 12 blocks x 500 seeds = 6000 seed-blocks, complete).**
+Exactly 10 seed-blocks (0.17%) would trip the reuse guard, every one of them in C2 and none
+in C1, C3 or the shared-shift family:
+
+| block | seeds | rho that change non-deviated outcomes | stalls at rung |
+| --- | --- | --- | --- |
+| C2/K2 | 26, 282 | 2, 2.5 | 50, 300 |
+| C2/K4 | 26, 105, 160, 296, 380 | 26 and 380 partial, 105/160/296 from rho = 0.5 up | 50, 200, 200, 300, 400 |
+| C2/K8 | 26, 105, 160 | 26 partial, 105/160 from rho = 1 up | 50, 200, 200 |
+
+So the C2 blocks need six more recoveries after the two already computed for seed 26: C2/K2
+seed 282, C2/K4 seeds 105, 160, 296 and 380, and C2/K8 seeds 105 and 160 (eight in total, two
+done). Every other block runs to n = 500 untouched by this class.
+
 **The sweep covers only one of two known failure classes.** v2's third incident, C2/K2 seed
 122 (`v2_incidents/C2_K2_seed122.json`), is a different failure: `aggregate_cv_results: no
 lambda converged with a finite validation loss across every CV fold` at rho = 2.5. Its own
