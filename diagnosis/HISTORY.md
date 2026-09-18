@@ -1556,8 +1556,29 @@ generates data, and reports per seed which rho change the target or non-deviated
 outcomes. It reproduces C2/K4 seed 26 at rho 2 and 2.5 exactly, costs about 16 s per seed, and
 was submitted as array 1224086 over all twelve blocks (both deviation mechanisms, seeds
 1-500). An earlier submission of the same sweep, array 1224016, predates the shared-shift
-extension and will fail immediately on argument validation; it could not be cancelled because
-`scancel` is refused in this session.
+extension and failed immediately on argument validation (all nine tasks); it could not be
+cancelled because `scancel` is refused in this session. Early sweep output shows seed 26
+tripping the guard in all three C2 blocks (K = 2, 4 and 8) and in no C1 or C3 block, so
+C2/K8 will stall the same way when it reaches n = 50.
+
+C2/K2 seed 26 then failed the same way at its own n = 50 rung (1222894_1526), matching the
+second v2 incident exactly, so two blocks are stalled at n = 25.
+
+**Recovery tooling, rebuilt beside the results** (v2's was not preserved):
+- `recover_reuse_guard_seed.sh FAMILY CONFIG K SEED` submits the seed's six rho as
+  independent fits, one array element per row of the *production* manifest, so the manifest
+  fingerprint in each row matches production, and applies the production resource policy
+  (five CV threads and 2*K*threads CPUs at K = 2/4, two threads at K = 8). Output goes to
+  `reuse_guard_recovery/<family>_<config>_K<k>_seed<NNN>/`; nothing enters the gated tree.
+  Run for the two stalled blocks: C2/K4 seed 26 rows 12026-14526 as job 1228487 (identical
+  to v2's recovery array), C2/K2 seed 26 rows 3026-5526 as job 1228488.
+- `publish_reuse_guard_recovery.{sh,R}` is the only step that writes into the production
+  tree and refuses unless `ROCE_CONFIRM_PUBLISH=1`. It verifies all six results (task/sim/
+  config/K/rho, p, n_site, n_folds, bootstrap draws, CV threads, the three fingerprints, and
+  finite positive SEs), refuses to overwrite anything already published, then copies the
+  sidecars and primaries and writes the group commit marker with the same seven fields
+  `run_direct_tate_rho_group_task.R` writes, so rerunning the rung skips that group. The
+  stalled rung's `ladder_jobs` record must then be removed and its controller resubmitted.
 
 Expectation on the record, from the 100-seed pilot in #0015: ten folds cut the bias by only
 9%, and the coverage shortfall at K = 4/8 comes from second-order nuisance error at p = 100
