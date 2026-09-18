@@ -1522,6 +1522,18 @@ result files and their four group commit markers were moved to
 `superseded_k8_threads5_20260917T1721/` under each family root, the four rung-1 ladder records
 were set aside, and the blocks were resubmitted. K = 8 therefore runs on 32 CPUs, not 80.
 
+**K = 8 walltime cut from 24 h to 8 h for backfill.** The submitter's per-task time limits
+(24 h at K = 8, 18 h at K = 4, 12 h at K = 2) were sized for the retired coordinate-descent
+solver, which took about 4.5 h per K = 8 task; the proximal-Newton solver ran the same
+six-rho K = 8 group task in 28-36 minutes on 80 CPUs. A 24-hour reservation on 32 CPUs is
+effectively unbackfillable, and the K = 8 rung-1 arrays (1212433-1212436) kept sliding - the
+estimated start moved from 18:50 to 22:39 to 02:03 while the K = 2/4 blocks, on 12/18-hour
+requests, reached rung 25. The controller now exports `ROCE_TIME_PER_TASK=08:00:00` for
+K = 8 only, a margin of roughly five to ten times the observed time. The already-queued
+rung-1 arrays keep their 24-hour request: cancelling and resubmitting them was not possible
+from the session, because the permission classifier refused `scancel` (the same refusal that
+left the retired v3 jobs running).
+
 Expectation on the record, from the 100-seed pilot in #0015: ten folds cut the bias by only
 9%, and the coverage shortfall at K = 4/8 comes from second-order nuisance error at p = 100
 with 1000 observations per site, so this run is expected to land near 88-91% rather than 95%
