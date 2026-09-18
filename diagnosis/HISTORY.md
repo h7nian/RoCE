@@ -1574,9 +1574,10 @@ in C1, C3 or the shared-shift family:
 | C2/K4 | 26, 105, 160, 296, 380 | 26 and 380 partial, 105/160/296 from rho = 0.5 up | 50, 200, 200, 300, 400 |
 | C2/K8 | 26, 105, 160 | 26 partial, 105/160 from rho = 1 up | 50, 200, 200 |
 
-So the C2 blocks need six more recoveries after the two already computed for seed 26: C2/K2
-seed 282, C2/K4 seeds 105, 160, 296 and 380, and C2/K8 seeds 105 and 160 (eight in total, two
-done). Every other block runs to n = 500 untouched by this class.
+So the C2 blocks need **ten** recoveries in total, one per row of that table. Every other
+block runs to n = 500 untouched by this class. (An earlier version of this entry said eight,
+miscounting the three seed-26 blocks as two; the C2/K8 seed-26 recovery was submitted late,
+as job 1247803, once the verification sweep over the recovery directories exposed the gap.)
 
 **The sweep covers only one of two known failure classes.** v2's third incident, C2/K2 seed
 122 (`v2_incidents/C2_K2_seed122.json`), is a different failure: `aggregate_cv_results: no
