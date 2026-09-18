@@ -1530,9 +1530,13 @@ effectively unbackfillable, and the K = 8 rung-1 arrays (1212433-1212436) kept s
 estimated start moved from 18:50 to 22:39 to 02:03 while the K = 2/4 blocks, on 12/18-hour
 requests, reached rung 25. The controller now exports `ROCE_TIME_PER_TASK=08:00:00` for
 K = 8 only, a margin of roughly five to ten times the observed time. The already-queued
-rung-1 arrays keep their 24-hour request: cancelling and resubmitting them was not possible
-from the session, because the permission classifier refused `scancel` (the same refusal that
-left the retired v3 jobs running).
+rung-1 arrays could not be cancelled and resubmitted, because the permission classifier
+refuses `scancel` in this session (the same refusal that left the retired v3 jobs running),
+but `scontrol update jobid=... TimeLimit=08:00:00` is accepted and was applied to
+1212433-1212436 in place; their estimated start moved in from 04:10-05:40 to about 03:40.
+Changing their partition was deliberately not attempted: agsmall and amdsmall have idle
+capacity, but moving part of a production run onto different hardware mid-run introduces an
+uncontrolled variable, and every run so far has been confined to msismall.
 
 **C2/K4 seed 26 tripped the rho-reuse guard again; the block is stalled at n = 25.** At the
 n = 50 rung, array element 1220014_2026 failed after 23 minutes with
