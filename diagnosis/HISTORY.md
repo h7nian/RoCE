@@ -1701,3 +1701,67 @@ freeing the selection from the boundary. Prototype in `/scratch.global/zhan9381/
 and the unified/calibrated density-ratio fitters), built at -O2 into
 `/scratch.global/zhan9381/Rlib_proto_v5`. Paired single-seed runs against the frozen v4 library
 are in progress; nothing in the production tree was touched.
+
+## 0019 — 2026-09-18 — The TATE bias is residual confounding, and it is arm-asymmetric  [DIAGNOSIS]
+
+> previous related: [#0018](#0018) (the lambda-grid finding, now demoted), [#0017](#0017)
+> (production v4 coverage)
+
+**This entry supersedes the framing of #0018.** Two claims made earlier in that session were
+retracted after being tested: (a) that the density-ratio lambda grid caused the bias, and
+(b) that the superpopulation truth carried a Monte Carlo offset of order 0.008. Both are
+recorded here with the measurements that killed them, because the pattern of error matters
+more than either claim: both were asserted from code reading without first checking which
+branch production executes or what the function's defaults are.
+
+**Retraction 1 — the lambda grid is a real defect but not the cause.** A paired single-seed
+run (same seed, frozen v4 library vs a prototype with an adaptive feasible-range grid) moved
+the rejected-candidate count from a median of 84 of 100 to 0, and moved the point estimate by
+-0.00059 against a bias of -0.0140. The prototype could not work by construction: its refined
+grid spans the same feasible interval at finer resolution, and the penalties CV wants lie
+below the feasibility boundary where the tilting loss has no finite minimiser. An independent
+audit separately refuted the "min picks the last feasible lambda" premise, observing a clean
+interior CV minimum at index 12 of 26 admissible.
+
+**Retraction 2 — the truth is sound.** `generate_simulation_data()` returns early at
+`R/data_generation.R:725` for `dgp_type == "face"`, so `calculate_superpopulation_truth()` is
+never called in production; the earlier 0.0076 figure was measured on that dead branch. The
+production path uses `calculate_face_truth()`, whose default `outcome_type` is "continuous"
+while production is "binary". Measured correctly, the TATE truth varies by 0.000105 (sd)
+across reference seeds, two orders of magnitude below the bias.
+
+**What the bias actually is.** With true nuisances the estimator is unbiased: a target-side
+cross-fitted AIPW over 500 seeds gives +0.00106 (MC se 0.00141) at C1 and +0.00139 (0.00129)
+at C3, and the pure plug-in at the true outcome function gives -0.000011. So the estimand,
+the truth constant, the influence function and the harness are all correct, and every bit of
+the bias comes from nuisance estimation.
+
+Decomposing the estimator by arm, reconstructed per replicate from the production raw files
+(the arm-wise TATE is exactly the difference of the two arm estimates):
+
+| block | mu1 bias | mu0 bias | TATE bias | corr(mu1, mu0) |
+| --- | --- | --- | --- | --- |
+| C1/K2 | -0.00429 | +0.00547 | -0.00976 | +0.09 |
+| C1/K4 | -0.00270 | +0.00767 | -0.01037 | +0.04 |
+| C1/K8 | -0.00331 | +0.00679 | -0.01010 | +0.15 |
+| C3/K2 | -0.00553 | +0.00803 | -0.01356 | +0.04 |
+| C3/K4 | -0.00383 | +0.01023 | -0.01406 | +0.02 |
+| C3/K8 | -0.00473 | +0.00978 | -0.01451 | +0.15 |
+
+The treated arm is biased down, the control arm up, by roughly twice as much, and the two are
+nearly uncorrelated, so the contrast adds the two biases instead of cancelling them. This is
+why the legacy arm-wise results looked fine (`one_round_crossfit` at p=100, K=4: bias -0.0028,
+coverage 0.961) while the contrast did not (-0.0102, coverage 0.928) in the same run.
+
+**Why that sign pattern.** Confounding in this DGP is negative and asymmetric. On the target
+site, `corr(e, mu1) = -0.325` and `corr(e, mu0) = -0.335` at C1, and the naive arm means miss
+the truth by -0.0163 (treated) and +0.0226 (control); at C3, -0.0193 and +0.0243. The
+estimator's bias has the same sign as the naive gap in each arm and is a fraction of it: about
+17% of the gap remains in the treated arm and about 34% in the control arm. The bias is
+therefore **residual, uncorrected confounding**, larger in the control arm both because that
+arm's gap is larger and because a smaller share of it is removed.
+
+**Open question, under test.** Which nuisance leaves the residual. A 2x2 substitution on the
+target site (outcome model and propensity each either the generator's true function or a
+cross-fitted lasso on the same working basis), 200 seeds per configuration, is running in
+`/scratch.global/zhan9381/subst_results/`. The (true, true) cell is the oracle control.
