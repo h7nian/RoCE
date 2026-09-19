@@ -17,5 +17,5 @@ export ROCE_PROJECT_LIB="${COMPARISON_LIBRARY}"
 export R_LIBS_USER="/users/0/zhan9381/Rlibs"
 export ROCE_NUISANCE_CV_THREADS=5
 mkdir -p diagnosis/tate_arm_bias/logs diagnosis/tate_arm_bias/out
-Rscript diagnosis/tate_arm_bias/compare_site_size.R "${CONFIG}" "${K}" "${SEED}" "${CACHE}" \
+Rscript diagnosis/tate_arm_bias/compare_site_size.R "${CONFIG}" "${K}" "${SEED}" "${CACHE}" "${SITE_N}" \
   > "diagnosis/tate_arm_bias/out/${CONFIG}_K${K}_cache${CACHE}_n${SITE_N}_seed${SEED}.txt"

@@ -10,13 +10,19 @@
 # CACHE_FLAG toggles use_lambda_cache (production default TRUE); it is kept as a
 # parameter so the same script also runs the paired cache on/off comparison.
 #
-# Usage: compare_site_size.R CONFIG K SEED CACHE_FLAG [N_SITE]
+# Usage: compare_site_size.R CONFIG K SEED CACHE_FLAG N_SITE
+#
+# N_SITE is required: an optional argument that silently fell back to 1000 once
+# turned an n = 4000 batch into a second copy of the n = 1000 batch.
 args <- commandArgs(trailingOnly = TRUE)
+if (length(args) != 5L) {
+  stop("usage: compare_site_size.R CONFIG K SEED CACHE_FLAG N_SITE", call. = FALSE)
+}
 configuration <- args[[1L]]
 source_count <- as.integer(args[[2L]])
 seed <- as.integer(args[[3L]])
 use_cache <- identical(args[[4L]], "TRUE")
-n_site_arg <- if (length(args) >= 5L) as.integer(args[[5L]]) else 1000L
+n_site <- as.integer(args[[5L]])
 
 project_library <- Sys.getenv("ROCE_PROJECT_LIB", "")
 if (nzchar(project_library)) .libPaths(c(project_library, .libPaths()))
@@ -29,7 +35,6 @@ if (nzchar(project_library) &&
                loaded_from, project_library), call. = FALSE)
 }
 
-n_site <- n_site_arg
 dimension <- 100L
 n_folds <- 10L
 
