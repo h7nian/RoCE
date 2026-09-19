@@ -1765,3 +1765,65 @@ arm's gap is larger and because a smaller share of it is removed.
 target site (outcome model and propensity each either the generator's true function or a
 cross-fitted lasso on the same working basis), 200 seeds per configuration, is running in
 `/scratch.global/zhan9381/subst_results/`. The (true, true) cell is the oracle control.
+
+## 0020 — 2026-09-19 — The anchor and every source carry the same TATE bias; the control-arm excess cancels  [DIAGNOSIS]
+
+> previous related: [#0019](#0019) (its arm-asymmetry explanation is corrected here)
+
+**Correction to #0019.** #0019 attributed the larger control-arm bias to residual confounding
+that is removed less completely in the control arm. The production raw files record both
+arms' target-only anchor and every source-assisted estimate (`mu{1,0}_source_s*_target_estimate`,
+`mu{1,0}_source_s*_source_estimate` on the `one_round_crossfit_ate_armwise` row), and they
+show a different picture. Bias against the arm truth, rho = 0, MC standard error in brackets:
+
+| cfg/K | anchor mu1 | anchor mu0 | anchor TATE | source mu1 | source mu0 | source TATE | method TATE |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| C1/2 | -0.0054 (0.0012) | +0.0006 (0.0009) | -0.0060 (0.0014) | -0.0025 | +0.0116 | -0.0140 | -0.0104 |
+| C1/4 | -0.0054 (0.0011) | +0.0033 (0.0009) | -0.0087 (0.0014) | -0.0008 | +0.0101 | -0.0109 | -0.0106 |
+| C1/8 | -0.0058 (0.0014) | +0.0002 (0.0012) | -0.0060 (0.0019) | -0.0020 | +0.0088 | -0.0107 | -0.0101 |
+| C3/2 | -0.0097 (0.0011) | +0.0023 (0.0009) | -0.0119 (0.0013) | -0.0002 | +0.0151 | -0.0153 | -0.0140 |
+| C3/4 | -0.0086 (0.0010) | +0.0058 (0.0009) | -0.0144 (0.0013) | -0.0005 | +0.0127 | -0.0132 | -0.0141 |
+| C3/8 | -0.0084 (0.0014) | +0.0030 (0.0012) | -0.0115 (0.0018) | -0.0028 | +0.0122 | -0.0150 | -0.0148 |
+
+Source columns average the K sources; their MC standard errors are 0.0005-0.0012. C1/8 has
+290 replicates and C3/8 300; the other cells have 500.
+
+- The anchor, which never uses a source, already carries a TATE bias of -0.006 (C1) to -0.014
+  (C3), and in the anchor it is the **treated** (minority, P(A=1) about 0.4) arm that is biased.
+- Regressing each source's arm bias on its skewness nu_j = 0.2 j / K over all rho = 0
+  source-replicates (about 5,300 per configuration):
+  C1 mu1 = -0.0083 + 0.054 nu, mu0 = +0.0034 + 0.051 nu; C3 mu1 = -0.0127 + 0.091 nu,
+  mu0 = +0.0059 + 0.056 nu. The skewness term is a covariate-shift under-correction with the
+  same sign and nearly the same slope in both arms, so it largely cancels in the TATE (fully
+  in C1, partly in C3). In the treated arm it masks the negative intercept; in the control arm
+  it adds to the positive one. That is the whole "control arm is twice as biased" pattern.
+- The intercepts (nu -> 0) reproduce the anchor's pattern: treated negative, control small.
+- The anchor's TATE bias and the sources' TATE bias are both about -0.01, so the combined
+  estimate stays near -0.01 whatever weight the anchor receives (0.50 at K=2, 0.18 at K=8).
+  Borrowing shrinks the SD but cannot shrink a bias that every component shares, so
+  bias/SD, and with it the coverage shortfall, grows with K.
+
+**Hypothesis rejected: the shared one-round target initial model.** One-round mode hands every
+source the same target `alpha_init` (`get_fold_inputs` ignores `site`). A paired run of the
+frozen v4 library in both communication modes (C3, K=2, seeds 1-30, `compare_round_mode.R`)
+moves nothing: paired two-minus-one differences are TATE -0.0010 (MC se 0.0010), mu1 -0.0007
+(0.0007), mu0 +0.0003 (0.0006), against a mu0 bias of +0.0096. An independent code review
+reached the same conclusion from the code: `alpha_init` enters the calibrated tilt only at
+second order, and sharing it changes the variance, not the expectation. The same review ran a
+label-flip test (control arm on the original data vs treated arm on A -> 1 - A) and found the
+source-level fits bit-identical, so no code path treats the arms differently.
+
+**Invalid run, discarded.** The first n_site = 4000 batch (job 1361851) ran at n = 1000: the
+runner used `ROCE_CMP_NSITE` only in the output filename and never passed it to the script,
+whose argument defaulted to 1000. The RESULT rows say `n1000`, and the numbers equal the
+n = 1000 batch exactly. `compare_site_size.R` now requires N_SITE, and `run_site_size.sh`
+passes it. The sample-size question remains open and is being rerun.
+
+**Separate defect found in the same review (baselines, not the method).**
+`calculate_aipw_influence` (`R/estimators_helpers.R:167`) subtracts its nuisance-estimation
+corrections, but the delta method adds them: beta_hat - beta is approximately M^-1 P_n s with
+M positive definite, so the correction is +A' M^-1 s. The correction is also derived for an
+unpenalised MLE, while the Federated-DR and Pooled-DR nuisances are in-sample lasso fits on a
+200-column basis. In v4 at rho = 0 (C1 and C3), `federated_dr_ate` has SE/SD 1.26-1.36 and
+`pooled_dr_ate` 0.94-1.13, against 1.05-1.14 for the method. Not yet fixed; changing it alters
+the baselines' reported SEs.
