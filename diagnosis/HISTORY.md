@@ -1807,7 +1807,8 @@ Source columns average the K sources; their MC standard errors are 0.0005-0.0012
 source the same target `alpha_init` (`get_fold_inputs` ignores `site`). A paired run of the
 frozen v4 library in both communication modes (C3, K=2, seeds 1-30, `compare_round_mode.R`)
 moves nothing: paired two-minus-one differences are TATE -0.0010 (MC se 0.0010), mu1 -0.0007
-(0.0007), mu0 +0.0003 (0.0006), against a mu0 bias of +0.0096. An independent code review
+(0.0007), mu0 +0.0003 (0.0006), against a mu0 bias of +0.0096. At K=4 (same seeds) the
+paired TATE difference is +0.00007 (0.00073) against a TATE bias of -0.0117. An independent code review
 reached the same conclusion from the code: `alpha_init` enters the calibrated tilt only at
 second order, and sharing it changes the variance, not the expectation. The same review ran a
 label-flip test (control arm on the original data vs treated arm on A -> 1 - A) and found the
