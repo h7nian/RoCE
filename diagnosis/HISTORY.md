@@ -1640,3 +1640,64 @@ Expectation on the record, from the 100-seed pilot in #0015: ten folds cut the b
 with 1000 observations per site, so this run is expected to land near 88-91% rather than 95%
 at the larger source counts. It is the clean ten-fold, paper-consistent run the user asked
 for, not a fix for the coverage gap.
+
+## 0018 — 2026-09-18 — The density-ratio lambda grid is 85% infeasible  [DIAGNOSIS]
+
+> previous related: [#0017](#0017) (production v4 and its coverage), [#0015](#0015)
+> (exponential-tilting degeneracy, proximal-Newton solver)
+
+**Question.** v4's completed blocks show coverage below nominal, worst where the method should
+be strongest: C3/K8 sits at 0.845-0.955 and C3/K4 rho = 0 at 0.886. `se_to_empirical_sd` is
+0.97-1.13 everywhere, so the intervals are the right width and the gap is bias.
+
+**What the bias is.** At rho = 0 the method's bias is -0.0104 (C1) and -0.0141 (C3), and it does
+not move with K (K = 2/4/8 give -0.0104/-0.0106/-0.0102 in C1). The empirical SD does move,
+shrinking roughly as 1/sqrt(K) (0.0218/0.0172/0.0123). So |bias|/SD climbs 0.48 -> 0.62 -> 0.83
+in C1 and 0.67 -> 0.84 -> 1.16 in C3, and coverage falls with it; across all measured cells the
+correlation between |bias|/SD and coverage is -0.865. **Adding sources makes coverage worse.**
+
+`pooled_dr_ate` is the control that explains why. Its nuisances use all (K+1)*1000 observations
+and its bias scales as C/n: -0.00512 (n = 3000), -0.00317 (5000), -0.00213 (9000) in C1, with
+bias*n roughly constant (-15.4, -15.8, -19.2). The method's nuisances are fit per site, so its
+effective n is 1000 no matter how many sources there are.
+
+**The mechanism, measured.** Instrumented single replicates (C1 and C3, K = 2, seed 1; 40
+calibrated density-ratio CV calls each) show:
+
+| quantity | C1 | C3 |
+| --- | --- | --- |
+| rejected candidates out of 100, median | 84 | 84 |
+| rejected candidates, range | 75-87 | 74-87 |
+| invalid_fold_fits / invalid_lambdas | 4.95 | 4.95 |
+| tail-skipped share of invalid fold fits | 0.96 | 0.96 |
+| correlation(rejected count, selected lambda) | 0.804 | 0.329 |
+
+The third row is the decisive one: 4.95 against 5 nuisance CV folds means every rejected lambda
+fails in *every* fold, so these are genuinely infeasible, not marginal. `build_lambda_grid()`
+lays 100 geometric points from lambda_max down to `lambda_max * LAMBDA_MIN_RATIO_LOW_DIM`
+(1e-4), and at p = 100 with n = 1000 roughly the lower 85% of that span is where the
+exponential-tilting loss has no finite minimiser: the solver runs to PARAM_MAX, the fit is
+non-converged, the validation loss is +Inf, and after `CV_FAILURE_PATIENCE` = 3 consecutive
+failures the whole remaining tail is skipped. Cross-validation is therefore choosing among about
+15 usable candidates, all at the heavily penalised end, and the last row shows the selection
+tracks that boundary rather than an interior optimum. The calibrated *outcome* path is healthy by
+comparison, losing 0.4-0.6%.
+
+This also corrects an earlier reading in this session: an aggregate estimate of 18.7% was wrong
+because it assumed 90 CV calls per site per replicate. Lambda caching means CV runs once per
+(arm, outer fold, site), i.e. 20 per site, and 20 * 84.5 = 1690 matches the recorded per-site
+total exactly.
+
+**Two remedies are ruled out by the same data.** Scoring partially valid lambdas instead of
+rejecting them outright cannot help, because they fail in all folds; raising
+`CV_FAILURE_PATIENCE` cannot help, because the skipped candidates are genuinely infeasible.
+
+**The fix under test.** Place the grid inside the feasible range: run CV once on the standard
+grid, read `n_valid_folds` to find the smallest lambda feasible in every fold, rebuild the
+100-point grid over [that lambda, lambda_max], and re-run CV. All 100 candidates then land where
+the loss can be evaluated, giving about 6.6x the resolution in the region that matters and
+freeing the selection from the boundary. Prototype in `/scratch.global/zhan9381/proto_v5`
+(helper `.refine_density_ratio_lambda_grid()` in `R/model_fitting.R`, applied to both the initial
+and the unified/calibrated density-ratio fitters), built at -O2 into
+`/scratch.global/zhan9381/Rlib_proto_v5`. Paired single-seed runs against the frozen v4 library
+are in progress; nothing in the production tree was touched.
