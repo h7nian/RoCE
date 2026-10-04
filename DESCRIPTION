@@ -9,21 +9,10 @@ Authors@R:
            role = c("aut", "cre"))
 Author: Sinian Zhang [aut, cre]
 Maintainer: Sinian Zhang <zhan9381@umn.edu>
-Description: Implements federated learning algorithms for causal inference in 
-    multi-site settings. The primary estimator targets the target average
-    treatment effect (TATE) by fitting arm-specific nuisance functions and
-    combining source-assisted estimators with common TATE weights, separate
-    arm weights, or joint TATE optimization of the two arm-weight vectors.
-    Arm-specific potential-outcome means
-    mu^a_t = E_t[Y(a)] remain available for diagnostics and secondary analyses.
-    The package provides two-round and one-round communication protocols with
-    fold-summed calibration and optional nested validation of calibrated models.
-    It includes doubly robust estimators with calibrated loss functions,
-    variance-minimizing source aggregation, binomial and Gaussian generalized
-    linear models, selectable C++ proximal Newton and coordinate descent,
-    common or arm-specific TATE aggregation weights,
-    and target-only, sample-size weighted, inverse-variance weighted, and
-    doubly robust comparison estimators.
+Description: Estimates target treatment effects from multi-site data using
+    calibrated nuisance models and adaptive source aggregation. Supports joint
+    treatment-arm optimization, two- or three-layer cross-fitting, one- or
+    two-round communication, C++ solvers, and causal estimation baselines.
 License: MIT + file LICENSE
 Encoding: UTF-8
 LazyData: true
