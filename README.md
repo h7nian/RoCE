@@ -381,19 +381,6 @@ testthat::test_dir("tests/testthat")
 testthat::test_file("tests/testthat/test-utils.R")
 ```
 
-## Citation
-
-If you use this package in your research, please cite:
-
-```bibtex
-@software{roce2026,
-  author = {Zhang, Sinian},
-  title = {RoCE: Federated Adaptive Causal Estimation in High Dimensions},
-  year = {2026},
-  url = {https://github.com/sinianzhang/RoCE}
-}
-```
-
 ## References
 
 - Hou, J., et al. (2025). "Efficient estimation in federated causal inference." (In preparation)
