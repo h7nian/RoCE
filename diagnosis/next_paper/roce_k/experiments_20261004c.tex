@@ -1,0 +1,182 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern,amsmath,amssymb,booktabs,graphicx}
+\usepackage[colorlinks=true,linkcolor=blue,urlcolor=blue]{hyperref}
+\setlength{\parindent}{0pt}\setlength{\parskip}{5pt}
+\setlength{\emergencystretch}{2em}
+\title{RoCE-K: confirmation, evaluated design removal, and model boundaries}
+\author{}\date{4 October 2026}
+\begin{document}\maketitle
+
+\textbf{Summary.} Independent seeds confirm the previously observed length
+advantage at $p=4,K=2048$ with constant target effect. Actual design removal
+can recover borrowing when the retained designs are stable, but eligibility
+alone is insufficient. A separate model-class comparison shows that the
+current bounded-invalid certificate can be substantially conservative. A new
+conditional worst-case lower bound explains why a uniform fourth-root gain
+over the entire unrestricted-invalid class nevertheless cannot be promised.
+
+\section{Accounting and reproducibility}
+
+The new panels contain 4,400 outcome setting-specific repetitions: four
+independent confirmation settings, ten paired design-policy settings, and
+eight paired model-boundary settings, each with 200 repetitions. No failed
+repeat is replaced. Multiple methods share patient data within a repetition;
+nonlinearity amplitudes also share seeds within each boundary source count.
+These are not 4,400 mutually independent datasets. The earlier 200-repeat
+discovery results are retained and analyzed separately.
+
+Confirmation uses seed offset 30190000 and the unchanged version-7 complete-data
+runner. Design removal and boundary panels use offsets 31190000 and 32190000.
+Conditional intervals, population intervals, design failures, retained indices,
+adjusted valid counts, source noise and dispersion contributions are saved.
+Every stored summary is checked against interval endpoints. The new selection
+function accepts only covariates and treatment assignments; outcome evaluation
+occurs after the retained set is fixed.
+
+The research tests now total 62 passing checks, including manual-subset parity,
+outcome-independent selection, exhaustive valid-set count inequalities,
+projection-budget recomputation, exact mixture identities, and agreement of
+grouped sufficient statistics with patient-level leave-out calculations.
+Production RoCE/ENAR, previous results and the version-7 manuscript are preserved.
+
+\section{Independent confirmation and paired Monte Carlo uncertainty}
+
+The four confirmation settings retain 1,000 patients per site, bounded
+continuous covariates, four signal coordinates, source covariate tilt .4 and
+population TATE .10. The declared valid fraction stays at $3/4$, including
+the all-valid control. Weak invalid treated-arm shifts are
+$2\sqrt{.5/1000}\,K^{-1/4}$. No true constant-effect information enters the
+target coefficient certificate. All methods use exactly the same draws
+within a setting. The difference column is source minus ordinary target-normal
+length, and its standard error uses paired differences.
+
+\begin{center}\small
+\resizebox{\linewidth}{!}{\input{experiments/20261004c/confirmation_table}}
+\end{center}
+
+For $p=4,K=2048,h=0$ with weak bias, the old discovery cohort had paired mean
+length difference $-.010898$ with Monte Carlo standard error $.000593$.
+The independent confirmation gives $-.010421$ with standard error $.000607$,
+or an 8.49\% reduction relative to ordinary normal target intervals. The
+source and target-normal observed coverages are $1.000$ and $.930$; their
+95\% exact binomial intervals are $[.9817,1]$ and $[.8853,.9612]$.
+Thus the length finding reproduces, while 200 draws do not establish that
+the normal comparator's true coverage differs from $.95$.
+
+The all-valid control has a similar 8.44\% length reduction and coverages
+$1.000$ versus $.955$. The $p=10$ and heterogeneous-target controls do not
+beat ordinary normal target length. All four source procedures remain shorter
+than the equally protected target-only comparator. This is a setting-specific
+efficiency result, not a general optimality claim.
+
+\section{Evaluated design-only removal}
+
+Both policies use the same rank, condition-number and leverage guards. A site
+failing either arm is removed in its entirety. With $m$ removed sites, inference
+uses $K'=K-m$ and $g_a'=\max(0,3K/4-m)$. Every source normalization and
+dispersion/approximation constant is recalculated; the invalid-count allowance
+is $K'-g_a'$, not $K'/4$. If either adjusted valid count is zero, inference
+uses the protected target band. All designs are selected without outcomes.
+
+The first stress family has $n_t=1000$, source sizes 120 or 200, $p=45$,
+and $\Pr(A=1\mid X)=\operatorname{expit}\{2.5(X_1+X_2)\}$ at sources.
+Target treatment is randomized with probability $.5$. Outcome means remain
+bounded and linear, with target heterogeneity $.15$. This deliberately severe
+design stress is separate from the 1,000-patients-per-site confirmation panel.
+
+\begin{center}\small
+\resizebox{\linewidth}{!}{\input{experiments/20261004c/removal_table}}
+\end{center}
+
+The table uses weak-bias settings. At $n_s=120,p=45,K=64$, the adjusted-count
+policy is eligible in every repetition, yet its mean width equals the original
+policy's $.3875$. The source interval remains too wide to improve on the target
+intersection. Raising $n_s$ to 200 removes observed design failures but still
+does not produce useful borrowing in this small-$K$, poorly overlapping design.
+This directly distinguishes count eligibility from precision.
+
+The second family retains 1,000 patients per site and $p=4,K=256$, with
+randomized treatment and target heterogeneity $.15$. In its prespecified
+design-failure setting, the final eighth of sources has $X_4=X_3$; these
+sources are structurally valid but cannot balance the full target feature
+map. The failure mechanism is fixed before outcomes. Removing the 32 failed
+sites leaves $K'=224$ and conservative $g_a'=160$.
+
+Here length decreases from $.3092$ to $.1617$, with paired difference
+$-.14751$ and Monte Carlo standard error $.000323$. The improved protected
+target-only comparator has length $.2825$. Bounded-invalid inference on the
+retained set gives $.1756$, preserving a substantial gain while protecting a
+broader class. The removal methods have observed conditional coverage $.995$
+and population coverage $1.000$. With no deliberately singular sites, the two
+policies are identical, as required. The all-valid stress controls, all design
+diagnostics and the normal target comparison are included in the saved tables.
+
+\section{Which part of the broader-model floor is structural?}
+
+The first calculation is algorithm-specific. With $N$ observations per arm,
+uniform balance weights and declared invalid fraction $\varepsilon$, the
+current bounded-invalid certificate has limiting source bias radius
+\[
+ \frac{\varepsilon}{\sqrt{(1-\varepsilon)(N-1)}}
+\]
+even if all sources actually have identical valid constant means. This is a
+property of the certificate, not an all-method adaptive lower bound.
+
+The paired experiment uses the earlier three-point fixed design and Bernoulli
+outcomes, $N=500$ per arm. The two prespecified bases are $(1,x)$ with
+bounded-invalid protection and $(1,x,x^2)$ with exact leave-out correction.
+The latter spans every mean function on this finite support and requires no
+knowledge of the nonlinearity amplitude. It still retains unknown weak
+invalid-source mean shifts and the same valid-count assumption.
+
+\begin{figure}[ht]\centering
+\includegraphics[width=\linewidth]{experiments/20261004c/model_boundary.pdf}
+\caption{Paired conditional source bands on three-point support. Source count
+increases while each arm retains 500 observations. No population enlargement
+is added to these comparisons.}\end{figure}
+
+At $K=262144$ and amplitude $.4$, conditional interval length is $.02575$
+under bounded-invalid protection with the linear basis, versus $.00547$ with
+the saturated basis. Conditional coverages are $.995$ and $1.000$; source-band
+coverages are both $1.000$. At $K=32768$, saturated conditional/source coverage
+is $.995$ for both amplitudes. These results show that declared design/model
+structure can remove much of the certificate cost. Repeated finite support is
+additional structure; it cannot be silently assumed for unrestricted continuous
+invalid means.
+
+The second calculation is a distinct worst-case lower bound in the main text.
+On distinct fixed covariates, arbitrary bounded invalid means can realize a
+prior over independent degenerate Bernoulli patient laws. Two different valid
+centers can then have identical contaminated source-data mixtures. Conditioning
+these priors to contain at least $g$ valid sites costs an explicit binomial tail
+$q_K$. Including the trusted target yields the interval-length bound
+\[
+ \sup_P E_P|I|\ge
+ \Delta\,[1-2\alpha-t_t-2q_K]_+.
+\]
+For $N_s=N_t=500$, contamination probability $.2$, guaranteed valid fraction
+$.75$, $K=2048$, and $\Delta=.1/\sqrt{500}$, exact calculation gives
+$t_t=.0796502$, $q_K=1.60\times10^{-8}$, and lower bound $.0036687$.
+The mixture identity is verified to floating-point precision.
+
+This establishes a conditional worst-case obstruction of order $n_s^{-1/2}$
+when source and target sizes are comparable. It does not prove the current
+certificate optimal, does not concern an all-valid adaptive distribution,
+and is not yet an i.i.d.-random-design population lower bound. It also does
+not replace a lower bound specifically restricted to weak-shift configurations.
+
+\section{What remains}
+
+The main text now gives one algorithm, an explicit error ledger and a single
+coverage theorem with model-specific length conditions. The next theoretical
+question is honest adaptation inside the broader class: can a procedure attain
+shorter intervals at favorable distributions while still protecting arbitrary
+bounded invalid means? The new worst-case construction does not answer that.
+For practical development, retained-design stability and target coefficient
+protection remain the relevant precision costs. Any further source screening
+must remain design-only unless its outcome selection uncertainty is separately
+calibrated.
+
+\end{document}

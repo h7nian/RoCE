@@ -2149,3 +2149,16 @@ setting and verified exact reuse of unchanged cells.56 tests pass;24 paired
 extension cells retain every old interval exactly. Published RoCE-K version7
 with the earlier methods in the appendix and the v6 entry preserved.
 Artifacts: implementation/next_paper/v20/target_protection_20261004_v1/.
+
+## 2026-10-04 — main guarantee, evaluated removal and precision boundaries [COMPLETE]
+
+Completed 4,400 outcome setting-repetitions and an exact contamination-overlap
+audit. Independent seeds reproduce the p4,K2048 constant-effect length gain;
+paired MCSE and both methods' coverage are reported. Implemented design-only
+removal with conservative valid-count adjustment and complete recomputation,
+including nonlinear-invalid budgets. Eligibility alone does not imply gains.
+Separated the current certificate floor from a conditional worst-case lower
+bound and a finite-support saturated-basis comparison. Added one main algorithm
+and theorem with model-specific precision conditions.62 tests pass; old v20
+outputs replay exactly. Earlier results and manuscript version7 are preserved.
+Artifacts: implementation/next_paper/v21/main_theorem_removal_20261004_v1/.

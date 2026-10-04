@@ -8,6 +8,43 @@ Repository commits use h7nian <zhan9381@umn.edu> and only the main branch.
 Personal tooling/session records stay outside the repository. Earlier Git
 history is archived on scratch under implementation/releases/20261004_authorship_cleanup/.
 
+NEXT-PAPER MAIN GUARANTEE AND DESIGN REMOVAL (2026-10-04, v21): completed
+4,400 outcome setting-repetitions (22 settings x 200) plus exact finite-model
+calculations. The dedicated RoCE-K main text now has one algorithm/theorem,
+with separate linear, declared-approximation and bounded-invalid guarantees.
+
+Independent-seed confirmation at p=4, K=2048, h=0, weak bias gives length
+0.112275 versus normal target 0.122697: paired difference -0.010421,
+MCSE 0.000607 (8.49% shorter). Observed coverage is 1.000 versus 0.930;
+200 repeats do not establish undercoverage of the normal comparator. The p=10
+control remains longer than normal. All four confirmation settings improve
+on the equally protected target-only comparator. No oracle range is supplied.
+
+Design-only removal is now an evaluated interval, controlled by design_policy.
+Every source quantity is recomputed at K'=K-m and g'_a=max(0,g_a-m), including
+unknown-invalid projection budgets. Source n=120, p=45, poor overlap can retain
+eligibility without shortening intervals. With n=1000/site, p=4, K=256 and a
+prespecified 1/8 rank-deficient valid-source subgroup, removal reduces length
+0.3092 to 0.1617 (bounded-invalid: 0.1756; protected target: 0.2825), with
+conditional coverage 0.995 and population coverage 1.000.
+
+Precision analysis separates an explicit certificate floor from a new
+worst-case conditional-design lower bound. Arbitrary bounded invalid means
+permit overlapping source-data mixtures despite different target effects;
+the valid-count conditioning penalty and trusted target information are
+included. This does not prove all-valid adaptive optimality, a weak-shift-only
+lower bound, or an i.i.d. random-design population lower bound. On three-point
+support, a prespecified saturated basis removes the variance-centering cost:
+at K=262144, eta=.4, conditional length is 0.00547 versus 0.02575 for the broad
+linear-basis certificate. The extra finite-support structure is explicit.
+
+62 tests pass; seven complete repetitions replay exactly, and four saved v20
+broader-model repetitions retain identical intervals. All 246 method-summary
+rows and 72 paired comparisons are recomputed from endpoints. Old results,
+v7 manuscript and production RoCE/ENAR remain unchanged.
+Artifacts: implementation/next_paper/v21/main_theorem_removal_20261004_v1/.
+Published RoCE-K version 8: fe6411e1852fb7d4920570e5071780a4aa27113b; main.tex and experiments_20261004c.tex.
+
 NEXT-PAPER TARGET PROTECTION AND APPROXIMATION (2026-10-04,v20): completed
 7200 outcome setting-specific repetitions (36x200) and7800 design-only draws
 (39x200). A4800-repeat paired model-class extension reuses existing draws and

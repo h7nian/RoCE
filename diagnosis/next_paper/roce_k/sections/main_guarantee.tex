@@ -1,0 +1,179 @@
+\section{Main algorithm and model-specific guarantees}
+\label{sec:main-guarantee}
+
+The estimand is the population target effect $\tau_t=\E_t\{Y(1)-Y(0)\}$.
+There are $K$ sources and a target sample of size $n_t$. A common, prespecified
+feature map $\phi$ includes an intercept. The target and source outcomes lie
+in $[0,1]$. Conditional on all covariates and treatment assignments
+$\mathcal D$, patient outcomes are independent. Target patients have i.i.d.
+covariates from the target population. Identification of the potential-outcome
+means requires the usual consistency, conditional exchangeability and overlap
+conditions; the statistical model below concerns those identified arm means.
+
+The target arm means are $m_t^a(x)=\phi(x)^T\beta_t^a$. For each arm, a fixed
+but unknown set of at least $g_a\ge1$ sources has this same conditional mean.
+The two valid sets need not coincide. The numbers $g_a$ are assumptions, not
+counts estimated by comparing outcomes. Nonzero source deviations have no
+minimum magnitude. We distinguish three source model classes:
+\begin{itemize}
+\item \textbf{Linear.} Every source arm mean, including invalid ones, belongs to the
+common linear span, with unrestricted site-specific coefficients.
+\item \textbf{Declared approximation.} Target and valid-source means remain linear.
+Invalid means satisfy a declared design-conditional projection bound
+$\|(I-H_{ja})m_{ja}\|_2\le\rho_{ja}$. An estimated certificate instead
+requires a simultaneous failure allowance $\delta_{\rm app}$.
+\item \textbf{Bounded invalid.} Only target and valid-source means must be linear;
+the other means can be arbitrary in $[0,1]$. Set
+$\rho_{ja}=\sqrt{n_{ja}}/2$ for the centered mean vector and pay no additional
+certificate failure probability.
+\end{itemize}
+Approximate valid or target means require the extra mean-bias allowances of
+Section~\ref{sec:approximation-control}. They are not covered by the unmodified
+linear-target coefficient certificate below.
+
+\subsection{One executable algorithm}
+
+Fix the model class, valid counts, feature map, design policy and error ledger
+before examining outcomes. The following steps define the current procedure.
+\begin{enumerate}
+\item Compute $b_t=\mathbb P_t\phi(X)$. Check each arm's rank, condition number
+and leverage using only $\mathcal D$. A target failure returns $[-1,1]$.
+Under \texttt{all\_required}, any source failure uses the protected target
+procedure. Under \texttt{remove}, drop every site failing either arm, let
+$m$ be the number dropped, and set
+\[
+ K'=K-m,\qquad g_a'=\max(0,g_a-m).
+\]
+If $K'=0$ or either $g_a'=0$, use the protected target procedure. Otherwise
+perform every subsequent source calculation on the retained set, with $K'$,
+$g_a'$ and $g_\cap'=\max(0,g_1'+g_0'-K')$.
+\item At each retained source and the target, solve
+$X_{ja}^T\gamma_{ja}=b_t$ with minimum Euclidean norm. Return
+$Z_j^a=\gamma_{ja}^TY_{ja}$, the leave-out variance estimate
+$\widehat v_{ja}$, and the design summaries in
+Section~\ref{sec:continuous-balance}. Do not truncate a negative
+$\widehat v_{ja}$ before dispersion correction.
+\item For each arm, form the variance-corrected source dispersion using
+$K'$. In the approximation modes, at most $q_a'=K'-g_a'$ retained sites can
+have nonzero projection errors. Recompute the top-$q_a'$ bounds $C_B,C_U$,
+the shifted statistic $\widehat D+a_{K'}C_B$, and the corrected MGF constant
+$Q_0^{\rm app}$. For a contrast, add the two arm-specific approximation
+budgets. The inversion in Sections~\ref{sec:continuous-balance}--\ref{sec:approximation-control}
+gives simultaneous upper bounds $U_1,U_0,U_C$.
+\item With $g_\cap'>0$, the adaptive dispersion radius is
+\[
+ B=\min\left\{
+ \sum_{a=0}^1\sqrt{\frac{K'-g_a'}{g_a'}U_a},\quad
+ \sqrt{\frac{K'-g_\cap'}{g_\cap'}U_C}\right\}.
+\]
+The second option is omitted when $g_\cap'=0$. Allocate $\alpha_D/4$ to
+each arm and $\alpha_D/2$ to the contrast when both options are used;
+otherwise allocate $\alpha_D/2$ per arm. A guaranteed all-valid arm has zero
+bias contribution. The source and target bands are
+\begin{align*}
+ J_S&=\left[\frac1{K'}\sum_j(Z_j^1-Z_j^0)
+       \ \pm\left\{\sqrt{\frac{\log(2/\alpha_S)}{2(K')^2}
+                         \sum_{ja}\|\gamma_{ja}\|_2^2}+B\right\}\right],\\
+ J_T&=\left[Z_t^1-Z_t^0\ \pm
+          \sqrt{\frac{\log(2/\alpha_T)}2\sum_a\|\gamma_{ta}\|_2^2}\right].
+\end{align*}
+Use $J_S\cap J_T$ if nonempty, and the shorter band otherwise. A source
+design/count fallback uses $J_T$ directly. Denote this conditional interval
+by $I_X$; it targets the observed-target effect
+$\tau_X=b_t^T(\beta_t^1-\beta_t^0)$.
+\item Construct the target slope-contrast ellipsoid with failure
+$\alpha_R$. Its simultaneous upper bounds $R^+,V_X^+$ on the true CATE
+range and empirical variance give
+\[
+ r_X=\sqrt{\frac{2V_X^+\log(4/\alpha_X)}{n_t}}
+       +\frac{7R^+\log(4/\alpha_X)}{3(n_t-1)}.
+\]
+Expand $I_X$ by $r_X$ and clip to $[-1,1]$. First project the target point onto
+$I_X$, then clip that projected value to the reported population interval to
+define the point estimate. No simulated true CATE
+range, variance or source labels are supplied to this construction.
+\end{enumerate}
+
+The implemented default ledger is
+$(\alpha_S,\alpha_T,\alpha_D,\alpha_R,\alpha_X)
+=(.01,.01,.015,.005,.01)$. A separately reported protected target-only
+comparator uses $(\alpha_T,\alpha_R,\alpha_X)=(.0225,.005,.0225)$.
+Thus it benefits from the same target certificate and its own full $.05$
+budget. The ordinary normal target interval is an asymptotic comparator.
+
+\begin{theorem}[Coverage, removal and the scope of precision improvement]
+\label{thm:main}
+Under any of the three declared source classes and the target conditions
+above, the algorithm satisfies, for every finite $K$,
+\[
+ \Prb\{\tau_t\in I\}\ge
+ 1-\alpha_S-\alpha_T-\alpha_D-\alpha_R-\alpha_X-\delta_{\rm app}.
+\]
+Here $\delta_{\rm app}=0$ for deterministic valid approximation envelopes
+and the universal bounded-invalid mode. Conditional on the design and valid
+deterministic approximation bounds, the conditional interval has coverage at
+least $1-\alpha_S-\alpha_T-\alpha_D$ for $\tau_X$. Source/design fallback
+requires only its target event; target-design failure covers automatically.
+These claims need no separation of invalid-source biases from zero, and hold
+under either design policy.
+
+For precision, suppose on a design event $\mathcal G_n$ that $K'\asymp K$,
+$g_a'/K'\ge c_0>0$, balanced arm sizes are of order $n_s$, and the retained
+design factors obey $S_j=O(n_s^{-1})$, $G_j,F_j=O(n_s^{-3})$ and
+$d_j^{\max}=O(n_s^{-2})$, uniformly. In the linear class, if both arm
+dispersions are $O(n_s^{-1}K^{-1/2})$, the expected conditional source width
+on this event is $O(n_s^{-1/2}K^{-1/4})$. A positive contrast intersection
+is not necessary when arm certificates are used.
+
+With fixed target dimension and the well-conditioned target designs of
+Section~\ref{sec:target-protection}, put
+\[
+ r_n=n_s^{-1/2}K^{-1/4}
+       +\sigma_\tau n_t^{-1/2}+n_t^{-1}.
+\]
+The unconditional expected reported length is bounded by
+$C r_n+2\Prb(\mathcal G_n^c)$. Obtaining order $r_n$ therefore also requires
+$\Prb(\mathcal G_n^c)=O(r_n)$. For growing target dimension use the universal
+$n_t^{-1/2}$ composition bound unless the stronger target rate has separately
+been established.
+
+For the approximation classes, let $A_B$ uniformly bound the relevant
+$a_{K'}C_B$, and let $A_Q$ bound $Q_0^{\rm app}-Q_0$. A sufficient modified
+width order is $r_n+\sqrt{A_B}+A_Q^{1/4}$, with the same fallback contribution.
+Consequently, bounded-invalid coverage alone does not imply the linear
+fourth-root improvement.
+\end{theorem}
+
+\begin{proof}
+Given $\mathcal D$, removal fixes a retained set without observing outcomes.
+Deleting $m$ coordinates removes at most $m$ members of each valid set,
+proving $g_a'$; hence at most $K'-g_a'$ retained arm means need the projection
+correction. The corrected quadratic upper bounds and Hoeffding source/target
+bands hold simultaneously by their error allocation. The valid-count
+dispersion inequality then covers $\tau_X$ in $J_S$, while $J_T$ covers it
+on its target event. On their joint event the intersection is nonempty and
+covers; changing the empty-intersection branch cannot remove this event.
+The count/design fallback uses the same target bound.
+
+The target coefficient event dominates both true CATE range and empirical
+variance. Apply empirical Bernstein to the fixed true CATE function, then
+union this event with the coefficient and conditional outcome events. No
+independence between those events is required. This also accommodates
+design-dependent source removal without conditioning away the i.i.d. target
+composition argument. Add $\delta_{\rm app}$ if an envelope is estimated.
+
+For length, the conditional expected-dispersion calculation in
+Section~\ref{sec:design-stability} gives the stated linear rate. Under
+approximation, $|\E\widehat D-D|\le a_{K'}C_B$ and
+$\Var(\widehat D\mid\mathcal D)\le LD+Q_0^{\rm app}$. The same inversion,
+triangle inequality and Jensen argument yield an additional
+$O(\sqrt{A_B}+A_Q^{1/4})$ radius. Intersection or shorter fallback is no
+longer than the source band on $\mathcal G_n$. Add the target composition
+expectation bound. Outside $\mathcal G_n$ the clipped interval has length
+at most two. This establishes the expected-length statement.
+\end{proof}
+
+The theorem is uniform over arbitrary weak source deviations within each
+declared class for coverage. Its length assertion is an adaptation result on
+the stated small-dispersion and stable-design subclass; it does not promise
+short intervals at every fixed, strongly heterogeneous configuration.

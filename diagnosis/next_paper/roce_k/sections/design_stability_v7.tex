@@ -124,36 +124,16 @@ allowance $a_KC_B$ to be small on the $n_s^{-1}K^{-1/2}$ dispersion scale, and
 the added concentration constant to have the corresponding order. A fixed
 nonzero approximation envelope need not provide improving width as $K$ grows.
 
-\subsection{Implemented design-only removal}
+\subsection{Design-only removal as a separate possible policy}
 
-The \texttt{remove} policy in Section~\ref{sec:main-guarantee} now computes
-complete intervals, rather than only eligibility. The rule uses each site's
-covariates and treatment assignments; no outcome, source discrepancy or fitted
-outcome residual enters selection. A failure in either arm removes the entire
-site. With $m$ removed sites, all source means, noise terms, dispersion constants,
-contrast intersections and approximation budgets are recomputed with $K'=K-m$
-and $g_a'=\max(0,g_a-m)$. In particular, the maximum number of nonlinear
-retained means is $K'-g_a'$, not an unchanged presumed invalid fraction of $K'$.
-Zero adjusted validity in either arm invokes target-only protection.
+If $m$ sources fail an outcome-independent design rule, retaining the others
+leaves $K'=K-m$ sources and at least $g_a'=\max(0,g_a-m)$ valid sources per
+arm. Conditional inference could be rerun with those conservative counts when
+positive. This follows by removing at most $m$ members of each unknown valid
+set; it does not require knowing which discarded sites were valid.
 
-Given the full design, selection is fixed and the count inequality is
-pathwise. Thus the conditional proof is unchanged. A large observed retained
-count alone still does not imply efficiency: retained balance weights and
-leverage can be poor even when the numerical guards pass. The outcome study
-reports both the eligibility frequency and actual conditional/population
-interval lengths. The older design-only eligibility results are retained as
-such, not relabelled as evaluated intervals.
-
-For independent source designs, a useful sufficient removal-rate condition is
-that each source fails with probability at most $\pi$, conditional on the
-shared target design, with $\pi<\min_a g_a/K$. For any $\epsilon>0$, Hoeffding's
-inequality gives
-\[
- \Prb\{m/K>\pi+\epsilon\mid\mathcal D_t\}\le e^{-2K\epsilon^2}.
-\]
-If $\pi+\epsilon<\min_a g_a/K$, both adjusted valid counts are a positive
-fraction of $K$ on the complementary event. Unlike requiring no source to
-fail, this can retain eligibility when a positive fraction of sources have
-poor designs. Uniform bounds on the retained design factors are still needed
-for the length rate in Theorem~\ref{thm:main}. The current rank/leverage guards
-by themselves do not establish those rate bounds.
+The current main estimator still requires all source designs. The stability
+study records only whether this count-adjusted alternative would remain
+\emph{eligible}; it does not claim that the alternative was fitted or that its
+intervals are shorter. It is a concrete way to investigate the fixed-$n_s$,
+large-$K$ boundary after the present all-designs-required analysis.

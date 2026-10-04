@@ -1,0 +1,149 @@
+\section{Certificate conservatism and a broader-model precision boundary}
+\label{sec:precision-boundary}
+
+Two questions must be separated. A radius can fail to shrink because its
+particular certificate is conservative, even at an all-valid distribution.
+A different question is whether any uniformly valid procedure can improve
+over the whole class of arbitrary bounded invalid means. The following
+calculations address these questions separately. Neither establishes the
+optimal adaptive length at an all-valid distribution.
+
+\subsection{An explicit floor in the current certificate}
+
+Consider $N$ observations per arm with an intercept-only balancing fit, so
+$\gamma_i=1/N$, $h_i=1/N$ and $d_i=1/\{N(N-1)\}$. Under the bounded-invalid
+certificate, $\rho=\sqrt N/2$ and the commutator term is zero. Thus
+\[
+ B_j=\frac1{4(N-1)}.
+\]
+Declare $g=(1-\varepsilon)K$ valid sources per arm, with
+$0<\varepsilon<1/2$, although in this diagnostic all sources are actually
+valid and have identical constant means. The top-$\varepsilon K$ certificate
+gives
+\[
+ a_KC_B\longrightarrow\frac{\varepsilon}{4(N-1)}.
+\]
+The uncorrected empirical dispersion tends to zero, while the concentration
+constants vanish as $K\to\infty$ at fixed $N$. Consequently the arm radius
+converges to $\varepsilon/\{2\sqrt{(1-\varepsilon)(N-1)}\}$. Summing the two
+arms yields
+\[
+ B_A\longrightarrow\frac{\varepsilon}{\sqrt{(1-\varepsilon)(N-1)}}.
+\]
+The contrast radius tends to
+$\varepsilon/\sqrt{(1-2\varepsilon)(N-1)}$, which is larger. The current
+adaptive certificate therefore retains the arm radius above. This proves a
+floor for this \emph{source-band certificate}, including on favorable
+all-valid data. The final target intersection can be shorter; the calculation
+is not a lower bound for every inference method.
+
+Additional structure can remove this particular cost. In the three-support-point
+experiment of Section~\ref{sec:approximation-control}, the prespecified basis
+$(1,x,x^2)$ spans every conditional mean on that support. It preserves uniform
+balance weights and removes projection bias for all nonlinear amplitudes,
+without supplying the true amplitude. A paired experiment compares this
+saturated fit with bounded-invalid protection using $(1,x)$. The former
+operates in a finite-support class with repeated observations at each point.
+It does not solve arbitrary nonlinear means on distinct continuous designs.
+
+\subsection{A conditional worst-case lower bound with a target anchor}
+
+The contamination-neighborhood argument of \citet{chen2016} gives a useful
+starting point. Its direct application to the present setting needs an
+explicit embedding, because our patients are independent conditional on their
+fixed site parameters. We provide that embedding here.
+
+Fix distinct covariates within every treated arm, with $N_s$ treated patients
+per source and $N_t$ at the target. They may be chosen to have full-rank,
+low-leverage linear designs. Set all control means equal to $.4$ in both
+worlds. In world $b\in\{0,1\}$, target and valid-source treated means are
+constant $\theta_b$, where
+\[
+ \theta_0=\tfrac12,\qquad \theta_1=\tfrac12+\Delta,\qquad
+ \Delta=\frac{c}{\sqrt{\max(N_s,N_t)}}.
+\]
+Thus the two target effects differ by $\Delta$. At an invalid source allow
+an arbitrary vector of bounded treated means on its distinct covariates.
+These vectors can be extended to bounded measurable functions, with no
+smoothness requirement.
+
+Let $P_b=\operatorname{Bernoulli}(\theta_b)^{\otimes N_s}$ and choose
+$0<\varepsilon<1-\rho$, where the guaranteed valid count is
+$g=\lceil\rho K\rceil$. If
+\[
+ t_s:=\operatorname{TV}(P_0,P_1)\le\frac{\varepsilon}{1-\varepsilon},
+\]
+there is a distribution $H$ and probability distributions $Q_b$ such that
+\[
+ H=(1-\varepsilon)P_0+\varepsilon Q_0
+  =(1-\varepsilon)P_1+\varepsilon Q_1.
+\]
+For example, with probability mass functions $p_b$, take
+\[
+ h=(1-\varepsilon)\max(p_0,p_1)
+       +\{1-(1-\varepsilon)(1+t_s)\}p_0,
+ \qquad q_b=\{h-(1-\varepsilon)p_b\}/\varepsilon.
+\]
+All masses are nonnegative and sum to one. The source mixtures are identical
+in the two worlds, however large $K$ becomes.
+
+To realize $Q_b$ without introducing dependent patients in a fixed model,
+draw a binary vector $y$ from $Q_b$ in the \emph{prior over site mean vectors}
+and set that invalid site's patient means to $y$. Conditional on this mean
+vector its Bernoulli outcomes are degenerate and independent. Mixing over
+these vectors reproduces $Q_b$. This is a lower-bound prior, not the
+outcome law of one fixed invalid site. Valid-site flags have probability
+$1-\varepsilon$; condition each prior on at least $g$ such flags. Every
+parameter configuration in the resulting prior satisfies the deterministic
+valid-count assumption. If
+\[
+ q_K=\Prb\{\operatorname{Binomial}(K,1-\varepsilon)<g\},
+\]
+conditioning changes either source-data distribution by at most $q_K$ in
+total variation. The two conditioned full-data mixtures, including the
+independent target, consequently have distance at most
+\[
+ t_t+2q_K,\qquad
+ t_t=\operatorname{TV}\{\operatorname{Bernoulli}(\theta_0)^{\otimes N_t},
+                        \operatorname{Bernoulli}(\theta_1)^{\otimes N_t}\}.
+\]
+
+\begin{proposition}[Worst-case conditional length in the unrestricted invalid class]
+An interval with conditional coverage at least $1-\alpha$ at every fixed
+parameter configuration of the preceding class satisfies
+\[
+ \sup_P\E_P|I|\ \ge
+ \Delta\,[1-2\alpha-t_t-2q_K]_+.
+\]
+For fixed $\varepsilon,\rho$ with $\rho<1-\varepsilon$, sufficiently small
+constant $c>0$, and comparable $N_s,N_t$, the right-hand side has order
+$N_s^{-1/2}$ as $K\to\infty$.
+\end{proposition}
+
+\begin{proof}
+Coverage at every fixed configuration implies coverage under each conditioned
+prior. Transfer the world-1 coverage event to world 0 using total variation.
+Under world 0 both target effects are then in $I$ with probability at least
+$1-2\alpha-t_t-2q_K$, forcing length at least $\Delta$. A prior-average length
+cannot exceed the supremum over its fixed configurations. Finally,
+$\operatorname{KL}\{\operatorname{Bernoulli}(1/2),
+\operatorname{Bernoulli}(1/2+\Delta)\}
+=-\tfrac12\log(1-4\Delta^2)$. Pinsker's inequality bounds both $t_s$ and
+$t_t$ by a constant times $c$. Also
+$q_K\le\exp\{-2K(1-\varepsilon-\rho)^2\}$, since fewer than
+$\lceil\rho K\rceil$ valid flags implies their fraction is below $\rho$.
+\end{proof}
+
+This result says that a uniform fourth-root improvement over the entire
+arbitrary-bounded-invalid \emph{conditional} class is impossible when target
+and source arm sizes are comparable. The trusted target prevents an
+identification failure, but still has its own sampling scale. If the target
+is much larger, the displayed lower bound becomes correspondingly smaller.
+
+The claim is deliberately limited: it is a worst-case conditional-design
+result using unrestricted invalid mean functions. It is not an adaptive lower
+bound at all-valid distributions, a lower bound for the weak-shift-only
+subclass, or a proved random-i.i.d.-design population lower bound. In
+particular, it does not show that the explicit certificate floor above is
+optimal at favorable data. The code verifies the mixture identity and exact
+binomial total variations, and reports the finite-$K$ count-conditioning cost.
