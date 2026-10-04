@@ -1,0 +1,152 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern,amsmath,amssymb,booktabs,graphicx}
+\usepackage[colorlinks=true,linkcolor=blue,urlcolor=blue]{hyperref}
+\setlength{\parindent}{0pt}\setlength{\parskip}{5pt}
+\title{RoCE-K: direct calibration of aggregate errors}
+\author{}\date{2 October 2026, second experiment update}
+\begin{document}\maketitle
+
+\textbf{Scope.} This paired study follows the residual-center intuition
+$\tau=d+r_1-r_0$: evaluate compatible residual centers rather than classify
+every source. The change is to error calibration, not to aggregation weights.
+There are 18 bounded oracle-score settings with 1,000 repetitions each and
+12 newly fitted four-stratum settings with 300 each: 21,600 setting-specific
+repetitions. Every site contains 1,000 patients. Seeds are new relative to the
+preceding report; methods within this study share data. The target audit
+reuses the same 3,600 fitted datasets and is not counted as extra repetitions.
+All historical outputs, failures and fallback cases remain available.
+
+\section{What changed}
+
+A patient-level, zero-diagonal quadratic representation of the unbiased
+source dispersion estimator gives an exponential lower-tail bound. The
+result, with its Gaussian MGF comparison proof, is stated in the updated
+main design. It uses deterministic score ranges and does not require
+simultaneous confidence bounds for every source variance. The pooled mean
+uses empirical Bernstein for independent, nonidentically distributed patients.
+The new concentration result was checked by a 4,096-atom non-Gaussian
+enumeration and independent matrix-spectrum calculations. These checks
+support the proof and implementation; they are not a high-dimensional
+causal inference theorem.
+
+The fitted diagnostic also controls the signed average nuisance remainder
+on \emph{every} subset of the guaranteed size, together with its squared
+drift. Source pilot calibration projections, a target outcome-error box,
+and joint target probability constraints produce these certificates.
+For four strata the required maxima reduce to 16 corners per arm and small
+linear programs, checked against an independent LP solver. The algorithm
+is linear in source count at fixed strata count, but exponential in strata
+count. It is not yet a sparse high-dimensional procedure.
+
+The Gaussian comparison notation is corrected: noncentral chi-square
+inversion applies after subtracting the known variance, not a random sample
+variance. Historical valid code paths used the former correctly. The revised
+API explicitly guards that branch.
+
+\section{Paired bounded-score ablation}
+
+The three source modules are Fourier-only, dispersion-only, and their hybrid.
+For every method the total failure allowance is .05. The binary study assigns
+.025 to the target, reserves .005 for variance certificates, and assigns
+.01 to each arm. The hybrid divides each arm's allowance between Fourier
+and dispersion; a single-component method uses the entire arm allowance.
+The direct-dispersion procedure reserves the variance allowance even though
+it does not need it. Thus its advantage is not due to reclaiming that budget.
+Sources have 250 pilot and 750 evaluation patients; the target has 1,000
+evaluation patients. Common outcome and weighting functions are known.
+
+The table reports mean interval length relative to the ordinary target-normal
+interval at $K=2048$. Weak bias affects one quarter of treated source arms,
+with magnitude $2K^{-1/4}$ times a source residual standard error. Control
+sources are valid. Both arms are only assumed to have at least $0.75K$
+valid sources.
+
+\begin{center}\small
+\begin{tabular}{llrrr}\toprule
+Target heterogeneity & Source pattern & Previous hybrid & Direct hybrid & Direct dispersion\\\midrule
+0 & All valid & .821 & .309 & .297\\
+0 & Weak bias & .823 & .313 & .301\\
+.3 & Weak bias & 1.736 & 1.079 & 1.066\\
+.3 & Strong bias & 1.854 & 1.35 & 1.339\\\bottomrule
+\end{tabular}
+\end{center}
+The exact machine-generated metrics accompany this note; rounded table values
+are descriptive. Direct calibration materially improves the bounded-score
+result. Shared target prediction variability still limits its usefulness.
+Fourier does not show a net length advantage under the fully protected
+bounded-score calibrations tested here. This does not imply that Fourier
+cannot help in other distributions or under tighter error control.
+
+\begin{figure}[ht]\centering
+\includegraphics[width=\linewidth]{bounded_comparison.pdf}
+\caption{Weak-bias comparison on identical data. Each method uses the same
+.05 total error budget. The dotted line denotes ordinary target-normal length.}
+\end{figure}
+
+\section{Fresh fitting: better protection, but no established borrowing gain}
+
+The fitted diagnostic uses four covariate strata. Common outcome and target
+propensity fits use half-count smoothing on 500 target training patients;
+source joint weights use 500 source training patients. Sources retain 250
+pilot and 250 evaluation patients; the target has 500 evaluation patients.
+The target truth is .10. This is the same finite-stratum DGP as the preceding
+report, with new seeds, not a production sparse-RoCE simulation.
+
+At $K=128$, weak bias and target heterogeneity .3, the average source budget
+falls from .285/.263 in the treated/control arms to .111/.097. The oracle
+worst-subset signed drifts are only .0034/.0032. Hence the new certificate
+is substantially tighter but remains far from the actual drift scale.
+
+\begin{center}\small
+\begin{tabular}{lr}\toprule
+Procedure, same fitted setting & Mean interval length\\\midrule
+Previous hybrid & 1.1101\\
+Direct dispersion, previous nuisance budgets & 1.1101\\
+Direct hybrid, aggregate nuisance budgets & .8817\\
+Direct dispersion, aggregate nuisance budgets & .8722\\
+Target evaluation half, matched directional calibration & .9244\\
+Target evaluation half, full target-only error allowance & .8781\\
+Full target two-fold estimator, equally improved certificate & .8312\\\bottomrule
+\end{tabular}
+\end{center}
+
+The last comparison changes the substantive conclusion. A shorter interval
+than the old target certificate is not sufficient evidence of borrowing
+benefit. Applying the same joint-probability nuisance improvement to both
+target folds yields a target-only interval still shorter than the proposed
+source procedures in this setting. It uses .0025 nuisance and .0225 noise
+allowance per fold; the two dependent folds are combined by a union bound.
+No source observations enter that target estimator or certificate.
+
+\begin{figure}[ht]\centering
+\includegraphics[width=\linewidth]{fitted_comparison.pdf}
+\caption{Weak-bias fitted diagnostic with target heterogeneity .3. The left
+panel uses the equally improved full-target certificate as denominator.
+The right panel distinguishes computable and oracle nuisance quantities.}
+\end{figure}
+
+\section{Coverage checks and the remaining decision}
+
+Every source procedure has observed coverage 1 in these settings; the methods
+remain conservative. With no misses, a two-sided 95\% binomial lower bound
+is about .9963 for 1,000 repetitions and .9878 for 300. This is not evidence
+that achieved coverage is exactly .95. All 3,600 fitted repetitions satisfy
+the audited mean/squared nuisance and target drift certificates, allowing
+$10^{-12}$ numerical tolerance only in that diagnostic.
+
+The original fitted diagnostic compared the theoretically zero prediction
+coordinate drift with its floating-point residual (about $10^{-16}$), causing
+spurious certificate-failure flags. The original records are preserved and
+the separate paired audit supersedes those flags. No interval, point estimate,
+or coverage result was altered by this correction.
+
+The next priority is to control the full calibration remainder more sharply
+and extend its certificate beyond a small fixed stratum space. Direct
+bounded-score dispersion is the simpler useful comparison in this study;
+Fourier remains an explicit ablation. Neither large-$K$ coverage reductions
+nor successful ideal-score length results establish useful fitted-score
+lengths. The target floor, nuisance remainder, and honest target-only
+comparison must remain part of the assessment.
+\end{document}

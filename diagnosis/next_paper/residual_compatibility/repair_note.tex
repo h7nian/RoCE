@@ -1,0 +1,230 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern,amsmath,amssymb,booktabs,graphicx,enumitem}
+\usepackage[round,authoryear]{natbib}
+\usepackage[colorlinks=true,linkcolor=blue,urlcolor=blue,citecolor=blue]{hyperref}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{5pt}
+\setlength{\emergencystretch}{2em}
+\title{RoCE-K: fallback, calibration and nuisance-error experiments}
+\author{}
+\date{2 October 2026}
+\begin{document}
+\maketitle
+\textbf{Status.} This study tests repairs to the residual-compatibility
+prototype. It includes 18 Gaussian settings with 2,000 repetitions each,
+18 binary-score settings with 1,000 each, and 12 fresh saturated-nuisance
+settings with 300 each: 57,600 setting-specific repetitions. A paired
+refinement of the nuisance budgets reuses the same observations and is not
+counted again. All reported sites contain 1,000 patients. Separately, 90
+archived calibrated RoCE fits and 40,000 target-only reference repetitions
+are audited. No production estimator or historical result is replaced.
+
+\section{The repairs and their statistical roles}
+
+Retain $\tau=d+r_1-r_0$. Each source arm provides a Fourier confidence set
+intersected with a dispersion interval. The target supplies a joint region
+for $(d,r_1,r_0)$. An allocated union bound protects projection onto TATE;
+the two arms and the target summaries need not be independent.
+
+\paragraph{A pointwise length-controlled fallback.}
+Let $J_1,J_0$ be the protected source dispersion intervals and
+$C_a\subseteq J_a$ their intersections with Fourier constraints. If the
+target region projects onto $d\in[\widehat d-u_d,\widehat d+u_d]$, define
+\[
+ J_S=[\widehat d-u_d+\inf J_1-\sup J_0,\;
+       \widehat d+u_d+\sup J_1-\inf J_0].
+\]
+When the full target/source intersection is nonempty, report its projection.
+When it is empty, construct a source interval using the hulls of $C_1,C_0$
+if both exist, and otherwise using $J_1,J_0$. Return the shorter of this
+source interval and the prespecified target reference.
+
+On the simultaneous coverage event the full intersection cannot be empty,
+so changing the fallback does not remove that event. Moreover, for every
+realized dataset the new reported interval has length at most $|J_S|$.
+This removes the separate target-width fallback contribution from an
+expected-length bound. A useful bound on $E|J_S|$ still requires its own
+conditions, especially with fitted nuisances and estimated variances.
+
+The fixed allocation uses target failure probability $.025$. The decreasing
+alternative uses $.025/\sqrt K$. After reserving any variance and bias
+certificate errors, the remaining allowance is split between arms, and
+within each arm between Fourier and dispersion. These rules are specified
+before the new evaluations. We compare the interval midpoint with a second
+point rule: form a source-compatible residual center, add $\widehat d$, and
+project that point into the final interval. Neither rule is asserted to be
+MSE-optimal.
+
+\paragraph{Sharper target regions.}
+For bounded patient scores, use simultaneous bands in four directions:
+the three coordinates and the TATE contrast $(1,1,-1)$. The latter uses the
+full score covariance. The target region is the intersection of those bands;
+projection with residual interval sets is exact interval arithmetic.
+
+Known-variance Bernstein is an oracle comparison. The empirical version
+uses the unbiased sample variance and the deterministic score range, via
+Theorem 4 of \citet{maurer2009}, with explicit two-sided and four-direction
+error allocation. Source variance certificates use that paper's Theorem 10
+on an independent pilot, unioned over sites and arms. They are confidence
+bounds, not empirical variances declared to be true. Non-Gaussian source
+characteristic functions retain the bounded-score approximation allowance
+from the preceding experiment.
+
+\section{Gaussian results: fallback repair works}
+
+The table uses $K=2048$, no shared target variance floor, and 2,000 new-seed
+repetitions. Length is relative to the ordinary target-only normal interval.
+The Gaussian experiment is an abstract joint residual model; it is not
+asserted to be an exact binary causal-data embedding.
+
+\begin{center}\small
+\resizebox{\linewidth}{!}{\input{gaussian_table}}
+\end{center}
+
+The shorter fallback substantially improves midpoint RMSE without discarding
+any failed intersection. At the all-valid setting its RMSE falls from about
+$.0074$ to $.0010$. At strong shifts it falls from about $.0076$ to $.0021$.
+The source-compatible point is also recorded, and can improve on the midpoint
+in some cases. It is not uniformly preferable.
+
+Decreasing the target error allocation helps when the shared target component
+has zero variance, but can increase length when that component is noisy.
+At the weak-shift setting with shared target SD equal to half a source SE,
+the fixed shorter interval has length about $.526$ of target-only, versus
+$.695$ for the decreasing allocation. The fixed shorter rule is therefore
+the preferred candidate for subsequent work; decreasing allocation is retained
+as an explicit alternative, not selected after seeing the interval.
+
+\begin{figure}[p]
+\centering\includegraphics[width=\linewidth]{fallback_comparison.pdf}
+\caption{Paired Gaussian comparison at weak shifts. The source-based fallback
+controls length on every repetition. All empty-intersection cases remain.}
+\end{figure}
+
+\section{Binary scores: calibration improves, variance uncertainty remains}
+
+The binary model retains randomized treatment, binary covariates and oracle
+common outcome scores from the preceding study. Target truth is $.10$.
+Sources now use 250 variance-pilot observations and 750 evaluation observations;
+the target uses 1,000. This respects the total site budget.
+
+At $K=2048$, weak shifts and effect heterogeneity $.3$, the length ratios
+relative to ordinary target-only are approximately:
+\begin{center}
+\begin{tabular}{lr}
+\toprule
+Calibration & Length/target\\\midrule
+Known variance, target moment ellipsoid & 2.056\\
+Known variance, target Bernstein region & 0.924\\
+Known source variance, empirical target Bernstein & 1.089\\
+Estimated source variance, empirical target Bernstein & 1.737\\
+Gaussian plug-in diagnostic & 0.721\\\bottomrule
+\end{tabular}
+\end{center}
+Thus the loose target ellipsoid was an avoidable cost. However, the estimated
+source-variance certificate still loses substantial precision. The short
+Gaussian plug-in result is not promoted to a uniformly valid procedure on
+the basis of this experiment. These panels continue to use oracle nuisance
+functions, so they do not by themselves establish fully feasible inference.
+
+\begin{figure}[p]
+\centering\includegraphics[width=\linewidth]{binary_calibration.pdf}
+\caption{Binary-score calibration, 1,000 repetitions per setting. Source
+variance estimation uses a separate pilot within the 1,000-patient budget.}
+\end{figure}
+
+\section{Fresh nuisance fitting and feasible bias budgets}
+
+This diagnostic uses two binary covariates and four strata. Target outcome
+means are $.55+cX_1/2+.08X_2$ and $.45-cX_1/2+.08X_2$, so TATE is exactly
+$.10$. Source covariate distributions and treatment propensities differ.
+Some treated source arms receive a local mean shift. Each source uses
+500 training, 250 variance-pilot and 250 evaluation patients. The target
+uses 500 training and 500 evaluation patients.
+
+Every repetition refits half-count-regularized saturated outcome and
+propensity probabilities. Source merged weights calibrate regularized
+source joint-cell frequencies to target cell frequencies. This is a
+closed-form low-dimensional calibration diagnostic, not the production
+sparse fold-summed RoCE fitting program.
+
+Let $\widehat p_t(x)$ and $\widehat p_{j,a}(x)$ denote fitted target and source
+joint-cell probabilities, and $\widehat q_j(x)=\widehat p_t(x)/\widehat
+p_{j,a}(x)$. For a structurally valid source, its conditional nuisance drift
+equals
+\[
+ \sum_x\{p_{j,a}(x)\widehat q_j(x)-p_t(x)\}
+                     \{m_t^a(x)-\widehat m^a(x)\}.
+\]
+Simultaneous binomial confidence bounds give a computable allowance
+\[
+ \sum_x\{\widehat q_j(x)\Delta p_{j,a}(x)+\Delta p_t(x)\}
+                  \Delta m_a(x).
+\]
+The exact conditional drift is also computed from the known simulation law,
+solely as an oracle diagnostic. It is never mislabeled as a feasible bound.
+
+The first allocation distributes the training confidence error over all
+coordinates. A paired refinement assigns half to the shared target nuisance
+events once, independently of $K$, and half to source events. At $K=128$,
+typical maximum oracle source budgets are about $.014$, while the original
+feasible budgets are about $.34$ and the shared-target refinement about
+$.28$. The latter is an improvement, but still far too large for useful
+borrowing in this diagnostic.
+
+The ordinary target reference uses all 1,000 target patients in a two-fold
+AIPW estimator. Its score-normal interval is an asymptotic comparator.
+An independent 20,000-repetition audit per heterogeneity setting finds
+coverage $.94915$ and $.94535$, with Monte Carlo standard errors about $.0016$.
+We also construct a fully protected target-only reference: each fold has
+training-error allowance $.0025$ and held-out mean-error allowance $.0225$;
+averaging its two protected intervals is justified by a union bound.
+
+With feasible shared-target budgets, the multisource interval is about
+$8.7$--$8.8$ times the ordinary normal reference and about $1.10$--$1.11$
+times this similarly protected target-only interval. Therefore this feasible
+finite-sample implementation is not yet an efficient borrowing method.
+Its high coverage reflects conservatism, not a completed high-dimensional
+solution. The paired refinement reproduces the first five original method
+outputs exactly and is not counted as additional independent evidence.
+
+\begin{figure}[p]
+\centering\includegraphics[width=\linewidth]{fitted_cost.pdf}
+\caption{Fresh saturated nuisance fits, 300 repetitions per setting. Oracle
+budgets locate the cost of protection but are unavailable in actual analysis.}
+\end{figure}
+
+\section{Archived RoCE fits, checks and the next priority}
+
+Ninety previously completed actual RoCE calibration fits are read without
+modification, with all completion hashes verified. The common-outcome scores
+are transformed into the target/residual coordinates. Empirical covariance
+exports explicitly convert the old $n^{-2}$ centered-moment convention to
+the unbiased sample-mean covariance convention. Conditional population moments
+remain labeled as oracle inputs. The largest archived valid-source absolute
+drift is about $.0295$, and the largest target-coordinate drift about $.00875$.
+These heterogeneous single-fit observations do not constitute a new Monte
+Carlo coverage experiment, but confirm that zero drift is not automatic.
+
+Implementation checks cover analytic projection against independent linear
+and nonlinear solvers, the pointwise fallback length cap, fitted-score
+identities, simultaneous variance bounds and the total patient budget.
+The previous binary generator reproduces exactly under its old settings.
+All interval, coverage, length and point-error summaries are recomputed from
+saved repetitions. Old experiments, preliminary fits and paired revisions
+are preserved on scratch.
+
+The immediate decision is to keep the fixed-budget shorter fallback and
+the sharper target calibration as research components. The remaining obstacle
+is the cost of simultaneous variance and nuisance-error protection. Subsequent
+work should use the calibration equations to control the combined remainder
+more tightly, and establish joint $(n,K)$ approximations where appropriate.
+Neither ignoring the nuisance budget nor assuming estimated covariance is
+known is a justified shortcut. Full sparse/high-dimensional fitting should
+follow a useful uncertainty analysis, rather than precede it.
+
+\bibliographystyle{plainnat}
+\bibliography{references}
+\end{document}

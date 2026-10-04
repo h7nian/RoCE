@@ -1,0 +1,83 @@
+\section{Complete-contrast inference for the existing fitted scores}
+\label{sec:joint-contrast}
+
+Keep the fitted scores and sample allocation from the preceding refinement.
+The source center is $\hat T_S=\hat d+K^{-1}\sum_j(\bar R_j^1-\bar R_j^0)$.
+The change here concerns its noise and nuisance certificates, not its weights.
+Two source arms need not use the same valid set.
+
+\paragraph{A joint patient-noise bound.}
+Group $g$ contains $n_g$ independent evaluation patients, group mean $\bar U_g$,
+and unbiased mean variance $\hat v_g=S_g^2/n_g$. All centers $c_g$, weights
+$w_g$, and support bounds $[l_g,u_g]$ are fixed by training. Let $N=\sum_gn_g$,
+\begin{align*}
+ S&=\sum_gw_g(\bar U_g-c_g),\\
+ A_2&=\sum_gw_g^2\left\{\frac{n_g-1}{n_g}\hat v_g+
+                         \frac{(\bar U_g-c_g)^2}{n_g}\right\},\\
+ \hat V&=\frac{NA_2-S^2}{N-1},\qquad
+ B=\max_{g,z\in\{l_g,u_g\}}\frac{w_g(z-c_g)}{n_g}
+   -\min_{g,z\in\{l_g,u_g\}}\frac{w_g(z-c_g)}{n_g}.
+\end{align*}
+Theorem 11 of \citet{maurer2009}, applied to each patient variable
+$Nw_g(U_{gi}-c_g)/n_g$, gives the two-sided radius
+\[
+ r_N=\sqrt{2\hat V\log(4/\alpha_N)}+
+          \frac{7NB\log(4/\alpha_N)}{3(N-1)}.
+\]
+Its independence assumption permits nonidentical means. Consequently the
+empirical variance above includes between-group centered means; it is not
+silently replaced by only within-group variances.
+
+For the joint TATE direction, one group is the target prediction contrast,
+with weight one, and source group $j$ contains $R_j^1-R_j^0$, with weight
+$1/K$. Training residual means supply the source centers; training prediction
+means supply the target center. These offsets change the certificate, not
+$\hat T_S$. They are not chosen using evaluation observations.
+
+For the original patient residual scores, $R_i^1R_i^0=0$, but
+$\widehat{\Cov}(\bar R^1,\bar R^0)=-\bar R^1\bar R^0/(n-1)$ need not vanish.
+The contrast mean variance is therefore
+$\hat v_1+\hat v_0-2\widehat{\Cov}(\bar R^1,\bar R^0)$.
+Our ablation compares this joint bound with three separately protected means,
+using the same total noise allowance.
+
+\paragraph{A joint nuisance direction.}
+Use the preceding design coefficient bounds $C_{V_a,x}$. A single application
+of \eqref{eq:v4-scalar-radius} to the stacked coefficients
+$(c_{V_1,1},\ldots,c_{V_1,L},-c_{V_0,1},\ldots,-c_{V_0,L})$ bounds
+$|\bar\beta_{V_1}^1-\bar\beta_{V_0}^0|$. Conditional on the designs, these
+are one linear combination of independent target training outcomes.
+This avoids adding two separate standard-deviation bounds. It still assumes
+outcome-independent weighting fits and protects a fixed population-valid
+pair of subsets, not an outcome-selected pair.
+
+\paragraph{Transport dispersion remains a distinct choice.}
+The arm certificate is
+\[
+ r_D^{\rm arm}=\sqrt{(K-g_1)U_1/g_1}+\sqrt{(K-g_0)U_0/g_0}.
+\]
+Alternatively, if $g_\cap=g_1+g_0-K>0$, at least $g_\cap$ sites are valid in
+both arms. Apply dispersion calibration to $R^1-R^0$ and its proper variance,
+obtaining $U_\tau$. Its certificate is
+$\sqrt{(K-g_\cap)U_\tau/g_\cap}$, with nuisance coefficients recomputed for
+$g_\cap$ rather than $g_a$. It can exploit opposite terms that cancel in
+TATE, but the smaller validity guarantee can increase nuisance protection.
+The implementation rejects this mode when $g_\cap\le0$.
+These are separately calibrated options; picking their shorter realized
+interval without simultaneous calibration would not be justified.
+
+\paragraph{Reporting and error allocation.}
+The source band is $\hat T_S\pm(r_N+r_B+r_D)$. Use $.025$ for noise,
+$.005$ for nuisance, $.01$ for dispersion, and $.01$ for a target-only
+population interval. Report their intersection if nonempty, otherwise the
+shorter band. The union bound gives at least .95 coverage under the stated
+contracts. Both the source band and the final band are saved: small-$K$
+results can otherwise conceal reliance on the target band.
+
+A further comparator estimates an upper bound for the true target CATE range
+from simultaneous full-target cell-outcome intervals. A range allowance .005,
+plus outcome and composition allowances .0225 each, gives another .95
+stratified target-only interval. The random range bound is used only on its
+simultaneous certificate event; the composition concentration inequality itself
+is for the fixed true CATE function. This is a valid refinement of the earlier
+worst-case range-two comparator.

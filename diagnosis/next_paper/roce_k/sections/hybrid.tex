@@ -1,0 +1,324 @@
+\section{Statistical objective and the residual decomposition}
+
+The target sample identifies its own treatment effect. Sources are used to
+improve precision, while allowing an unknown set of arbitrarily small source
+biases and a source count $K=K_n$ that may increase. We do not first require
+consistent classification of every source. Parameter compatibility, rather
+than source selection, is the inferential object. This follows the motivation
+of searching under local invalidity \citep{guo2023}; it is not an application
+of that paper's IV theorem. Target-specific borrowing, unknown source validity,
+and increasing source counts are also connected to FACE, RIFL, and robust
+fusion \citep{face2025,rifl2025,fusion2023}.
+
+Condition on an independent training sample $\calT$. Fit a common prediction
+$m^a$ and each source's merged weight $q_j^a$. Define
+\[
+ d=\E_t(m^1-m^0),\qquad r_a=\E_t\{Y(a)-m^a(X)\},\qquad
+ \tau_t=d+r_1-r_0.
+\]
+Source $j$ evaluates $R_{ji}^a=\ind(A_{ji}=a)q_j^a(X_{ji})\{Y_{ji}-m^a(X_{ji})\}$
+on fresh patients and sends its mean $\bar R_j^a$, unbiased mean variance
+$\hat v_j^a=S_j^{2,a}/n_j$, and sample size. Its conditional mean is
+$\theta_j^a=r_a+\beta_j^a$. Training, pilot, and evaluation are sample
+\emph{roles} in this prototype, not a claim that the production RoCE
+algorithm has changed from two-layer cross-fitting.
+
+At least $g_a\ge1$ sources are valid in arm $a$; their identities may differ
+between arms. Validity removes structural transport bias, not necessarily
+fitting drift. Fix some truly valid subset $V_a$ of size $g_a$. We require
+one of two certified forms of nuisance control:
+\begin{align}
+ &|\beta_j^a|\le b_a\quad(j\in V_a),\label{eq:h-uniform}\\
+ &\left|g_a^{-1}\sum_{j\in V_a}\beta_j^a\right|\le B_{1a},\qquad
+ K^{-1}\sum_{j\in V_a}(\beta_j^a)^2\le B_{2a}.
+ \label{eq:h-average}
+\end{align}
+The second is a signed subset-mean and a squared-drift certificate. An
+average over all sources does not establish it. All nuisance certificates,
+including the target score drift, share a declared failure allowance
+$\delta_B$. No minimum nonzero structural bias is assumed.
+
+\section{Two complementary source constraints}
+
+Write $\rho_a=g_a/K$. The source set is $C_a=J_a\cap F_a$ in the hybrid
+procedure. Dispersion-only and Fourier-only procedures are prespecified
+ablations with their own error allocations. Intersecting two separately
+95\% procedures would not produce a 95\% hybrid.
+
+\subsection{Dispersion and its direct bounded-score calibration}
+
+Suppress $a$, let $\bar\theta=K^{-1}\sum_j\theta_j$, and define
+\[
+ D=K^{-1}\sum_j(\theta_j-\bar\theta)^2,\qquad
+ \widehat D=K^{-1}\sum_j(\bar R_j-\bar R_\cdot)^2
+       -\frac{K-1}{K^2}\sum_j\hat v_j.
+\]
+Independent patients within and between sites give $\E\widehat D=D$.
+The statistic can be negative and is not truncated before inversion.
+Subset geometry gives
+\begin{equation}
+ |\bar\theta-r|\le B_1+\sqrt{(K-g)D/g}.
+ \label{eq:h-geometry}
+\end{equation}
+Under \eqref{eq:h-uniform}, take $B_1=b$.
+Indeed, the difference between the full mean and a $g$-subset mean is
+bounded by $\sqrt{(K-g)D/g}$ by Cauchy--Schwarz.
+
+The earlier Cantelli construction remains a comparison: with certified
+variance upper bounds and $\Var(\widehat D)\le LD+Q$, invert
+$D-\widehat D\le\sqrt{(1-\alpha_D)(LD+Q)/\alpha_D}$.
+Here the Cantelli constants use $L=4\max_jv_{Uj}/K$ and
+$Q=2K^{-4}[(\sum_jv_{Uj})^2+\sum_j\{n_j(K-1)^2/(n_j-1)-1\}v_{Uj}^2]$.
+The following bounded-score construction avoids individual variance
+certificates altogether.
+
+\begin{proposition}[Direct exponential dispersion bound]
+Suppose patients are independent, identically distributed within each site,
+$n_j\ge2$, and each site's score has a training-determined range of length
+$R_j$. Put
+\begin{align*}
+ p_j&=R_j^2/(4n_j),&
+ L&=4\max_jp_j/K,\\
+ Q&=\frac{2}{K^4}\left[(\sum_jp_j)^2+
+ \sum_j\left\{\frac{n_j}{n_j-1}(K-1)^2-1\right\}p_j^2\right],&
+ c&=2\max_j\frac{(K-1)p_j}{K^2(n_j-1)}.
+\end{align*}
+For $x=\log(1/\alpha_D)$ and $y=\widehat D+cx$, define
+\[
+ U_D=\max\{0,y+xL+\sqrt{\max(0,2xLy+x^2L^2+2xQ)}\}.
+\]
+Then $\Prb(D\le U_D\mid\calT)\ge1-\alpha_D$. For $K=1$, set $D=U_D=0$.
+\end{proposition}
+
+\begin{proof}
+Let $A=I/K-\boldsymbol1\boldsymbol1^T/K^2$ and form a patient matrix $B$.
+Its within-site off-diagonal entries are $A_{jj}/\{n_j(n_j-1)\}$;
+between sites they are $A_{jk}/(n_jn_k)$; its diagonal is zero.
+For centered patient scores $X$, expansion gives
+$\widehat D-D=2a^TX+X^TBX$, where $a_{ji}=(A\theta)_j/n_j$.
+Each centered score is sub-Gaussian with proxy $s_j^2=R_j^2/4$ by
+Hoeffding's lemma. Because the exponent is affine in each coordinate
+separately, successive conditional MGF bounds replace independent $X_i$
+by independent $N(0,s_j^2)$ variables without decreasing the MGF of
+$-t(\widehat D-D)$.
+
+Set $C=\operatorname{diag}(s)B\operatorname{diag}(s)$ and
+$b=\operatorname{diag}(s)a$. On the site-constant subspace $C$ is equivalent
+to $\operatorname{diag}(\sqrt p)A\operatorname{diag}(\sqrt p)\succeq0$.
+On each site's orthogonal complement its eigenvalue is
+$-A_{jj}p_j/(n_j-1)$. Also $b$ lies in the constant subspace,
+$\operatorname{tr}(C)=0$, $2\operatorname{tr}(C^2)=Q$, and
+$4\|b\|^2\le LD$. Gaussian integration and
+$u-\log(1+u)\le u^2/\{2(1-ct)\}$ for the relevant eigenvalues give,
+for $0<t<1/c$,
+\[
+ \log\E\exp\{-t(\widehat D-D)\}
+ \le\frac{t^2(LD+Q)}{2(1-ct)}.
+\]
+Here the linear Gaussian term is at most $2t^2\|b\|^2$, since the
+constant block is positive semidefinite. Chernoff inversion yields
+$D-\widehat D\le\sqrt{2x(LD+Q)}+cx$ outside an event of probability
+$e^{-x}$. Solving the quadratic inequality gives the stated bound.
+\end{proof}
+
+For equal site sizes $n$, the pooled patient mean equals the source-average
+mean. With $N=Kn$, define its pooled empirical variance divided by $N$ as
+\[
+ \hat v_{\rm pool}=\frac{
+   \sum_j n(n-1)\hat v_j+\sum_jn(\bar R_j-\bar R_\cdot)^2}{N(N-1)}.
+\]
+If all patient scores are in $[-M,M]$, Theorem 11 of
+\citet{maurer2009}, which permits independent nonidentical observations,
+gives the two-sided radius
+\[
+ u_M=\sqrt{2\hat v_{\rm pool}\log(4/\alpha_M)}
+       +\frac{14M\log(4/\alpha_M)}{3(N-1)}.
+\]
+Thus $J=[\bar R_\cdot\pm\{u_M+B_1+\sqrt{(K-g)U_D/g}\}]$.
+Only the pooled-mean implementation requires equal site sizes. The quadratic
+bound allows heterogeneous sizes. When $g=K$, no dispersion protection is
+needed. These scores are bounded conditional on training; a bound that itself
+grows rapidly with fitted weights can still be practically unhelpful.
+
+\paragraph{The exact Gaussian comparator is a different statistic.}
+For Gaussian means with common \emph{known} variance $v$, define
+$D^\circ=K^{-1}\sum_j(\bar R_j-\bar R_\cdot)^2-(K-1)v/K$.
+Then $KD^\circ/v+K-1\sim\chi^2_{K-1}(KD/v)$ exactly.
+This identity generally fails with the random subtraction in $\widehat D$.
+The implementation reserves exact noncentral chi-square inversion for known
+Gaussian variances; bounded scores use the corrected patient statistic.
+
+\subsection{Fourier constraints and all required allowances}
+
+Let $[v_{Lj},v_{Uj}]$ be pilot-certified mean variance bounds, with joint
+failure allowance $\delta_\Sigma$ over sites and arms. Known variances are
+an oracle option. With $m=\lceil\log(eK)\rceil$, the experimental frequencies are
+\[
+ t_\ell=\frac{\sqrt\ell}{2\sqrt{\max_jv_{Uj}}},\quad
+ \ell=1,\ldots,m,\qquad
+ \widehat F(t)=K^{-1}\sum_j e^{t^2v_{Lj}/2}e^{it\bar R_j}.
+\]
+They are fixed conditional on training and pilot, not selected using the
+held-out means. Write $a_j=e^{t^2v_{Lj}/2}$ and
+$z=\log(4m/\alpha_F)$. For bounded scores let
+\[
+ V_F=\sum_ja_j^2\min(1,t^2v_{Uj}),\quad b_F=2\max_ja_j,
+ \quad q_F=b_Fz/3.
+\]
+A stochastic allowance is the smaller of
+$2\sqrt{z\sum_ja_j^2}/K$ and
+$\sqrt2\{q_F+\sqrt{q_F^2+2V_Fz}\}/K$.
+This deterministic choice between two concentration bounds does not spend a
+second error allowance. Include the variance-attenuation and non-Gaussian
+allowances
+\begin{align*}
+ e_V(t)&=K^{-1}\sum_j[1-e^{-t^2(v_{Uj}-v_{Lj})/2}],\\
+ e_G(t)&=K^{-1}\sum_j\frac{a_j|t|^3}{6n_j^2}
+  [R_jn_jv_{Uj}+2\sqrt{2/\pi}(n_jv_{Uj})^{3/2}].
+\end{align*}
+The latter is a Lindeberg replacement bound using bounded centered third
+moments. It is unnecessary for exactly Gaussian means, but cannot be omitted
+for causal residual means merely because each has a CLT.
+
+For uniform nuisance drift use $e_B(t)=\rho\min(2,|t|b)$.
+For \eqref{eq:h-average}, the valid-subset Taylor expansion yields
+\[
+ e_B(t)=\min\{2\rho,\rho|t|B_1+t^2B_2/2\}.
+\]
+In either case, retain $u$ exactly when, for every selected frequency,
+\[
+ |\widehat F(t)-\rho e^{itu}|
+ \le 1-\rho+e_{\rm stochastic}(t)+e_V(t)+e_G(t)+e_B(t).
+\]
+This defines $F$. Each complex disk is inverted as periodic arcs and their
+intersection is computed without a discretized search grid. The hybrid is
+localized to $J$; Fourier-only uses the declared residual range $[-1,1]$
+in the binary-outcome diagnostic. In a different model a justified domain
+must be supplied. This multiscale construction is motivated by Gaussian
+contamination inference \citep{wang2026}; the present frequency rule alone
+does not prove a sharp length rate in the causal model.
+
+\section{A constructive aggregate nuisance certificate in four strata}
+
+This section concerns the saturated finite-stratum diagnostic, not sparse
+high-dimensional calibration. For fixed training fits, let
+$\delta_a(x)=m_t^a(x)-m^a(x)$. The nuisance component, including a
+counterfactual definition for structurally invalid sites, is
+\[
+ \gamma_{ja}=\sum_x\{q_j^a(x)p_j(x,A=a)-p_t(x)\}\delta_a(x).
+\]
+For a structurally valid site $\beta_{ja}=\gamma_{ja}$.
+A simultaneous target outcome box bounds $\delta_a$. For each corner $u$,
+source pilot patients provide the scores
+$Z_{ji}(u)=\ind(A_{ji}=a)q_j^a(X_{ji})u(X_{ji})$.
+Use the preceding pooled-mean and exponential-dispersion bounds for their
+means $z_j(u)$. Simultaneous target joint $(X,A)$ and marginal $X$
+probability intervals, intersected with the simplex and marginal constraints,
+bound $\E_tu(X)$ by linear optimization.
+
+If $S(u)$ bounds $|\bar z(u)-\E_tu|$ and $U(u)$ bounds the dispersion of
+$z_j(u)$, then every subset $V$ of size $g$ satisfies
+\[
+ |g^{-1}\sum_{j\in V}\gamma_j(u)|
+ \le S(u)+\sqrt{(K-g)U(u)/g},\qquad
+ K^{-1}\sum_{j\in V}\gamma_j(u)^2\le U(u)+S(u)^2.
+\]
+Maximize each bound over the outcome-box corners to obtain $B_1,B_2$.
+The absolute linear and squared-norm objectives are convex in $u$, so
+corner bounds suffice for the entire box. This protects the unknown valid
+subset instead of replacing a maximum by an unprotected average.
+The target drift is optimized over the same probability region using
+coefficients $[q_t^a\ind(A=a)-1]u(X)$.
+
+With $L=4$ strata there are 16 corners per arm. Allocate $.001$ to the
+outcome box, $.001$ to target design probabilities, and $.003$ to pilot
+mean/dispersion bounds across the 32 arm-corners. Their sum is
+$\delta_B=.005$. Source pilot bounds condition on training; target design
+bounds are simultaneous over coefficients and may use all target $(X,A)$
+observations. The final union bound does not require these certificate
+events to be independent of the target evaluation region.
+This computation is linear in $K$ for fixed $L$, but exponential in $L$;
+it is not a high-dimensional implementation.
+
+\section{Target region, projection, and explicit coverage}
+
+The target evaluates
+$G=(m^1-m^0,\ind(A=1)q_t^1(Y-m^1),\ind(A=0)q_t^0(Y-m^0))^T$.
+Let $\hat v_t$ be its mean and $\hat V_t$ its unbiased mean covariance.
+Use directions $e_1,e_2,e_3$ and $\ell=(1,1,-1)^T$.
+For direction $h$, with deterministic score range $R_h$ and certified
+coordinate drift $b_t$, the empirical Bernstein band has radius
+\[
+ u_h=\sqrt{2h^T\hat V_th\log(16/\alpha_t)}
+       +\frac{7R_h\log(16/\alpha_t)}{3(n_t-1)}+|h|^Tb_t.
+\]
+Their intersection is $C_t$. The TATE band uses the full covariance;
+iid patients do not imply independent arms or independent scores on a
+shared patient. Known-covariance Gaussian ellipsoids and known-variance
+Bernstein regions remain labeled oracle comparisons.
+
+Form
+\[
+ \mathcal F=\{(d,r_1,r_0)\in C_t:r_a\in C_a\},\qquad
+ I=\operatorname{hull}\{d+r_1-r_0:(d,r_1,r_0)\in\mathcal F\}.
+\]
+If the intersection is empty, use the prescribed shorter fallback: form
+$J_S=[\hat d\pm u_d]+J_1-J_0$, tighten using the source-set hulls when
+both are nonempty, and choose the shorter of that source interval and the
+prespecified target interval. The reported length never exceeds $|J_S|$.
+For Fourier-only, substitute the declared residual domain for $J_a$.
+A final projection onto $[-1,1]$ is allowed for binary-outcome TATE.
+All fallback repetitions are retained. The interval midpoint and a projected
+source-center point are secondary summaries, not optimally weighted estimates.
+
+\begin{proposition}[Hybrid coverage reduction]
+If the stated score independence/range conditions, valid-count assumption,
+and nuisance and variance certificates hold with their allocated probabilities,
+and
+\[
+ \alpha_t+\delta_B+\delta_\Sigma+
+ \sum_{a=0}^1(\alpha_{F,a}+\alpha_{M,a}+\alpha_{D,a})\le\alpha,
+\]
+then the reported interval covers $\tau_t$ with probability at least $1-\alpha$.
+An omitted module receives zero error or an explicitly reserved unused allowance.
+\end{proposition}
+\begin{proof}
+On the intersection of all certificate and concentration events,
+$r_a\in J_a\cap F_a$ and $(d,r_1,r_0)\in C_t$. Hence the feasible set is
+nonempty and its projection contains $\tau_t$. The union bound gives the
+result without independence between arms or modules. A fallback is used only
+outside this simultaneous good event and cannot invalidate this argument.
+\end{proof}
+
+The paired fitted experiment uses $.02$ for the target, $.005$ each for
+variance and nuisance certification, and $.01$ per source arm. The hybrid
+splits each arm allowance equally between Fourier and dispersion; dispersion
+splits its allowance between mean and energy. Single-component ablations use
+the whole arm allowance. The direct-dispersion ablation still reserves the
+unused $.005$ variance allowance, so the comparison does not benefit from
+reassigning it after observing results.
+
+\section{What this does and does not establish for growing source counts}
+
+The finite-sample statements allow arbitrary local structural biases and
+any finite $K$. Thus they yield coverage along growing-$K$ sequences when
+the stated ranges, independence, valid-count, and certificate assumptions
+hold along that sequence. This is not yet a high-dimensional fitted RoCE
+coverage theorem or an optimality claim.
+
+With comparable $n_j=n$, uniformly bounded ranges, equal conditional source means ($D=0$), and
+fixed error allocations, $L=O(1/(nK))$, $Q=O(1/(n^2K))$, and
+$c=O(1/(n^2K))$. Consequently $U_D=O_p(1/(n\sqrt K))$ and the dispersion
+protection is $O_p(n^{-1/2}K^{-1/4})$ when $g/K$ stays bounded away from zero.
+If $g$ is fixed this conclusion changes. Nonvanishing contamination dispersion,
+shared target prediction noise, and nuisance budgets can prevent useful
+shrinkage. Fourier's additional length improvement requires a separate
+argument excluding wrong centers at the required scales; a coverage proof
+alone does not supply it. The Gaussian adaptive-interval results of
+\citet{wang2026} are benchmarks, not transferred lower bounds.
+
+The primary next decision is empirical and theoretical: do direct calibration
+moments and dispersion bounds make borrowing improve on an equally improved
+target-only procedure? Preserve all earlier experiments and compare both
+ordinary target-normal and finite-sample target references. Gains over a
+looser historical reference are not sufficient evidence of source efficiency.

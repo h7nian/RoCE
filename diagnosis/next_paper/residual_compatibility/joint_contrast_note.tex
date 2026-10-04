@@ -1,0 +1,215 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern,amsmath,amssymb,booktabs,graphicx}
+\usepackage[colorlinks=true,linkcolor=blue,urlcolor=blue]{hyperref}
+\setlength{\parindent}{0pt}\setlength{\parskip}{5pt}
+\title{RoCE-K: joint TATE calibration and an exact-design benchmark}
+\author{}\date{3 October 2026}
+\begin{document}\maketitle
+
+\textbf{Main finding.} Joint noise and nuisance control improve the existing
+fitted-score procedure, but its efficiency advantage remains limited against
+strong target-only inference. A separate, feasible exact-calibration procedure
+in four strata gives substantially shorter protected intervals. This supports
+working on score construction and empirical balance, rather than only reducing
+constants in a nuisance-error certificate. It does not prove a high-dimensional
+RoCE extension.
+
+\section{Study accounting and unchanged targets}
+
+Every site has 1,000 patients. The population target TATE is fixed at .10;
+the conditional target-covariate mean is only an intermediate parameter,
+and population composition uncertainty is included in the final intervals.
+The DGP remains the four-stratum binary model, with target heterogeneity .3.
+Weak shifts equal $2K^{-1/4}\sqrt{.5/250}$; strong shifts equal .2.
+One quarter of sources depart in the treated arm. Additional scenarios put
+weak deviations in different source sets across arms, or the same strong
+shift in both arms so that the conditional effects cancel.
+At least $.75K$ sources per arm are assumed valid throughout.
+
+The joint-score main panel has 15 settings with 300 repetitions and an
+independent confirmation panel has six settings with 1,000 repetitions.
+Contrast-dispersion and exact-balance comparisons reuse those same data.
+The exact-balance procedure then receives five fresh-seed settings with 500
+repetitions each. A final point-rule check uses three new settings with
+1,000 repetitions each. A final zero-target-heterogeneity stress panel has six settings with 500
+repetitions each. There are 19,000 reported setting-specific repetitions;
+paired reanalyses are not counted again. Methods within a setting share data.
+All historical results and fallback cases remain available.
+
+\section{Joint contrast certificates for the original fitted scores}
+
+The first experiment retains the fitted weights and score center. A weighted
+independent-patient empirical Bernstein bound treats the target prediction
+contrast and source residual contrasts together. Source arm covariance is
+computed from the same patients. A second change applies one conditional
+outcome bound to the complete valid-subset nuisance contrast, instead of
+adding two arm bounds.
+
+The four combinations of separate/joint noise and separate/joint nuisance
+use exactly the same error budget: .025 noise, .005 nuisance, .01 source
+dispersion and .01 target reference. Source bands and reported intersections
+are both saved. The target partner is fixed across the four variants.
+Small-$K$ reported intervals can mostly reflect that partner, so the source
+band must also be inspected.
+
+\begin{figure}[ht]\centering
+\includegraphics[width=\linewidth]{joint_ablation.pdf}
+\caption{Independent weak-bias confirmation. Joint certificates shorten the
+source band; the reported band also includes a target constraint. The dotted
+reference uses a separately valid .95 range-adaptive target-only procedure.}
+\end{figure}
+
+At $K=512$ weak bias, the separate-noise/separate-drift source band has mean
+length about .507, versus .400 with both directions joined. Reported lengths
+are about .448 and .391. A strengthened range-adaptive stratified target-only
+reference has length about .324. Thus the joint construction improves its
+own predecessor but does not yet beat that reference. At $K=2048$ weak bias,
+the joint design-certificate interval has length .337; the supplementary MGF
+variant assuming source joint probabilities at least .04 gives .305.
+The latter requires additional overlap information.
+
+Direct TATE dispersion is also examined. It can use a guaranteed intersection
+of arm-valid sets of size $g_\cap=g_1+g_0-K$, and it helps in the cancellation
+scenario. However, this smaller valid-count guarantee increases the nuisance
+certificate. In weak-bias scenarios that cost can outweigh the dispersion
+improvement. The two alternatives cannot be selected by realized length unless
+their joint calibration is explicitly provided.
+
+\section{A feasible exact-calibration diagnostic}
+
+The next comparison changes the score construction and sampling argument.
+Let $\hat p_{t,x}$ be empirical proportions from all target covariates and
+$N_{jxa}$ the observed source cell/arm counts. Exact design calibration uses
+$q_j^a(x)=n_j\hat p_{t,x}/N_{jxa}$. For any common cell predictor,
+\[
+ \sum_x\hat p_{t,x}m^a(x)+\frac1{n_j}\sum_i
+ \mathbf1(A_{ji}=a)q_j^a(X_{ji})\{Y_{ji}-m^a(X_{ji})\}
+ =\sum_x\hat p_{t,x}\bar Y_{jxa}.
+\]
+The prediction cancels. Under conditional-mean transport, valid sources have
+exactly the target empirical-covariate mean conditional on designs. No fitted
+nuisance drift allowance or oracle variance is used.
+
+This is a saturated standardization/calibration benchmark, not the production
+sparse or fold-summed RoCE fitting program. It needs observed cell support;
+a prespecified target fallback handles source cells with fewer than two
+patients. Theorems and a zero-diagonal patient quadratic derivation are added
+to the main design. The dispersion calibration uses unbiased cell-mean
+variance corrections and Bernoulli Hoeffding proxies.
+
+Arm dispersion remains available when arm-valid sets differ. When an
+intersection is guaranteed, an adaptive option calibrates both arm and TATE
+dispersion certificates simultaneously and takes the smaller protection.
+The conditional source and target bands are intersected before adding the
+common target population-composition allowance once.
+The failure ledger is .005 for the target range, .01 for composition,
+.01 each for source and target outcome noise, and .015 for dispersion.
+
+The comparison target-only interval is strengthened again to the same
+unsmoothed full-target stratified estimator, with an estimated CATE-range
+certificate. It has its own .95 finite-sample guarantee. The exact-balance
+procedure is therefore not compared only with the earlier, looser two-fold
+AIPW reference.
+
+\begin{center}\small
+\input{balance_table}
+\end{center}
+
+These five settings each use 500 fresh repetitions. In the weak-bias setting
+at $K=512$, length is .1646 with all source outcomes, versus .3083 for the
+strong target-only reference. Using only the original 500 held-out source
+outcomes still gives .1805. Thus extra source outcomes explain only part of
+the improvement. This is not a fully isolated calibration ablation: score
+construction, conditioning, and use of all target covariates also change.
+
+The observed coverage is 1 in these settings. Finite-sample protection remains
+conservative. The result establishes a useful benchmark within the saturated
+model; it does not establish the same behavior for 100- or 200-dimensional
+continuous covariates or for the existing RoCE estimator.
+
+\begin{figure}[ht]\centering
+\includegraphics[width=\linewidth]{conditional_balance.pdf}
+\caption{Left: fresh weak-bias exact-calibration checks, with 500 repetitions
+per setting. Right: a separate 1,000-repeat point-rule confirmation at $K=512$.
+All methods use a fixed population truth of .10.}
+\end{figure}
+
+\section{Point estimates: a transparent tradeoff}
+
+Protected interval coverage does not make its midpoint robust to a fixed
+source departure. The point follow-up projects the target estimate onto the
+conditional compatibility band. If the source conditional band contains the
+finite-target conditional effect, this projection cannot increase its absolute
+error relative to the target point for that conditional parameter. This is
+not an unconditional population-MSE theorem.
+
+Both point rules are evaluated on the same new-seed data, with no
+scenario-specific selection of the better rule. They use exactly the same
+reported confidence interval; a normal Wald interval is not attached to the
+projected point.
+
+\begin{center}\small
+\input{point_table}
+\end{center}
+
+Projection substantially improves the strong-bias midpoint behavior: RMSE
+changes from .0439 to .0249, versus .0312 for target-only, and bias falls
+from .0417 to .0061. Under weak bias, however, its RMSE .0193 is larger than
+the midpoint's .0105, while remaining below target-only. Projection is a
+reasonable robust point candidate to investigate, not a uniformly optimal
+choice. The implementation keeps both options explicit.
+
+\section{Weak bias and increasing source count: a direct stress test}
+
+The last panel removes the shared target CATE-variation floor by setting
+heterogeneity to zero. The target parameter remains the population TATE .10;
+this zero heterogeneity is not supplied to the inference procedure.
+The invalid-source shifts still decrease as $K^{-1/4}$. All-valid controls
+check an unprotected, feasible pooled normal interval using estimated
+within-cell source variances and a target-composition variance estimate.
+It does not correct transport bias.
+
+\begin{center}\small
+\resizebox{\linewidth}{!}{\input{weak_stress_table}}
+\end{center}
+
+The naive interval is near nominal in the all-valid controls. Its coverage
+under weak bias collapses as the number of sources increases, despite smaller
+individual departures. The conditional compatibility interval retains coverage
+and becomes shorter. At $K=2048$ its mean length is .1020, versus .2648 for
+the finite-sample-protected target-only comparator. Each row uses 500 new-seed
+repetitions; overcoverage of the protected method is still visible.
+
+The naive variance implementation is also checked against the analytic
+all-valid variance in this DGP. Empirical variances from only 500 repetitions
+can fluctuate; they are not substituted for the analytic or estimated variance
+in any reported interval.
+
+\begin{figure}[ht]\centering
+\includegraphics[width=\linewidth]{weak_bias_stress.pdf}
+\caption{Zero target effect heterogeneity exposes the weak-bias failure of
+ordinary pooling. All-valid controls verify that its coverage failure is not
+present when transport bias is absent. All outcomes and intervals are retained.}
+\end{figure}
+
+\section{Validation and the next theoretical task}
+
+The checks include independent patient-level reconstructions of the weighted
+mean variance, arm covariance after sample merging, a random-matrix audit of
+the cell-block quadratic spectrum, exact finite-distribution calculations,
+calibration cancellation, design fallback, and point-projection geometry.
+Previously reported joint-score outputs are reproduced within $10^{-12}$
+throughout the paired follow-up. Independent seeds are used for the new
+exact-balance and point-rule checks.
+
+The next theoretical task is to retain this conditional calibration structure
+with approximate balance and high-dimensional outcome fits. Exact cancellation
+of an arbitrary cellwise predictor depends on saturation. Sparse linear
+outcome models offer one route through residual balancing; nonlinear links
+need explicit curvature and remainder control. None of those extensions,
+or a uniform MSE guarantee for the projected point, is supplied by this
+finite-stratum experiment. Current RoCE/ENAR defaults and old simulation
+results have not been replaced.
+\end{document}

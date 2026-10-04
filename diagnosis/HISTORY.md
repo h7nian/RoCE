@@ -1,5 +1,28 @@
 # Research and implementation history
 
+## 2026-09-20 — bounded default and repeat-job concurrency
+
+The selected DGP is `bounded_joint_v3`, with bounded population-standardized
+features, four active slopes per nuisance, explicit source joint tilts, and
+fixed quadrature truth. It is now the workspace default. The design and its
+limits are recorded in `repair/bounded_dgp.md`; outputs are under
+`/scratch.global/zhan9381/FACE-HD/implementation/r6/`.
+
+Following the user's request to increase CPU utilization, the repeat controller
+now defaults to 512 in-flight jobs (2 CPUs each) and accepts up to 2000.
+The live user association showed MaxJobs=5000 and MaxSubmitJobs=5000, without
+a lower normal/partition QoS resource limit. Public partitions overlap, so
+idle CPU counts are not summed. Submissions are paced and capped at 256 per
+batch; first-seed checks for every cell precede later seeds. No unrelated
+arrays or running frozen workflows were changed. Six controller tests passed.
+
+The next low-dimensional campaign is 1800 jobs: p10/20/50 x C1/C2/C3 x 200,
+K2 and 1000/site. The default-switch full regressions passed 371 cases / 3151 expectations,
+followed by 31 focused cases / 292 expectations for a utils::head qualification. The standard package check of the final library returned `Status: OK`.
+Controller 1481100 was submitted for `implementation/r6/validation_mc200_v1/`
+with a 512-job cap; it was last awaiting scheduler Priority. An independent entry-point check passed: selected methods/radii
+reach the workers and sequential versus two-worker results agree to 1e-12.
+
 ## Iterations
 
 <a id="0001"></a>
@@ -1828,3 +1851,278 @@ unpenalised MLE, while the Federated-DR and Pooled-DR nuisances are in-sample la
 200-column basis. In v4 at rho = 0 (C1 and C3), `federated_dr_ate` has SE/SD 1.26-1.36 and
 `pooled_dr_ate` 0.94-1.13, against 1.05-1.14 for the method. Not yet fixed; changing it alters
 the baselines' reported SEs.
+
+## 0021 — 2026-09-19 — Independent fixed-n audit: inner tuning dependence, transport complexity, and unsuccessful target-only remedies [DIAGNOSIS]
+
+This audit retains n_site=1000, p=100 and the current FACE DGP. Executable
+diagnostics and the complete report are in `diagnosis/target_rcal/README.md`;
+all new results, builds, figures and fitted objects are in
+`/scratch.global/zhan9381/tmp/face_hd_diagnosis_20260919/`. The production
+R/src/workflow and frozen v4 library were not modified or republished.
+
+**Implementation checks.** The full existing regression suite passed (1366770),
+and isolated R CMD check returned Status: OK (1366772). Static inventory covers
+286 top-level R functions and 1,408 formal parameters. Those checks do not prove
+statistical validity. Independent perturbation tests found that cached inner
+lambda selection uses later inner evaluation outcomes: changing only fold 3's Y
+changes coefficients fitted on unchanged fold 2 by 0.422 in one-round mode and
+0.131 in two-round mode; disabling the cache makes both changes zero. Outer
+fold 1 remains excluded. The example uses 1000/site, p=4 and three folds; its
+production coverage impact is not yet quantified. Rho reuse separately forces
+use_lambda_cache=TRUE and does not preserve that setting.
+
+Numerical case-weight derivatives confirm the baseline IF correction-sign
+problem for both arms and both binary and continuous outcomes. This establishes
+the MLE sign error, not validity of MLE corrections for lasso. Fresh-process
+solver probes confirm that final outcome fitting still uses coordinate descent
+under the Newton label. Selected-source KKT checks on the full C3/K2/seed-1 fit
+(p=100) give maximum residual 5.33e-7 across 80 fits, so those selected losses
+are accurately solved. These findings do not support a blanket no-code-bug claim.
+
+**Statistical checks.** An independent scan of 21,654 existing v4 raw files
+recomputed 576 TATE cells (72 primary cells), retaining actual counts of 49-500
+and verifying row settings, coverage arithmetic and recorded package provenance.
+It did not repeat the production checkpoint/checksum gates. C3/K4/rho=0 has
+coverage 0.886 with 500 replicates. Shared-shift C1/K4/rho=2.5 has direct TATE
+coverage 0.788 and RMSE 0.03484, versus armwise 0.934/0.02192 and target-only
+0.944/0.03180. The shifted source still receives mean direct weight 0.11551
+despite a mean Wald statistic 3.195 and 98.94% penalty activation. Armwise uses
+a different variance definition, but the paired RMSE contrast is unaffected.
+
+The source covariate shift affects every coordinate: the ideal log density
+ratio sums contributions over all 100 features, not only the four outcome/PS
+signal coordinates. Thus the earlier simple s=4 or s=8 rate calculation does
+not characterize both source nuisances. This and the observed inner-tuning
+dependence need separate evaluation; no unique root cause is certified here.
+
+**Completed target-anchor comparisons.** C1/C2/C3 each have all 40 planned seeds
+for six nuisance alternatives. The calibrated-PS plus weighted-OR candidate
+has RMSE 0.03447/0.03854/0.03215 versus original 0.03333/0.03569/0.02876. C3 bias
+is -0.00758 versus -0.00756. Its conditional product diagnostic remains about
+-0.011. A full-method one-seed integration check rebuilds inner and outer target
+inputs and verifies exact baseline reconstruction; it is not full-method MC40.
+The candidate uses the documented native RCAL-objective implementation, whose
+fixed-penalty solutions were checked against RCAL. It does not represent every
+possible RCAL tuning recipe. One target C1 seed timed out at 30 minutes; its
+unchanged retry completed and no seed was dropped.
+
+An additional current-DGP min/1se comparison completed 40 seeds per configuration.
+All 120 min baseline estimates, biases and SEs match the first experiment within
+1e-12. In C3, 1se shifts estimates by -0.01248 (MCSE 0.00113), raises RMSE from
+0.02876 to 0.03343, and raises paired MSE by 0.000290 (MCSE 0.000105). Its MC40
+coverage increase is not a joint bias/RMSE improvement.
+
+**Next priorities.** Repair tuning isolation/cache propagation and solver
+provenance; establish baseline inference for the actual fitted nuisances; then
+separately evaluate nuisance-bias reduction and stronger protection from
+nontransportable sources with n_site fixed. Preserve the true quadratic signal
+terms and validate new choices on independent confirmation seeds. The present
+version has not met all scenario goals; this audit does not prove that n=1000
+is intrinsically insufficient. See the report and run_ledger.json for artifacts,
+limits, failed-attempt records and job identifiers.
+
+## 0022 — 2026-09-19 — Theory-first audit finds identification, anchor and inner/outer aggregation gaps [DIAGNOSIS]
+
+The user selected an independent theoretical audit before deciding changes to
+the core method. The report and all outputs are under
+`/scratch.global/zhan9381/tmp/FACE-HD/repair_audit/`; executable audit code is in
+`diagnosis/theory_audit/`. Production R/src, the frozen library, manuscript and
+simulation settings remain unchanged. No new MC500 was launched.
+
+Ten independent finite-support/algebra/finite-difference checks pass as checks
+of the stated identities or counterexamples, not as statistical certification.
+The actual frozen package's nuisance primitives also reproduce a finite-feature
+balance counterexample on an exact 1000/site fixture: both arm truths are 0.56,
+but source-assisted mu1 is 0.40 and mu0 is 0.69090909, with balance errors near
+1e-16 and converged solvers. This disproves the main text's finite-feature
+interpretation of weight correctness, not DR under an actually correct density
+ratio, and is not a FACE Monte Carlo replicate.
+
+Initial and calibrated nuisance limits can differ even with correct OR. The
+pairwise union-model argument can sometimes be repaired without requiring both
+initial/final limits to agree. However, actual inner screening and variance use
+initial nuisances while outer evaluation uses calibrated nuisances. Independent
+TATE examples show different limiting oracle weights (0.498573 vs 0.464925),
+and an inner-compatible source with final bias 0.00155593. Thus removing the
+alignment assumption alone does not repair the aggregation theory.
+
+Further findings: the main pure-product remainder omits quadratic terms;
+the SMMAL rate proof imports stronger tail/directional assumptions than those
+listed; clipping uses a convex continuation loss requiring an explicit bridge;
+the ordinary target anchor needs its own misspecification-aware IF conditions;
+fixed Wald cutoff need not yield constant oracle weights; reported weight-layer
+variance needs a fuller nuisance argument and more than mean/variance source
+messages. See the twelve individually qualified findings and 26-entry claim
+ledger for evidence, limits and repair routes.
+
+The parser/manifest inventory covers 574 source/configuration files and 2134 R
+functions (nested/anonymous included). This is discovery, not complete semantic
+review. The function ledger distinguishes partial formula/interface inspection
+from pending work; no unreferenced function or parameter was deleted. Core
+method redesign, R0 repairs, full code review and formal fixed-n validation are
+subsequent stages, pending the agreed theory-review decision.
+
+## 0023 — 2026-09-19 — Hou calibration mechanism, author-code caveat, and canonical scratch storage [DIAGNOSIS]
+
+The user requested deeper understanding of the Hou/Mukherjee/Cai SMMAL paper
+and deferred further cutoff work. The new `hou_comparison.md` in the canonical
+scratch audit directory reconstructs the actual PS/OR gradients and explains
+the separate PS-correct, OR-correct and both-correct proof branches. The paper
+defines distinct initial/final pseudo-targets; only the correctly specified
+model needs to recover the same truth in its branch. Its extra single-model
+bias terms, truncation margin and rate conditions cannot be replaced by a
+blanket alignment assumption or a pure-product remainder.
+
+Six independent finite-support checks (both arms, three correctness regimes)
+reproduce correct population means and zero final gradients even when the
+misspecified model's initial/final parameters differ. Maximum gradient residual
+is below 5e-17; finite-difference error is below 6e-12. These are unpenalized
+population checks, not n=1000 FACE performance runs. The new executable is
+`diagnosis/theory_audit/hou_calibration_checks.py`.
+
+Read-only inspection of the publication-linked author repository is pinned to
+commit de8d760ac67a5a6c79530578250819afd7f4e803. The example uses OR-derivative
+weighted PS calibration and initial-PS odds weighted OR, which differs from our
+earlier plain-RCAL target candidate. Its cf.lasso helper selects lambda using
+all fold validation losses and reuses it for cross-fitted and out-of-two-fold
+fits. That is an implementation-level independence caveat, not evidence that
+the paper's model-branch calibration mechanism is false; coverage impact was
+not measured and author code was not executed.
+
+The earlier cutoff=2 memory is supported by a frozen source default lambda=0.5
+and the later pilot's pilot_primary_cutoff=2 / selected_cutoff=1 record. No
+cutoff was changed during this review.
+
+At the user's explicit request, the two completed audit trees were atomically
+moved to `/scratch.global/zhan9381/FACE-HD/diagnosis/repair_audit/` and
+`/scratch.global/zhan9381/FACE-HD/diagnosis/fixed_n_audit_20260919/`. Original
+paths contain only compatibility symlinks. The migration ledger is
+`/scratch.global/zhan9381/FACE-HD/diagnosis/storage_migration.json`; new temporary
+files use `/scratch.global/zhan9381/FACE-HD/tmp/`. Production code, manuscript
+and scientific settings remain unchanged.
+
+## #0024 — Three-level implementation and bounded pilot preparation (2026-09-20)
+
+The approved repair now has shared source/target inner/outer fold-summed
+calibration, deterministic training-subset fits, KKT-certified Newton/CD,
+exact-input caches, compact calibration matrices and three TATE aggregation
+objectives. Legacy defaults and frozen production v4 remain available.
+The v6 complete suite passed 351 cases / 2770 expectations. Strict acceleration
+checks passed at nuisance tolerance 1e-10: the small-basis pipeline took 24.56s
+for serial uncached CD and 1.81s with Newton/cache/compact/parallel execution,
+with maximum TATE difference 4.90e-11. One p100 deepest initial-weight fit took
+144.5s versus 4.37s and selected the identical penalty. These are numerical
+checks, not coverage results.
+
+Independent clipped-score derivatives identified an additional orthogonality
+gap. An experimental `calibration_control` selects matching derivative weights,
+calibrated target propensity initialization and an explicit target radius.
+Eight independent population cases and native branch checks support the
+first-order calculation; nuisance rates, selection inference, baseline repairs
+and full communication-summary reconstruction remain unfinished. R2 v2 passed
+359 regression cases / 2892 expectations (120 warnings, four skips). A following
+metadata fix labels both new aggregation methods as TATE in result summaries.
+
+The user permits one scenario/repeat per Slurm job across public partitions and
+`saffo-2tb`. The new development launcher uses a single multi-partition sbatch
+request per repeat, pins inputs/library/workflow and records every submission.
+No formal MC500 has been launched at this point. Current results remain under
+`/scratch.global/zhan9381/FACE-HD/implementation/`; details and failure records
+are indexed by `diagnosis/repair/README.md`.
+
+## #0025 — Conditional baseline derivatives and pilot execution (2026-09-20)
+
+The current three-level R2 pilot consists of jobs 1437464, 1437466 and 1437467,
+one C1/C2/C3 repeat each (K2, rho0, seed1), at 1000/site, p100 and ten folds.
+They use the frozen R2 checked library and run on saffo-2tb. Dependent review
+job 1440338 retains every success/failure and paired result on scratch.
+
+R3 corrects the baseline nuisance derivative sign, includes lasso active-set
+and empirical feature-standardization derivatives, and differentiates raw
+likelihood predictions separately from evaluation clipping. Density derivatives
+include normalization and clipping. Pooled-DR uses pooled pseudo-outcomes and
+correct source/target sample-size scales, removing its unused local AIPW fits.
+Its nuisance CV now uses a recorded independent seed; this can change historical
+pooled penalties and is versioned as conditional_active_set_v1. The ordinary
+target-only reference is preserved. Conditional formulas do not resolve IVW
+weight learning, tuning transitions or transport misspecification.
+
+Independent case-weight refits passed for both arms and binary/Gaussian outcomes,
+including complete Pooled-DR refits. Targeted checks passed 47 cases / 422
+expectations. The full immutable-driver rerun passed 364 cases / 3060
+expectations, with 133 warnings and four skips. The first run's shell error
+(editing its workspace wrapper while active) is archived; future runs use
+frozen driver paths. Package check returned Status: OK with full regression
+tests separately checked. One p100 C3/K2 baseline fixture completed in 103.5s;
+it is not a coverage study. Results and derivation: implementation/r3 on scratch.
+
+## #0026 — Shared-worker reuse and lambda-grid diagnosis (2026-09-20)
+
+R4 adds optional exact-input disk caches scoped to one run and shared across
+source worker waves, with atomic writes, model digests and owner cleanup. The
+full suite passed 367 cases / 3083 expectations (133 warnings, four skips), and
+package check returned Status: OK with regression tests checked separately.
+Strict small-basis numerical gates passed. Shared disk caching slowed the small
+fixture; one p100 deepest source calibration task took 53.03s cold / 0.93s warm
+with identical coefficients and penalties, compared with 51.90/52.15s in
+separate memory-only worker waves. Full C3/K2/rho0/seed1 job 1447194 uses the
+checked R4 library and score-derivative recipe, retaining 100 lambdas.
+
+The pilot driver now allocates its total CPU budget across concurrent arms.
+A paired-result reviewer checks data/configuration identity, all saved nested
+nuisance models, selected penalties and three-mode TATE estimates/SEs/weights.
+The completed R2/R4 small-basis pair passed. The full p100 pair against R2 C3
+job 1437467 is pending; no full runtime or statistical performance claim follows.
+
+R5 diagnostics separate requested grid count from attempted fits. In one p100
+initial-source-weight task, 100/50/25 points took 3.90/3.53/6.24s. At 100 points,
+416/500 fold/penalty combinations were already skipped; 15 failed attempts
+accounted for about 96% of fit time. Exhaustive evaluation took 260.1s without
+finding another admissible penalty in that fixture only. Calibrated OR improves
+in speed with fewer points, but selected penalties change. With initial fits
+held fixed, a 50-point final grid changed one held-out source-assisted mu1 by
+-0.01254. No default grid, running study, coefficient guard or solver rule was
+changed by these diagnostics. Reports/results are under implementation/r5 on
+scratch; component findings are not TATE coverage evidence.
+
+The subsequent full-run cache snapshot identifies control-arm calibrated OR CV
+outliers of 785.83s and 289.82s. Their complete fitting inputs were verified
+against exact cache hashes and preserved without refitting. An eight-penalty
+profiler prefix matches native CV scores; bounded full-path job 1449410 is
+queued. Review jobs 1448996/1448997 run after parent termination and explicitly
+retain missing/failing recipes. The small-basis paired review is bit-identical
+for all three modes; altered-result and missing-recipe checks fail as intended.
+
+## 2026-10-02 — direct aggregate calibration and fair target audit [COMPLETE]
+
+Kept residual compatibility as the next-paper organizing principle. Added a
+patient quadratic exponential bound, pooled empirical Bernstein, and a finite-
+stratum certificate for signed/squared drift of an unknown valid source subset.
+Ran 21600 paired setting-repetitions; the equally improved target-only audit
+reuses the fitted samples. Improvements are real relative to previous bounds,
+but not yet a fitted borrowing advantage over the improved full target.
+Corrected known-vs-random variance chi-square notation and guarded its API.
+Main design v3 unifies the actual modules; both earlier designs are preserved.
+Artifacts: implementation/next_paper/v16/unified_inference_20261002_v1/.
+
+## 2026-10-03 — conditional outcome drift and source design reuse [COMPLETE]
+
+Added fixed-valid-subset conditional outcome control and an optional finite-
+binomial training MGF certificate. Direct dispersion now supports explicit
+design/evaluation reuse; Fourier is guarded against this unproved reuse.
+Ran9700 distinct setting-repetitions plus paired reuse, retained all results,
+and added a stronger unsplit stratified target reference. Gains over two-fold
+target AIPW do not imply gains over that stronger finite-stratum reference.
+Strong-bias midpoint errors remain reported. Main design v4 documents the
+assumptions and proofs; artifacts are under implementation/next_paper/v17/
+training_average_20261003_v1/. No production RoCE/ENAR changes.
+
+## 2026-10-03 — joint TATE protection and exact conditional calibration [COMPLETE]
+
+Completed the v18 panels and paired audits (19,000 distinct setting-repetitions).
+Kept the original fitted-score improvement separate from a feasible four-stratum
+exact-calibration benchmark. Added a conditional target-projection point rule,
+reported its weak-bias tradeoff, and checked naive pooling failure under growing
+K without changing its variance estimator. Forty-five research tests pass.
+Artifacts: implementation/next_paper/v18/joint_contrast_20261003_v1/.
+No production-estimator or current-paper Overleaf changes in this research step.

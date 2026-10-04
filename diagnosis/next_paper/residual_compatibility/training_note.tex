@@ -1,0 +1,149 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern,amsmath,amssymb,booktabs,graphicx}
+\usepackage[colorlinks=true,linkcolor=blue,urlcolor=blue]{hyperref}
+\setlength{\parindent}{0pt}\setlength{\parskip}{5pt}
+\title{RoCE-K: conditional nuisance control and source sample reuse}
+\author{}\date{3 October 2026}
+\begin{document}\maketitle
+
+\textbf{Main finding.} Conditional outcome concentration and reuse of source
+design observations reduce the protected interval length. Independent
+confirmation shows gains over the equally improved two-fold target AIPW
+certificate. However, a natural unsplit stratified target-only procedure is
+still shorter in most of these finite-stratum experiments. We therefore do
+not claim a general practical borrowing advantage.
+
+\section{The refinement and its assumptions}
+
+Keep $\tau=d+r_1-r_0$ and the direct-dispersion source procedure. The true
+valid source sets are fixed population properties, although unknown to the
+procedure. The coverage proof needs a guarantee for these sets, not for sets
+chosen after observing fitted errors.
+
+In the four-stratum diagnostic, propensity and joint weights depend only on
+$(X,A)$. Conditional on the designs, target outcome successes in each cell
+are independent binomials. For coefficients $c_x$ fixed given these designs,
+the fitting drift is $\sum_xc_x\{m_t^a(x)-\hat m^a(x)\}$. A bound
+$|c_x|\le C_x$ yields
+\[
+ \left|\sum_xc_x\{m_t^a(x)-\hat m^a(x)\}\right|
+ \le \frac12\sum_x\frac{C_x}{N_{xa}+1}
+ +\sqrt{\frac12\log(2/\delta)
+             \sum_x\frac{N_{xa}C_x^2}{(N_{xa}+1)^2}}
+\]
+with the allocated conditional probability. This treats the complete weighted
+outcome error, rather than a worst-case outcome box in every coordinate.
+It is not valid without further work when weights use these same outcomes.
+
+The principal coefficient certificate uses source design means and dispersions
+and does not assume a numerical lower bound for source cell probabilities.
+The supplementary MGF method uses the exact half-count binomial training law
+and assumes $p_j(x,A=a)\ge p_*$. We prespecify $p_*\in\{.02,.04,.06\}$.
+The DGP has minimum source joint probability about .06201; this fact verifies
+the simulated assumptions and is not supplied to the estimator. The MGF
+bounds use stochastic bracketing over probability intervals, not an unchecked
+probability grid. The prototype's computed bounds include a floating-point
+cushion; it is not an interval-arithmetic certificate.
+
+Direct dispersion does not choose evaluation-dependent Fourier frequencies
+or use pilot variance certificates. Its evaluation and nuisance-certificate
+events can therefore be combined by a union bound even when observations
+are reused. We compare 500 training + 250 pilot + 250 evaluation against
+500 training + 500 evaluation, using those same 500 held-out designs for the
+nuisance certificate. Every site still has 1,000 distinct patients. Initial
+fits are unchanged. The Fourier implementation explicitly rejects this reuse
+option pending a separate proof.
+
+\section{Prespecified comparisons and patient budgets}
+
+The main panel has $K=8,32,128,512$, all-valid or weak-bias sources, and target
+heterogeneity 0 or .3: 16 settings with 300 repetitions each. The evaluation
+reuse experiment is paired on the same 4,800 datasets. Four independent-seed
+confirmation settings, $K=128,512$ with weak or strong bias and heterogeneity
+.3, have 1,000 repetitions each. A subsequent exploratory extension has
+$K=2048$, all-valid, weak or strong bias, with 300 repetitions each. There are
+9,700 distinct setting-specific repetitions; reused datasets are counted once.
+
+The DGP and half-count nuisance fits are retained from the prior report.
+One quarter of sources have a treated-arm departure; control arms remain
+valid. The weak shift is
+$2K^{-1/4}\sqrt{.5/250}$ in both members of each paired comparison, so reuse
+does not change the underlying population. The strong shift is .2. Each arm
+is assumed to have at least $.75K$ valid sources. The target truth is .10.
+
+All source methods use total failure allowance .05: target .02, nuisance
+.005, a reserved variance allowance .005, and .01 per arm for direct
+source mean/dispersion inference. The reserved variance allowance is unused
+by direct dispersion but is not reassigned after seeing the results.
+Methods and probability-lower-bound sensitivities are reported separately;
+there is no data-dependent choice of the shortest procedure.
+
+\section{Stronger target-only comparators change the interpretation}
+
+First, the same conditional nuisance improvement is applied to both folds of
+the full-target AIPW reference. Second, because the model has only four strata,
+we add the unsplit full-target plug-in estimator of cell outcome contrasts.
+Its finite-sample interval adds a conditional weighted-outcome Hoeffding bound,
+including smoothing bias, and a population-composition bound for true cell
+contrasts in $[-1,1]$. It uses all 1,000 target patients without a fitting split.
+It is not a normal-approximation comparator and does not use oracle variances.
+
+In the independent confirmation data the improved two-fold target interval
+has mean length about .697, whereas the unsplit stratified interval has length
+about .395. The table shows the complete source comparison for the two central
+candidates. ``Design'' requires no supplied source probability minimum;
+``MGF (.04)'' assumes that lower bound. Rows with $K=128,512$ use 1,000
+repetitions; $K=2048$ rows are the exploratory 300-repeat extension.
+
+\begin{center}\small
+\input{confirmation_table}
+\end{center}
+
+At $K=512$ and weak bias, the conditional-design interval with reuse has
+mean length .5253, versus .697 for two-fold target AIPW: a reduction near
+25\%. But .5253 remains larger than the stratified target length .3951.
+The MGF option reaches .4727 and also remains longer. At $K=2048$ with weak
+bias, the design method has length .4422 and MGF (.04) has .3927. The latter
+is only near the stratified reference and requires additional source overlap
+information; it is not evidence of a broad advantage.
+
+\begin{figure}[ht]\centering
+\includegraphics[width=\linewidth]{training_comparison.pdf}
+\caption{Left: paired weak-bias comparisons at target heterogeneity .3,
+including both finite-sample target references. Right: independent-confirmation
+midpoint RMSE for the conditional-design method with reuse. The two panels
+use different prespecified seeds.}
+\end{figure}
+
+\section{Coverage and point-estimation boundaries}
+
+All 234 method-setting rows have observed coverage 1. The valid-subset and
+target nuisance checks have no observed failures. These are conservative
+results, not evidence of exact nominal coverage. The implementation passes
+33 focused tests, including finite-distribution checks of the scalar outcome
+bound and MGF envelope, grid bracketing, pooled-patient moment identities,
+empty target arms, and rejection of unproved reuse with Fourier.
+
+Weak-bias midpoint RMSE improves: at $K=512$ it is about .0148 versus .0315
+for the two-fold target point. Under strong bias, however, midpoint RMSE is
+about .0505 and bias about .0477. At $K=2048$ strong-bias midpoint bias is
+about .0501. Covering the true effect with a protected interval does not
+make its midpoint a robust point estimator. All such cases remain reported.
+
+\section{What remains}
+
+The refinement validates two concrete ideas: exploit the complete conditional
+outcome error, and avoid unnecessary separation of design calibration from
+direct-dispersion evaluation. It does not yet supply high-dimensional theory
+for outcome-dependent calibrated weights. A fixed stratum count and a known
+source probability lower bound must not be silently promoted to that setting.
+
+The next derivation should control the complete TATE direction, retaining
+cross-arm covariance and shared-training cancellations. Adding separate arm
+noise and bias radii can lose information that is available in the contrast.
+Any such simplification must preserve arm-specific valid sets and be compared
+with both target references. The strong-bias behavior of the midpoint remains
+a separate limitation; interval coverage is not a point-estimation guarantee.
+\end{document}

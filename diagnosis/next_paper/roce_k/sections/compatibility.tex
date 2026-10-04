@@ -1,0 +1,502 @@
+\section{Decision and scope}
+
+The primary research direction is now a confidence set for target means,
+built from source centers, noise-corrected source dispersion, and the target
+anchor. Point-estimation weights are secondary. The previous unrestricted
+joint GLS design is retained in \texttt{legacy\_gls.tex}; it is a comparison
+method, not silently presented as the new algorithm. The current RoCE/ENAR
+paper and its two-layer production estimator are unchanged.
+
+The question is whether a proposed target effect is compatible with the
+observed summaries and a declared lower bound on valid source arms. We use
+a moment-based \emph{outer relaxation} of that compatibility condition.
+It is not equivalent to searching all valid-source configurations, and it
+can discard useful information about clusters or individual outliers.
+The benefit is a fixed-dimensional final confidence problem with linear
+summary-processing cost in the source count. Neither useful finite-sample
+constants nor the full fitted high-dimensional theorem are established.
+
+Three designs have distinct roles:
+\begin{center}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{.25\linewidth}>{\raggedright\arraybackslash}p{.68\linewidth}@{}}
+\toprule
+Design & Role in the next stage\\\midrule
+Center--dispersion compatibility & Proposed main inference construction;
+project a joint region onto target TATE.\\
+One-dimensional borrowing & Optional point estimate and interval comparator;
+choose within a restricted, prespecified weight family.\\
+Version-1 joint GLS & Retained mathematical reference; variance minimization
+alone does not minimize a bias-protected interval.\\\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Literature and the precise relationship}
+
+\paragraph{Target-population borrowing.}
+FACE \citep{face2025} develops adaptive causal estimation for a designated
+target using heterogeneous sites and density-ratio adjustment. It is a
+direct causal-estimation comparator. The fusion--extraction method of
+\citet{fusion2023} uses summary estimates with biased sources and already
+allows growing source counts and parameter dimension under its assumptions.
+Consequently, increasing $K$ alone is not a new contribution. Oracle and
+selection statements must be checked on the local-bias sequences considered
+here, rather than interpreted as uniform guarantees from their names.
+
+\paragraph{Guo's two JRSSB papers and RIFL.}
+TSHT \citep{guo2018} uses thresholding and voting, with plurality-based
+identification and subsequent estimation. \citet{guo2023} studies failures
+of post-selection inference under local invalidity, then constructs searching
+and sampling intervals under finite-sample majority/plurality conditions.
+The useful principle is to retain plausible parameter values despite
+uncertain validity. Its perturbation, threshold-shrinkage and union rules
+have their own proof; ordinary bootstrap is not a substitute.
+In the author's version, equations (36)--(37) explicitly depend on the
+selected-IV dimension, so their sampling calibration is not automatically
+a growing-$K$ result for this problem.
+
+RIFL \citep{rifl2025} performs federated inference for a prevailing model
+matching the majority of sites and accounts for site-selection uncertainty.
+Our parameter is instead identified by a designated target, and source
+candidates share target patients. Independent-site aggregation variances
+cannot simply be reused. We do not claim that avoiding perfect selection is
+new, or that the moment construction below is Guo's searching-and-sampling
+method. The newer multiple-treatment IV preprint \citep{mei2026} also means
+that moving to multiple coordinates is insufficient as a novelty claim.
+
+\paragraph{Other necessary comparisons.}
+The subset-union approach of \citet{kang2022} motivates a small-$K$ validity
+reference. The high-dimensional calibrated analysis of \citet{tan2020}
+is relevant to nuisance remainders, but does not directly supply simultaneous
+budgets for these transported common-outcome scores. Bias-aware weighting
+under approximate moments \citep{armstrong2021} motivates optimizing interval
+length rather than variance alone. The Gaussian adaptation study of
+\citet{wang2026} provides context for fourth-root costs. Its experiment and
+lower bounds cannot be transplanted to anchored patient-level causal data
+without an embedding argument. These are methodological connections, not
+an established optimality claim for RoCE-K.
+
+\section{Statistical contract and common-outcome scores}
+
+There are $K$ sources and one target, with bounded outcomes in $[0,1]$.
+Target consistency, overlap and confounding adjustment identify
+$\mu_t^a=\E_tY(a)$ and $\tau_t=\mu_t^1-\mu_t^0$.
+The source count $K$, covariate dimension $p$ and patient counts are distinct.
+For each arm declare $g_a\in\{0,\ldots,K\}$ before inspecting agreement.
+At least $g_a$ source arms satisfy the specified transport and nuisance
+conditions. Their identities are unknown; the two valid sets can differ.
+No minimum invalidity separation is imposed. Counts are borrowing assumptions,
+not data-derived certificates and not needed for target-only identification.
+
+First retain independent training, pilot and evaluation roles, sampled by
+patient index. The $500/250/250$ allocation at $1000$/site is a diagnostic
+allocation, not a compulsory final method. All fitted transformations,
+model selection and nuisance tuning use training only. Pilot observations
+may choose variance bounds; evaluation observations form the reported
+summaries. A later two-role version needs a proof for its variance estimates;
+overlapping cross-fitting is a separate extension.
+
+At the target fit a common $\widehat m_c^a$ using a target IPW outcome loss,
+and retain the calibrated target score $\widehat\psi_t^a$. Each source fits
+its calibrated merged weight $\widehat q_j^a$ using the same feature basis.
+Define on evaluation data
+\begin{align}
+ R_{ji}^a&=\ind(A_{ji}=a)\widehat q_j^a(X_{ji})
+                     \{Y_{ji}-\widehat m_c^a(X_{ji})\},\\
+ Z_j^a&=\mathbb P_{t,E}\widehat m_c^a+\overline R_j^a,
+ &T_a&=\mathbb P_{t,E}\widehat\psi_t^a,\\
+ S_a&=\frac1K\sum_jZ_j^a
+     =\mathbb P_{t,E}\widehat m_c^a+\frac1K\sum_j\overline R_j^a.
+ \label{eq:v2-scores}
+\end{align}
+Source residual means use the entire evaluation-site denominator $n_j$,
+not the number in arm $a$. Equal source weights are fixed in advance.
+They prioritize simplicity for comparable site sizes; they are not asserted
+to be efficient for severely unequal precisions.
+
+The robustness branches from the previous design still need to hold.
+One branch requires correct source joint weights and target propensity,
+allowing a misspecified common IPW outcome projection. The other requires
+a correct common outcome limit and derivative-matched source calibration.
+Clipping and regularization enter the remainder analysis. Common prediction
+does not automatically inherit every robustness branch of source-specific
+outcome fitting.
+
+Conditional on training, write
+\[
+ \E Z_j^a=\mu_t^a+r_j^a,\qquad
+ \bar r_a=K^{-1}\sum_j r_j^a,\qquad
+ D_a=K^{-1}\sum_j(r_j^a-\bar r_a)^2.
+\]
+Require a simultaneous event of failure probability at most $\delta_B$
+on which $|\E T_a-\mu_t^a|\le b_{T,a}$ and $|r_j^a|\le b_a$ for
+every truly valid source arm. The common bound $b_a$ may be a justified
+maximum of heterogeneous budgets. Feasible, useful high-dimensional budgets
+are still a principal open step; neither agreement nor simulation-oracle
+integration supplies them in real data.
+
+\section{A source-center bias bound}
+
+\begin{proposition}[Valid fraction and dispersion]\label{prop:v2-geometry}
+If at least $g\ge1$ of $r_1,\ldots,r_K$ satisfy $|r_j|\le b$, then
+\[
+ |\bar r|\le b+\sqrt{\frac{K-g}{g}D},\qquad
+ D=K^{-1}\sum_j(r_j-\bar r)^2.
+ \tag{G}\label{eq:v2-geometry}
+\]
+For $g=K$ the bound is $b$ and dispersion is unnecessary.
+\end{proposition}
+\begin{proof}
+Choose $g$ valid coordinates and let their mean be $r_V$; $|r_V|\le b$.
+For $g<K$, the between-group part of total dispersion is
+$g(\bar r-r_V)^2/(K-g)$, and within-group dispersion is nonnegative.
+Thus $|\bar r-r_V|\le\sqrt{(K-g)D/g}$, proving the claim.
+\end{proof}
+
+This inequality allows arbitrary signs and different arm-validity sets.
+It is only a necessary moment implication of the count condition: source
+centers with the same mean and dispersion can have different cluster
+structures. A count-search procedure retains information discarded here.
+If $g_a=0$, omit the corresponding source-mean coordinate from borrowing;
+never divide by zero. If both counts are zero, use the prespecified ordinary
+target-only procedure at its nominal level.
+
+\section{Noise-corrected dispersion and explicit calibration}
+
+Common target predictions cancel from $Z_j^a-S_a$. Let
+$v_j^a=\Var(\overline R_j^a\mid\calT)$ and
+$\widehat v_j^a=s_{j,a}^2/n_j$, where the sample variance uses $n_j-1$.
+For each arm,
+\begin{equation}
+ \widehat D_a=\frac1K\sum_j(\overline R_j^a-\overline R_\cdot^a)^2
+       -\frac{K-1}{K^2}\sum_j\widehat v_j^a.
+ \label{eq:v2-dispersion}
+\end{equation}
+Then $\E(\widehat D_a\mid\calT)=D_a$ exactly. Shared target sampling noise
+disappears from this statistic, but remains in $\Var(S_1-S_0)$.
+An unbiased covariance correction, not a conservative upper bound, must be
+used in~\eqref{eq:v2-dispersion}.
+
+Suppose the pilot supplies $v_j^a\le\bar v_j^a$ simultaneously and
+$n_j\ge2$. Put $\kappa_j=n_j/(n_j-1)$ and, for $K\ge2$,
+\begin{align}
+ L_a&=\frac{4\max_j\bar v_j^a}{K},\\
+ Q_a&=\frac{2}{K^4}\left[
+  \left(\sum_j\bar v_j^a\right)^2+
+  \sum_j\{\kappa_j(K-1)^2-1\}(\bar v_j^a)^2\right].
+ \label{eq:v2-var-constants}
+\end{align}
+Conditional on training and pilot, on the variance-bound event,
+\begin{equation}
+ \Var(\widehat D_a)\le L_aD_a+Q_a.\label{eq:v2-var-bound}
+\end{equation}
+The derivation in Appendix~\ref{app:v2-variance} requires only second moments
+and independent patient blocks. It allows heterogeneous site distributions
+and nonzero source means. Arms need not be independent.
+
+For $c_a=(1-\alpha_{D,a})/\alpha_{D,a}$, a finite-sample upper bound is
+\begin{equation}
+ U_a=\max\left\{0,\widehat D_a+\frac{c_aL_a}{2}
+ +\sqrt{\max\{0,c_aL_a\widehat D_a+c_a^2L_a^2/4+c_aQ_a\}}\right\}.
+ \label{eq:v2-dispersion-upper}
+\end{equation}
+Cantelli gives $\Prb(D_a\le U_a\mid\calT,\calP)\ge1-\alpha_{D,a}$
+on that event. If $g_a=K$, bypass this step for that arm; if $K=1$,
+dispersion is identically zero. Error allocations for bypassed steps are
+reassigned only by a prespecified rule. Do not truncate $\widehat D_a$
+before the inversion.
+
+Define the source-mean allowances
+\[
+ h_a=b_a+\sqrt{(K-g_a)U_a/g_a},\qquad g_a\ge1.
+\]
+They can be computed in $O(K)$ operations from site residual moments.
+The mean-dispersion reformulation has \emph{not} solved the loose-constant
+problem in Cantelli. It must pass the ideal-score length diagnostic before
+it is promoted as an effective borrowing procedure.
+
+\paragraph{A sharper oracle comparator.}
+For independent exactly Gaussian residual means with a common known variance
+$v$, define $D_a^\circ=K^{-1}\sum_j(\bar R_j^a-\bar R_\cdot^a)^2-(K-1)v/K$.
+Then $KD_a^\circ/v+(K-1)$ has a noncentral chi-square law with $K-1$
+degrees of freedom and noncentrality $KD_a/v$. This identity does not in general
+hold for the random sample-variance subtraction in $\widehat D_a$. Invert its lower-tail CDF
+at $\alpha_{D,a}$ to obtain a tighter oracle upper bound. This is a
+comparison under a different distributional assumption, not a justified
+replacement for binary fitted scores. Sharper non-Gaussian calibration needs
+a uniform proof that includes local and fixed source departures.
+
+\section{A fixed-dimensional joint compatibility region}
+
+Stack four means and retain their complete dependence:
+\[
+ Y_*=(T_1,T_0,S_1,S_0)^T,\qquad
+ H_*=\begin{pmatrix}I_2\\I_2\end{pmatrix},\qquad
+ \E Y_*=H_*\mu+\delta.
+\]
+On the bias and dispersion events,
+$|\delta|\le h=(b_{T,1},b_{T,0},h_1,h_0)^T$ componentwise.
+The target contributes its four-score covariance; source $j$ contributes
+its full two-arm residual covariance multiplied by $1/K^2$ in the source
+pool block. Source-target covariance comes from common target patients.
+The final matrix is $4\times4$, not $2(K+1)\times2(K+1)$.
+
+Let $V\succ0$ be a pilot-chosen upper bound for $\Cov(Y_*\mid\calT)$.
+The simultaneous variance certificate, including all $\bar v_j^a$, has
+failure probability at most $\delta_\Sigma$. The range-based pilot
+construction in the legacy draft supplies a computable baseline from
+$4\times4$ and $2\times2$ blocks; its constants still need assessment.
+Random empirical covariances cannot be substituted without a guarantee.
+
+Writing $\epsilon=Y_*-\E Y_*$, a second-moment bound is
+\[
+ \Prb(\epsilon^TV^{-1}\epsilon\le c_N^2\mid\calT,\calP)
+ \ge1-\alpha_N,\qquad c_N=\sqrt{4/\alpha_N},
+\]
+on the certificate event. This follows from
+$\E(\epsilon^TV^{-1}\epsilon)\le4$. With exact joint Gaussian scores and
+known covariance, use $c_N^2=\chi^2_{4,1-\alpha_N}$ as a separate oracle
+mode. A fitted-score Gaussian calibration requires a uniform approximation
+error allowance; fixed dimension alone is not its proof. If source
+coordinates are omitted, use the actual dimension in these statements.
+
+The proposed confidence region is
+\begin{equation}
+ \mathcal C_\mu=\left\{u\in[0,1]^2:\ \exists d,\ |d_i|\le h_i,
+ \ \|V^{-1/2}(Y_*-H_*u-d)\|_2\le c_N\right\}.
+ \label{eq:v2-region}
+\end{equation}
+Project it to TATE:
+\[
+ I_{\rm comp}=\left[\min_{u\in\mathcal C_\mu}(u_1-u_0),
+                       \max_{u\in\mathcal C_\mu}(u_1-u_0)\right].
+\]
+Both endpoints are fixed-dimensional convex cone problems. An implementation
+must certify feasibility and endpoint accuracy; a coarse search grid alone
+cannot certify coverage. The region is convex, so a nonempty projection is
+an interval. If it is empty, report a prespecified target-only reference and
+an inconsistency flag. Replacing the empty set cannot remove coverage on the
+simultaneous good event. Optional intersection with an additional full-target
+interval on all datasets needs a separate error allocation and is off by
+default.
+
+\begin{proposition}[Coverage reduction, arbitrary finite source count]
+For each finite $K$, assume the declared valid counts, independent evaluation
+patients, valid bias budgets and the simultaneous pilot variance certificate.
+The second-moment construction satisfies
+\[
+ \Prb(\tau_t\in I)\ge
+ 1-\delta_B-\delta_\Sigma-\alpha_{D,1}-\alpha_{D,0}-\alpha_N.
+\]
+Steps omitted by design have zero allocated error. Additional approximation
+errors must be added if finite-sample calibrations are replaced.
+\end{proposition}
+\begin{proof}
+On the bias, variance and dispersion events the true $\delta$ lies in the
+declared box. On the noise event, choose $u=\mu$ and $d=\delta$ in
+\eqref{eq:v2-region}; the true means are feasible. Projection contains the
+true contrast. A union bound proves the result, with no independence needed
+between the two dispersions and the mean summaries.
+\end{proof}
+
+This is conditional on justified uncertainty inputs, not a completed fitted
+RoCE-K theorem. A sequence $K_n\to\infty$ is covered by the same argument
+only if those inputs hold uniformly along that sequence. A wrong valid-count
+assumption is not repaired by the target coordinate or the empty-set fallback.
+
+\section{Where aggregation weights now belong}
+
+No source-specific estimated weights are needed to construct
+$\mathcal C_\mu$. For an optional point estimate, define
+$\widehat\tau_T=T_1-T_0$, $\widehat\tau_S=S_1-S_0$ and
+\[
+ \widehat\tau_\omega=(1-\omega)\widehat\tau_T+omega\widehat\tau_S,
+ \qquad 0\le\omega\le1.
+\]
+We use $\omega$ (\texttt{borrowing\_fraction}) to avoid reusing nuisance
+penalty $\lambda$. With both arms borrowed, source candidate weights are
+$\omega/K$ and the target weight is $1-\omega$. These weights form a
+restricted family. They do not preserve the ability to downweight a single
+bad source while keeping the others unchanged.
+
+Let $V_\tau$ be the $2\times2$ covariance upper matrix for the two contrasts,
+obtained by linear transformation of $V$. Define
+\[
+ R(\omega)=c_N\sqrt{(1-\omega,\omega)V_\tau(1-\omega,\omega)^T}
+       +(1-\omega)(b_{T,1}+b_{T,0})+\omega(h_1+h_0).
+\]
+Minimize this convex function over $[0,1]$, with a fixed tie rule.
+The joint ellipsoid gives simultaneous noise protection for every $\omega$,
+so a data-chosen minimizer is allowed even though $h_a$ uses evaluation data.
+Project the resulting point onto $I_{\rm comp}$ if nonempty; retain the raw
+point. This is an optional reporting convention, not an RMSE theorem.
+$R(\widehat\omega)\le R(0)$ compares intervals under the same calibration,
+not a conventional full-target $95\%$ interval. Setting $c_N=1.96$ after
+selecting $\omega$ is not justified. An arm with $g_a=0$ stays target-only;
+its hybrid point-estimation variant must use the retained-coordinate map.
+
+\section{What can and cannot be claimed as sources increase}
+
+Assume comparable source evaluation sizes $n_s$, independent patient scores,
+uniform variance bounds $\bar v_j^a=O(n_s^{-1})$, and $g_a/K\ge\pi_a>0$.
+At the ideal all-valid law $b_a=0$ and $D_a=0$, fixed error allocations give
+\[
+ L_a=O((n_sK)^{-1}),\quad Q_a=O((n_s^2K)^{-1}),\quad
+ U_a=O_p((n_s\sqrt K)^{-1}),\quad
+ h_a=O_p(n_s^{-1/2}K^{-1/4}).
+\]
+This is the cost of protecting against unknown weak invalidity at an
+all-valid law. The independent source-pool noise is instead
+$O_p(n_s^{-1/2}K^{-1/2})$. When validity is guaranteed for every source
+($g_a=K$), the dispersion protection is bypassed.
+
+With general $g_a$, the leading allowance is proportional to
+\[
+ \sqrt{\frac{K-g_a}{g_a}}\frac1{\sqrt{n_s}K^{1/4}}.
+\]
+For $g_a\ll K$ this is $K^{1/4}/\sqrt{n_sg_a}$; constant $g_a$ does not
+give the stated borrowing gain, and $g_a\gg\sqrt K$ is needed for this term
+to improve on the single-site scale in that simplified regime.
+
+The nonempty compatibility projection is contained in the source-contrast
+band of half-width
+$c_N\sqrt{\ell^TV_{SS}\ell}+h_1+h_0$, where $\ell=(1,-1)^T$.
+Under a correct common outcome model its target component generally includes
+\[
+ \frac{\Var_t\{m_t^1(X)-m_t^0(X)\}}{n_t^E}.
+\]
+Consequently a prospective width decomposition contains shared-target noise,
+the source fourth-root term and nuisance drift. Fixed target sample size
+usually prevents unlimited precision gains. A covariance certificate with
+an artificial common variance floor can also erase gains.
+
+If a uniform nuisance bound $b_{n,K}\lesssim s_{\rm eff}\log(pK)/n$ is
+proved, the sufficient requirement for it to be negligible relative to the
+source fourth-root scale is
+\[
+ s_{\rm eff}\log(pK)K^{1/4}/\sqrt n\longrightarrow0.
+\]
+This is a derived rate condition, not a proof for CV-tuned fits. Uniform
+coverage, conditional or in-probability length, and unconditional expected
+length are different claims. Expected length additionally needs control of
+certificate failures and fallback lengths. Fixed large departures can keep
+$D_a$ positive; honest coverage then does not promise shrinking source bias
+protection. Equal arm shifts may cancel in TATE but still inflate two separate
+dispersion allowances. Such cases are required boundary experiments.
+
+\section{Communication, comparators and development gates}
+
+After nuisance fitting, each source transmits its two residual sums, three
+second cross-moments and evaluation count; pilot moments and justified score
+ranges are transmitted separately. The target computes common predictions
+and anchor scores locally. Individual records stay local. One-round versus
+two-round initialization dependencies remain those of the calibrated score
+program; changing the final confidence construction does not remove them.
+Preprocessing must use the declared training boundary. Summary processing
+is $O(K)$, and final optimization dimension is fixed. Total model-fitting
+cost, pilot certification and source-level message volume still grow with $K$.
+
+Compare on identical candidate scores and declared information:
+\begin{enumerate}
+\item The proposed moment-compatibility region, the version-1 GLS interval,
+and the one-dimensional protected borrowing interval.
+\item A Guo-inspired coordinate-count search: form simultaneous coordinate
+intervals $J_j^a$, retain $u\in J_t^a\cap[0,1]$ covered by at least $g_a$
+source intervals, then project the arm sets. This transparent outer method
+is not Guo's full sampling procedure. Sorting interval endpoints gives
+$O(K\log K)$ counting; taking the final hull can fill unsupported gaps.
+\item A small-$K$ subset-union reference and a separately justified RIFL
+adaptation where its prevailing-group assumptions hold. Preserve the full
+dependence in any perturbation; do not perturb pairwise differences
+independently. Direct assisted-ATE search is insufficient when the arm-valid
+sets differ: only $\max(0,g_1+g_0-K)$ sources are guaranteed jointly valid.
+\end{enumerate}
+
+The first gate is \emph{usefulness with ideal scores}. Compare analytic
+calibrations with known covariance, both under the proposed sample allocation
+and with full-sample oracle scores; report the ordinary full-target reference.
+Then add pilot covariance uncertainty, followed by nonzero justified bias
+budgets, and only then full nuisance refitting and cross-fitting extensions.
+An oracle chi-square result does not validate a fitted non-Gaussian method.
+
+\paragraph{An explicit ideal-score radius diagnostic.}
+To reproduce the concern about constants, consider independent Gaussian
+arm means with variance $v=0.5/n_E$, zero cross-arm covariance, no shared
+target floor, zero nuisance budgets, $g_a=K/2$, and observed
+$\widehat D_1=\widehat D_0=0$. Set $\alpha_N=.025$ and
+$\alpha_{D,1}=\alpha_{D,0}=.0125$. Both columns below use the same exact
+four-dimensional Gaussian mean calibration; only the dispersion calibration
+changes. Entries are \emph{source-only band half-widths}, not the projected
+compatibility interval, expected length, or a coverage experiment.
+\input{sections/radius_diagnostic}
+The ordinary full-target $95\%$ normal half-width with $n_t=1000$ and
+TATE variance $1/n_t$ is $0.06198$. These formula evaluations confirm that
+Cantelli is a costly reference, and that even the sharper oracle bound is
+not automatically useful with small $K$ and a quarter-sample evaluation.
+The $n_E=1000$ rows describe full-sample oracle scores, not trained models
+reusing their training observations. Neither calibration has been shown here
+to deliver efficient fitted-score inference.
+
+Experiments must include all-valid sources, $h/\sqrt n$ local departures,
+fixed departures, one extreme source, arm-validity sets with little overlap,
+equal-arm departures, and several shared-target variance floors. Vary $n$
+with $K$, preserving invalid fractions and declared population coupling.
+Also show fixed-$g$ sequences as a failure boundary. Report coverage,
+nonempty/empty frequency, interval length, point RMSE, borrowing fraction,
+variance and bias components, and computation. Do not drop failed fits or
+choose a design only because its results look favorable.
+
+The immediate proof priorities are a useful one-sided dispersion calibration,
+uniform nuisance budgets and covariance certificates. Proposed arguments are
+kept distinct:
+\begin{itemize}
+\item Confidence construction: \texttt{inference\_method}.
+\item Dispersion bound: \texttt{dispersion\_calibration}.
+\item Joint mean region: \texttt{noise\_calibration}.
+\item Valid-source counts: \texttt{valid\_source\_min}.
+\item Optional point estimate: \texttt{borrowing\_fraction}.
+\end{itemize}
+Missing budgets are not interpreted as zero.
+Proximal Newton and coordinate descent remain nuisance-solver options with
+matched numerical tolerances. No new large-scale fitted simulation has been
+launched for this design revision.
+
+\appendix
+\section{Dispersion variance and inversion}\label{app:v2-variance}
+
+Suppress the arm index. Put $A=I_K/K-\mathbf1\mathbf1^T/K^2$,
+$\theta_j=\E\overline R_j$, and $\Sigma=\diag(v_1,\ldots,v_K)$.
+Then $A\mathbf1=0$, $A^2=A/K$ and $D=\theta^TA\theta$.
+The sample-variance subtraction turns the within-site quadratic term into
+an off-diagonal patient-pair statistic. Its exact variance is
+\[
+ 4\theta^TA\Sigma A\theta
+ +2\sum_{j\ne k}A_{jk}^2v_jv_k
+ +2\sum_j\kappa_j A_{jj}^2v_j^2.
+\]
+The linear and degenerate quadratic terms are uncorrelated by independence
+of centered patient blocks. The first term is bounded by
+$4(\max_j\bar v_j)D/K$. Substituting $A_{jj}=(K-1)/K^2$ and
+$A_{jk}=-1/K^2$ gives~\eqref{eq:v2-var-constants}. All coefficients in the
+quadratic variance sum are nonnegative, allowing certified upper variances.
+
+Cantelli implies $D-\widehat D\le\sqrt{c(LD+Q)}$ except on an event of
+probability at most $\alpha_D$. Solving this inequality for the nonnegative
+$D$ gives~\eqref{eq:v2-dispersion-upper}. If the discriminant is negative,
+no nonnegative value satisfies the inequality on that event; the stated
+nonnegative convention remains safe.
+
+\section{Verification record and unresolved claims}
+
+The accompanying \texttt{check\_center\_dispersion.R} checks the count
+geometry, exact variance formula, patient-pair reconstruction, inversion
+boundaries and the information lost by reducing to two moments. It includes
+finite-support enumeration and a separate ideal Gaussian formula diagnostic.
+Its 990 assertions include all 4,096 configurations of a three-site,
+two-patients-per-site discrete score model with dependent arms, and 100
+joint-ellipsoid witnesses for simultaneous borrowing-fraction protection.
+The latter evaluates radii at a fixed observed dispersion; it is neither
+Monte Carlo coverage nor expected length. Version-1 checks and all old
+results are retained. The transcript's numerical radius table is treated as
+an external calculation until reproduced under an explicit variance model.
+Useful fitted coverage, RMSE improvement, a general growing-$K$ theorem and
+optimality remain unproved.

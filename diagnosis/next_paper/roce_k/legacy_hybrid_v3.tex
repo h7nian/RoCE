@@ -1,0 +1,44 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern,amsmath,amssymb,amsthm,mathtools,bm,booktabs,enumitem,array}
+\usepackage[round,authoryear]{natbib}
+\usepackage[colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue]{hyperref}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{5pt}
+\setlength{\emergencystretch}{2em}
+\setlist{itemsep=2pt,topsep=3pt,leftmargin=*}
+\newcommand{\E}{\mathbb E}
+\newcommand{\Prb}{\mathbb P}
+\newcommand{\Var}{\operatorname{Var}}
+\newcommand{\Cov}{\operatorname{Cov}}
+\newcommand{\tr}{\operatorname{tr}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\op}{\mathrm{op}}
+\newcommand{\ind}{\mathbf 1}
+\newcommand{\calA}{\mathcal A}
+\newcommand{\calB}{\mathcal B}
+\newcommand{\calT}{\mathcal T}
+\newcommand{\calP}{\mathcal P}
+\newcommand{\calE}{\mathcal E}
+\newtheorem{proposition}{Proposition}
+\newtheorem{lemma}[proposition]{Lemma}
+\newtheorem{assumption}{Assumption}
+\title{RoCE-K\\[3pt]\large Method design for weak source bias and increasing site counts}
+\author{Sinian Zhang}
+\date{October 2026\\\small Design version 3, 2 October 2026}
+\begin{document}
+\maketitle
+\begin{center}
+\fbox{\parbox{0.93\linewidth}{\textbf{Research design for discussion.}
+This document specifies the residual Fourier--dispersion compatibility procedure,
+its bounded-score calibration, and a finite-stratum nuisance certificate.
+Earlier moment and joint GLS designs remain separate comparison documents.
+It does not claim a completed high-dimensional RoCE-K theorem, a validated final
+confidence procedure, or a new optimality result. The current RoCE manuscript
+and its production defaults are separate.}}
+\end{center}
+\input{sections/hybrid}
+\bibliographystyle{plainnat}
+\bibliography{references}
+\end{document}

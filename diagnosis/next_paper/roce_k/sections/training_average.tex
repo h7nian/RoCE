@@ -1,0 +1,166 @@
+\section{Refinement: conditional outcome errors and reuse of source designs}
+\label{sec:conditional-refinement}
+
+This refinement keeps the residual compatibility construction and changes its
+nuisance certificate and sample use. It currently applies to saturated binary
+outcome fits whose weighting functions are fitted from $(X,A)$ alone. It does
+not automatically apply to outcome-dependent calibrated weights in the full
+RoCE fitting procedure. The earlier corner construction remains a comparison.
+
+\subsection{Which valid-subset event is actually needed?}
+
+For each distribution $P$, select, only for the proof, a deterministic truly
+valid subset $V_a(P)$ of size $g_a$. Validity is a population property fixed
+before sampling; this subset is not estimated or supplied to the algorithm.
+Coverage needs a drift guarantee for this unknown subset. It does not require
+that the outcome-error event hold simultaneously for every data-selected subset.
+A bound uniform over $P$ is sufficient even though its proof event is indexed
+by $V_a(P)$. This distinction avoids a combinatorial selection penalty while
+retaining the possibility of arbitrarily weak invalid-source shifts. It does
+not justify choosing the proof subset after observing fitted errors.
+
+Let $N_{xa}$ and $S_{xa}$ be target training counts and outcome successes,
+with $\hat m_a(x)=(S_{xa}+1/2)/(N_{xa}+1)$. Conditional on all relevant
+covariate and treatment designs, the successes in different cells are
+independent binomials with means $N_{xa}m_t^a(x)$. For a design-fixed vector
+$c$, its drift is
+\[
+ B(c)=\sum_xc_x\{m_t^a(x)-\hat m_a(x)\}.
+\]
+Suppose a design-measurable certificate gives $|c_x|\le C_x$. Define
+\begin{equation}
+ b(C,N;\delta)=\frac12\sum_x\frac{C_x}{N_{xa}+1}
+ +\sqrt{\frac12\log(2/\delta)
+                \sum_x\frac{N_{xa}C_x^2}{(N_{xa}+1)^2}}.
+ \label{eq:v4-scalar-radius}
+\end{equation}
+On the design certificate, $|B(c)|\le b(C,N;\delta)$ except with conditional
+probability at most $\delta$. The first term protects the smoothing bias;
+the second follows by Hoeffding's lemma for the weighted outcome errors.
+There is no union over outcome-box corners. Crucially, the true vector $c$
+must be fixed given designs: using weights trained on these same outcomes
+would invalidate this conditional argument.
+
+For sources the vector is
+\[
+ c_{V_a,x}=g_a^{-1}\sum_{j\in V_a}q_j^a(x)p_j(x,A=a)-p_t(x).
+\]
+For the target it is $c_{t,a,x}=q_t^a(x)p_t(x,A=a)-p_t(x)$.
+Bound these design coefficients first, then apply
+\eqref{eq:v4-scalar-radius} to the two source and two target directions.
+Their shared training outcomes need not be independent across directions;
+allocate the outcome error across these four scalar events.
+
+\subsection{A certificate requiring no supplied source probability lower bound}
+
+For each cell and arm, the source design scores are
+$Z_{ji}^{xa}=q_j^a(x)\ind(X_{ji}=x,A_{ji}=a)$.
+Use the pooled empirical mean and direct dispersion bounds from the main
+construction. If $[L_{xa},U_{xa}]$ contains the all-source mean of their
+expectations and $Q_{xa}$ bounds their dispersion, every $g_a$-subset mean
+lies in
+\[
+ [L_{xa}-\sqrt{(K-g_a)Q_{xa}/g_a},\;
+  U_{xa}+\sqrt{(K-g_a)Q_{xa}/g_a}].
+\]
+Subtract the simultaneous target cell-probability interval to obtain a bound
+$C_{V_a,x}$ on the coefficient. Target coefficients are bounded using the
+same joint $(X,A)$ and marginal $X$ probability region. Optimizing each
+cell's two probabilities is a two-variable linear problem.
+
+Allocate $\delta_B/5$ to target design probabilities,
+$2\delta_B/5$ to the $2L$ source design mean/dispersion pairs, and
+$2\delta_B/5$ to the four scalar outcome events. With $\delta_B=.005$ these
+are $.001,.002,.002$. The coefficient event protects all subsets, but the
+conditional outcome event only protects the fixed true valid subset required
+by the proof. Complexity is linear in the number of cells rather than
+exponential in their number. Statistical bounds can nevertheless deteriorate
+with sparse cell counts; computational scaling is not high-dimensional theory.
+
+\subsection{An optional source-training MGF certificate}
+
+An alternative exploits the exact half-count weight formula
+\[
+ q_j^a(x)=\hat p_t(x)\frac{n_s+L}{N_{jxa}+1/2},\qquad
+ N_{jxa}\sim\operatorname{Bin}(n_s,p_j(x,A=a)).
+\]
+This option requires a \emph{declared} lower bound $p_j(x,A=a)\ge p_*$ for
+valid sources. It is additional quantitative overlap information, not a bound
+estimated from oracle truths. Let $Q_p=(n_s+L)p/(B_p+1/2)$.
+For $p\in[l,u]$, binomial stochastic ordering gives the MGF envelopes
+\begin{align*}
+ \E e^{t(Q_p-1)}
+ &\le\E_{B_l}e^{t\{(n_s+L)u/(B_l+1/2)-1\}},\\
+ \E e^{-t(Q_p-1)}
+ &\le\E_{B_u}e^{-t\{(n_s+L)l/(B_u+1/2)-1\}}.
+\end{align*}
+Take the maximum over intervals covering $[p_*,1]$ to obtain
+$M_+(t),M_-(t)$. These are outer bounds for every probability between grid
+points, not evaluations that assume the maximizer lies on a grid.
+Independent training across the fixed $g_a$ valid sources and Chernoff's
+inequality give
+\[
+ 1-h_-\le g_a^{-1}\sum_{j\in V_a}Q_{p_j}\le1+h_+,
+ \quad
+ h_\pm=\min_{t\in\mathcal T}
+ \frac{\log M_\pm(t)+g_a^{-1}\log(2/\delta)}{t}.
+\]
+The positive tilt set is deterministic. This minimization therefore does not
+need an extra data-selection error allowance. Multiplying by $\hat p_t(x)$
+and subtracting the target probability interval bounds the source coefficient
+for \eqref{eq:v4-scalar-radius}. A source outcome-box/corner version is also
+retained to isolate the gain from conditional outcome concentration.
+
+The numerical experiment uses 2,048 logarithmically spaced probability bins
+and 100 deterministic tilts, with $p_*\in\{.02,.04,.06\}$ as prespecified
+sensitivity settings. Stochastic bracketing supplies the mathematical guarantee;
+floating-point evaluation uses log-sum-exp and an outward cushion and is not
+an interval-arithmetic proof. Unknown half-count fitting bias can persist when
+$n_s$ is fixed even as $K$ grows. Neither this bound nor a fixed numerical grid
+establishes a sharp joint $(n,K)$ efficiency rate.
+
+\subsection{The direct-dispersion procedure can reuse design observations}
+
+In the previous diagnostic, each source used 500 training, 250 pilot and 250
+evaluation patients. Direct dispersion uses fixed training-determined score
+ranges and does not select frequencies or variance calibrators from a pilot.
+Its score-mean and dispersion events hold conditional on training.
+The nuisance-certificate event can use the same held-out $(X,A)$ observations:
+a union bound combines these events and does not require their independence.
+Thus the direct-dispersion refinement uses 500 training and all 500 held-out
+patients for evaluation, and may use the same 500 designs for its nuisance
+certificate. The total remains 1,000; a patient used in two summaries is not
+counted as a second patient. Fitted weights and predictions are unchanged.
+
+This reuse is not enabled for the current Fourier implementation, whose
+frequencies and variance correction condition on an independent pilot.
+An explicit API guard prevents transferring the reuse option to that module
+without a new argument. The pooled mean and unbiased sample variance are
+reconstructed exactly from the two original held-out blocks.
+
+\subsection{A stronger target-only check specific to the finite-stratum model}
+
+Improving source inference must be accompanied by improving its target
+reference. First apply \eqref{eq:v4-scalar-radius} to both folds of the
+full-target AIPW reference, with $.0025$ nuisance and $.0225$ noise allowance
+per fold. In addition, report the saturated full-target plug-in estimator,
+which does not need a training/evaluation split in this discrete model.
+
+Let all target observations give counts $N_{xa}$, successes $S_{xa}$ and
+empirical cell masses $\hat p_x$. Its estimate is
+\[
+ \hat\tau_{\rm strat}=\sum_x\hat p_x
+ \left\{\frac{S_{x1}+1/2}{N_{x1}+1}
+             -\frac{S_{x0}+1/2}{N_{x0}+1}\right\}.
+\]
+Apply the scalar outcome bound to the stacked coefficient magnitudes
+$C_{xa}=\hat p_x$, with failure $\alpha/2$. The remaining composition
+error is an average of fixed true cell contrasts in $[-1,1]$, so a second
+Hoeffding radius $\sqrt{2\log(4/\alpha)/n_t}$ has failure at most
+$\alpha/2$. Add these radii and clip to $[-1,1]$. This is a finite-sample
+binary-outcome comparator, not an ordinary normal interval.
+
+The saturated comparator need not be implementable with many continuous
+confounders. Nevertheless it is available in the diagnostic DGP and must
+be shown there. A gain over the two-fold AIPW certificate alone does not
+establish an advantage over reasonable target-only inference in that model.

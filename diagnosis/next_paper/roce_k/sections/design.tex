@@ -1,0 +1,706 @@
+\section{Design decisions before further simulation}
+
+The objective is inference for a target average treatment effect when some
+source arms have small, hard-to-detect departures and the source count
+$K=K_n$ can increase. The primary requirements are coverage over local-bias
+sequences, useful interval length when borrowing is informative, and a
+computable procedure with explicit assumptions. Exact classification of every
+source is not a requirement. Point-estimation risk is a separate objective;
+coverage alone will not be used to assert an RMSE guarantee.
+
+\begin{center}
+\begin{tabular}{@{}p{.24\linewidth}p{.69\linewidth}@{}}
+\toprule
+Component & Proposed first design\\
+\midrule
+Candidate scores & One common target outcome prediction per arm, with
+source-specific calibrated merged weights.\\
+Aggregation & A joint two-arm working-covariance GLS contrast; arm weights
+need not be equal.\\
+Bias protection & Bound the aggregate bias through a noise-corrected quadratic
+statistic, valid-count assumptions and explicit valid-score bias budgets.\\
+Covariance & An independent pilot supplies a covariance upper confidence bound,
+not an empirical covariance silently treated as known.\\
+Safeguard & Combine with a separately valid target reference interval, which
+may use the full target sample.\\
+First proof design & Independent training, covariance-pilot and evaluation
+samples. Efficient full cross-fitting is a later extension.\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The proposed change relative to the previous Gaussian reference is to estimate
+bias dispersion with an unbiased quadratic statistic. Its conditional
+variance can be bounded using second moments of independent patient blocks.
+This avoids requiring a high-dimensional Gaussian approximation for that
+statistic. The first calibration below is deliberately conservative; making
+its constants useful at $n=1000$ is an explicit design gate.
+
+\paragraph{Relation to existing work.}
+The voting construction of \citet{guo2018} and the selection-robust searching
+and sampling approach of \citet{guo2023} motivate inference that tolerates
+uncertain validity. RIFL already studies robust federated inference
+\citep{rifl2025}. Our source-assisted scores share target observations and have
+two potentially different arm-validity sets; their covariance cannot be
+replaced by independent site-estimate variances. Adaptive Gaussian interval
+lengths, including a fourth-root term, are already studied by
+\citet{wang2026}. Neither that rate nor the use of a quadratic statistic is
+claimed as an innovation here. The proposed combination of calibrated causal
+scores, shared-target dependence, estimated covariance, arm-specific validity
+and increasing $K$ needs its own proof and comparison.
+
+\section{Statistical contract}
+
+There is a target site $t$ and sources $s_1,\ldots,s_K$. The primary outcome
+is binary, or more generally bounded in $[0,1]$. Write
+\[
+ \mu_t^a=\E_t Y(a),\qquad \tau_t=\mu_t^1-\mu_t^0,
+ \qquad a\in\{1,0\}.
+\]
+Identification at the target requires consistency, overlap and adequate
+confounding adjustment. A source arm is structurally valid under the declared
+transport and working-model conditions. Let $\mathcal V_a^\star$ denote this
+unknown set. Specify lower bounds
+\[
+ |\mathcal V_a^\star|\ge g_a,\qquad 0\le g_a\le K,
+\]
+before examining agreement among estimates. The two sets may differ. Other
+source-arm departures may be local, fixed, of either sign, or cancel in the
+treatment contrast. There is no minimum separation assumption.
+
+The target identifies $\tau_t$ even if no source is valid. The bounds $g_a$
+are additional borrowing assumptions. They cannot be obtained by counting
+apparently compatible sources and then treated as certain. If neither arm has
+a guaranteed valid source, the prespecified default is the target reference
+procedure. A sensitivity family over $(g_1,g_0)$ may be reported, with each
+interval labeled by its assumption; the narrowest member must not be selected
+as an assumption-free result.
+
+\paragraph{Source counts and sample sizes.}
+State $n_t$, each $n_{s_j}$, the nuisance dimension $p$, and sparsity parameters
+separately. Positive site fractions of a fixed total sample cannot be assumed
+uniformly when $K\to\infty$. An experiment that varies finite $K$ while holding
+$n_j=1000$ fixed is a finite-sample study, not a growing-$K$ theorem.
+
+\section{Sample roles and the candidate program}
+
+\subsection{Honest first construction}
+At each site, use an index-only random split into training $\calT$, pilot
+$\calP$ and final evaluation $\calE$. All learned preprocessing, nuisance
+fitting and nuisance tuning for these scores use $\calT$ only. Feature columns
+and coding must agree across sites and between outcome and weighting models.
+The fitted transformation is applied to both held-out samples. At
+$1000$/site, $500/250/250$ is a diagnostic starting allocation, not an optimal
+allocation claim. Treatment- or outcome-stratified splitting does not supply
+the simple conditional-iid argument used below without an additional proof.
+
+Conditional on training and its fitting randomness, patient observations in
+the pilot and final samples are independent across roles and sites. Pilot
+quantities may determine the working covariance and optional screening, but
+the evaluation observations may not determine those choices. These are three
+\emph{sample roles}, not the existing three-layer nested cross-fitting algorithm.
+
+\subsection{Prefer a common outcome score to a translated source score}
+Fit a common outcome regression $\widehat m_c^a$ at the target by an
+inverse-propensity weighted outcome loss. For a logistic working model, the
+population loss is
+\[
+ \E_t\!\left[\frac{\ind(A=a)}{\pi_t^a(X)}
+ \{\log(1+e^{\beta^T\phi(X)})-Y\beta^T\phi(X)\}\right].
+\]
+Its empirical version uses training-only propensity fits, a declared penalty
+policy, and fold-summed loss blocks where needed. The propensity weight here
+is $1/\pi_t^a$, not the odds weighting used by the target-anchor OR. Retain
+the separately calibrated target AIPW anchor $\widehat\psi_t^a$.
+
+Each source retains its own calibrated merged weight $\widehat q_j^a$.
+For evaluation patient $i$, define
+\begin{align}
+ R_{ji}^a&=\ind(A_{ji}=a)\widehat q_j^a(X_{ji})
+                \{Y_{ji}-\widehat m_c^a(X_{ji})\},\label{eq:residual}\\
+ Z_j^a&=\mathbb P_{t,\calE}\widehat m_c^a
+                 +\mathbb P_{s_j,\calE}R_j^a,\qquad
+ Z_t^a=\mathbb P_{t,\calE}\widehat\psi_t^a.\label{eq:candidate}
+\end{align}
+The same fitted $\widehat m_c^a$ appears in the target prediction and every
+source residual. Source averages divide by the entire site sample size,
+including the treatment indicator in~\eqref{eq:residual}.
+
+This choice removes the additional term
+$(\mathbb P_{t,\calT}-\mathbb P_{t,\calE})(\widehat m_j^a-\widehat m_c^a)$
+introduced by translating source-specific predictions. It is selected for
+its structure, not because the previous fitted diagnostics showed uniformly
+smaller bias; they did not. The translated-source and original source-specific
+scores remain diagnostic comparators. A dedicated implementation may omit
+final source OR fits, but must first reproduce the retained weight fits.
+
+\subsection{The robustness branches must be explicit}
+For a valid source, with $m_\beta=\operatorname{expit}(\beta^T\phi)$ and
+$q_\gamma=\exp(-\gamma^T\phi)$ away from truncation boundaries, the population
+score $S_j=\E_t m_\beta+\E_j\{\ind(A=a)q_\gamma(Y-m_\beta)\}$ has gradients
+\begin{align*}
+ \partial_\beta S_j&=\E_t(\dot m_\beta\phi)
+              -\E_j\{\ind(A=a)q_\gamma\dot m_\beta\phi\},\\
+ \partial_\gamma S_j&=-\E_j\{\ind(A=a)q_\gamma(Y-m_\beta)\phi\}.
+\end{align*}
+Both vanish under either of these population branches:
+\begin{enumerate}
+\item The source joint weight and target propensity are correct. The common
+IPW outcome limit is the full-target projection, giving the required residual
+moment even when the outcome working model is misspecified.
+\item The common OR is correct, and source weight calibration balances its
+limiting derivative-weighted features. The initial OR used by calibration
+must have the correct limit in this branch.
+\end{enumerate}
+Correct source weights alone do not justify the first branch if both the
+target propensity and common OR are misspecified. Active population clipping,
+estimated IPW weights and CV-selected penalties require their own treatment.
+We do not assume that this candidate inherits every robustness configuration
+of the source-specific-OR procedure.
+
+\section{Joint score representation and two uncertainty inputs}
+
+Stack candidates in arm-major order,
+\[
+ Z=(Z_t^1,Z_1^1,\ldots,Z_K^1,Z_t^0,Z_1^0,\ldots,Z_K^0)^T,
+ \qquad H=\begin{pmatrix}\mathbf1_{K+1}&0\\0&\mathbf1_{K+1}\end{pmatrix}.
+\]
+Let $\mu=(\mu_t^1,\mu_t^0)^T$ and $\ell=(1,-1)^T$. Conditional on training,
+\begin{equation}
+ \E Z=H\mu+r,\qquad \Cov(Z)=\Sigma_E.\label{eq:score-model}
+\end{equation}
+The vector $r$ includes nuisance drift at valid coordinates as well as
+transport departures. Structural validity does not make a fitted candidate
+conditionally unbiased.
+
+The target supplies the four-dimensional patient score
+$G_t=(\widehat\psi_t^1,\widehat\psi_t^0,
+\widehat m_c^1,\widehat m_c^0)^T$; source $j$ supplies
+$G_j=(R_j^1,R_j^0)^T$. For a known linear assembly map $L$,
+\begin{equation}
+ Z=L(\overline G_t^T,\overline G_1^T,\ldots,\overline G_K^T)^T,
+ \quad \Sigma_E=L\diag\{\Omega_b/n_b^E\}_{b=t,1,\ldots,K}L^T,
+ \quad \Omega_b=\Cov(G_{bi}\mid\calT).\label{eq:blocks}
+\end{equation}
+Within-person cross-arm covariance is retained. Independence of patients
+does not imply independence of two arm estimates. Every matrix and covariance
+normalization below refers to final mean sample sizes $n_b^E$.
+
+\subsection{Input A: valid-score bias envelopes}
+Require an event $\mathcal E_B$, with failure probability at most $\delta_B$,
+on which
+\begin{equation}
+ |r_i|\le b_i\quad\text{for all truly valid coordinates, including the anchors}.
+ \label{eq:bias-event}
+\end{equation}
+The supplied $b_i$ is a bound that applies \emph{if} coordinate $i$ is valid;
+it does not restrict an invalid coordinate. These bounds must be justified by
+the nuisance program, including truncation bias. An oracle population
+integration error measured in a simulation is not an implementable budget.
+
+A prospective sparse-model route is a simultaneous bound of order
+$s_{\rm eff}\log(pK/\delta_B)/n^T_{\min}$ under proved calibration, curvature
+and penalty conditions. Its constants and event probability are not supplied
+by that rate notation. Obtaining a usable budget, or proving its omission is
+uniformly negligible on the intended interval scale, is the principal open
+high-dimensional step. The zero-budget option is reserved for justified
+unbiased-score cases or explicitly labeled oracle diagnostics.
+
+\subsection{Input B: an upper covariance certificate}
+Use the independent pilot to construct a positive definite $W$ such that
+\begin{equation}
+ \Prb(\Sigma_E\preceq W\mid\calT)\ge1-\delta_\Sigma.
+ \label{eq:cov-event}
+\end{equation}
+The proposal needs an upper bound, not a lower Loewner bound. One feasible
+but potentially loose construction is given in Appendix~\ref{app:covariance}.
+It estimates at most $4\times4$ target and $2\times2$ source blocks and then
+assembles~\eqref{eq:blocks}. A tighter pilot certificate can replace it only
+after its simultaneous coverage is established.
+
+The pilot working covariance $W$ and the evaluation covariance correction
+$\widehat\Sigma_E$ have different roles. For the latter, use the unbiased
+within-site covariance
+\begin{equation}
+ S_b^E=\frac{1}{n_b^E-1}\sum_{i\in\calE_b}
+ (G_{bi}-\overline G_b)(G_{bi}-\overline G_b)^T,
+ \quad\widehat\Sigma_E=L\diag\{S_b^E/n_b^E\}_bL^T.\label{eq:eval-cov}
+\end{equation}
+The divisor $n_b^E-1$ is essential for the exact identity below. Covariance
+and means may use the same evaluation records in~\eqref{eq:eval-cov}; their
+dependence is handled by the U-statistic calculation. They must not be used
+to refit $W$ or choose the aggregation coefficients.
+
+\section{Joint aggregation and a bias-energy upper bound}
+
+\subsection{Work in a pilot-chosen covariance metric}
+Let $\calA$ contain the two target coordinates and any source coordinates known
+valid by assumption, such as all control sources if $g_0=K$. Do not enlarge it
+because observed estimates happen to agree. Write
+\begin{align}
+ a_W&=W^{-1}H(H^TW^{-1}H)^{-1}\ell,& v_W&=a_W^TWa_W,\\
+ P_W&=W^{-1}-W^{-1}H(H^TW^{-1}H)^{-1}H^TW^{-1}.\nonumber
+\end{align}
+Embed the reference residual precision in the full coordinate space:
+\begin{align}
+ R_{\calA}&=\operatorname{embed}_{\calA}\!\left[
+ W_{\calA}^{-1}-W_{\calA}^{-1}H_{\calA}
+ (H_{\calA}^TW_{\calA}^{-1}H_{\calA})^{-1}
+ H_{\calA}^TW_{\calA}^{-1}\right],\\
+ D_W&=P_W-R_{\calA},\qquad \nu=2(K+1)-|\calA|.
+\end{align}
+Then $D_WH=0$, $D_WWD_W=D_W$, and $D_W$ is positive semidefinite of rank
+$\nu$. The center $T_W=a_W^TZ$ uses separate arm weights optimized jointly
+for TATE. $v_W$ is a \emph{variance upper proxy}, not the assertion
+$\Var(T_W)=v_W$.
+
+Define the conditional bias energy
+\begin{equation}
+ \calB=r^TD_Wr,\qquad
+ \widehat{\calB}=Z^TD_WZ-\tr(D_W\widehat\Sigma_E).\label{eq:debiased-energy}
+\end{equation}
+The correction subtracts estimated sampling dispersion. In particular,
+negative $\widehat{\calB}$ values are legitimate; the statistic itself is not
+clipped to zero before applying its calibrated upper-bound rule.
+
+\begin{proposition}[Conditional unbiasedness and variance bound]\label{prop:ustat}
+Condition on training and pilot, so $W$ and $D_W$ are fixed. Suppose the
+evaluation patient blocks are independent, iid within each site, have finite
+second moments, and $n_b^E\ge2$. Then
+\[
+ \E\widehat{\calB}=\calB.
+\]
+On $\Sigma_E\preceq W$, with $\kappa_E=\max_b n_b^E/(n_b^E-1)$,
+\begin{equation}
+ \Var(\widehat{\calB})\le4\calB+2\kappa_E\nu.\label{eq:energy-var}
+\end{equation}
+No Gaussian approximation around invalid-source means and no separation of
+valid and invalid sources is used in this conditional statement.
+\end{proposition}
+
+For $c_D=(1-\alpha_D)/\alpha_D$, define
+\begin{equation}
+ U_{\calB}=\max\!\left\{0,\widehat{\calB}+2c_D+
+ \sqrt{\max\{0,4c_D\widehat{\calB}+4c_D^2+2c_D\kappa_E\nu\}}\right\}.
+ \label{eq:energy-upper}
+\end{equation}
+Cantelli's inequality and~\eqref{eq:energy-var} give
+$\Prb(\calB\le U_{\calB}\mid\calT,\calP)\ge1-\alpha_D$ on the covariance
+event. If $\nu=0$, set $U_{\calB}=0$ and omit the dispersion step; its error
+allocation may be reassigned by a rule fixed before observing data.
+Appendix~\ref{app:quadratic} gives the algebra and explains the zero
+within-person diagonal. This is a second-moment reference calibration;
+its constants are not claimed to be practically optimal.
+
+\subsection{Convert energy to a TATE bias allowance}
+Let $V$ contain $\calA$ and the prescribed valid-source counts in each arm.
+Choose any comparison coefficients $d_V$ supported on $V$ with
+$H^Td_V=\ell$, and set
+\begin{equation}
+ \widetilde d_V=(I-R_{\calA}W)d_V,\quad
+ B_V=\sum_{i\in V}|\widetilde d_{V,i}|b_i,\quad
+ C_V=\widetilde d_V^TW\widetilde d_V-v_W.\label{eq:comparison-pair}
+\end{equation}
+For the true valid subset, $C_V\ge0$ and
+\begin{equation}
+ |a_W^Tr|\le B_V+\sqrt{C_V\calB}.\label{eq:bias-geometry}
+\end{equation}
+Thus a safe count-based bound maximizes the \emph{paired} expression in
+\eqref{eq:bias-geometry} over admissible $V$. A separate reference comparison
+supported on $\calA$ gives $(B_{\calA},C_{\calA})$. The proposed implementation
+uses
+\begin{equation}
+ R_{\rm bias}(u)=\min\{B_{\calA}+\sqrt{C_{\calA}u},\;
+                         \overline B_{\rm count}+\sqrt{\overline C_{\rm count}u}\},
+ \label{eq:bias-radius}
+\end{equation}
+where the count pair must upper-bound the same admissible comparison family.
+Independent selection of unrelated small bias and variance constants is not
+valid. Exact subset enumeration is a small-$K$ check, not the large-$K$ plan.
+Appendix~\ref{app:count-bound} specifies a conservative structural alternative.
+
+\section{Reported interval, point estimate and coverage target}
+
+\paragraph{Operational sequence.}
+\begin{enumerate}
+\item Declare $(g_1,g_0)$, the error budget, score bounds and nuisance policy;
+split observations by index into training, pilot and evaluation roles.
+\item Fit the common outcome models, source merged weights and core anchors
+on training data. Construct the separately justified full-target reference.
+\item Form the pilot covariance upper certificate $W$ and fix the joint GLS
+coefficients and the reduced precision $D_W$.
+\item Obtain evaluation score sums and cross-moments. Compute $Z$,
+$\widehat\Sigma_E$, $\widehat{\calB}$ and $U_{\calB}$.
+\item Compute the paired bias/variance comparison bounds and form $I_D$.
+\item Apply the declared intersection/fallback rule, project the reported
+point into the final interval, and retain every diagnostic component.
+\end{enumerate}
+
+Chebyshev gives the noise radius $r_C=\sqrt{v_W/\alpha_N}$. If valid score
+ranges from Appendix~\ref{app:covariance} are available, let $L_b$ denote
+the assembly matrix for site $b$ and put
+\begin{align*}
+ M_W=\max_b\frac{2}{n_b^E}\sum_l |(L_b^Ta_W)_l|L_{b,l},\qquad
+ t_N&=\log(2/\alpha_N),\\
+ r_B&=\frac{M_Wt_N}{3}+\sqrt{2v_Wt_N+(M_Wt_N/3)^2}.
+\end{align*}
+Here $M_W$ bounds each centered patient contribution to $T_W$.
+The two-sided Bernstein inequality justifies $r_B$. Use
+$r_N=\min(r_C,r_B)$ when these ranges are certified, and $r_N=r_C$ otherwise.
+This choice is fixed conditional on training and pilot, so it requires no
+additional error allocation. Define
+\begin{equation}
+ I_D=\left[T_W-\{r_N+R_{\rm bias}(U_{\calB})\},
+           T_W+\{r_N+R_{\rm bias}(U_{\calB})\}\right].
+ \label{eq:core-interval}
+\end{equation}
+This is a conservative validity reference. A scalar normal critical value
+requires a separate uniform scalar-score approximation and its error
+allowance. A sharper one-sided calibration of the zero-diagonal quadratic
+statistic is a priority refinement; favorable simulated coverage does not
+justify replacing the critical value.
+
+Let $I_R$ be a separately valid target reference at failure level $\alpha_R$.
+It may use \emph{all} target observations with its own valid cross-fitted
+inference. Independence from $I_D$ is unnecessary. This avoids making a
+quarter-sample target interval the only safeguard. Distinguish this external
+reference interval from the internal comparison coefficients used in
+\eqref{eq:comparison-pair}.
+
+Return $I_D\cap I_R$ when it is nonempty. Otherwise return the shorter of the
+two intervals, with a fixed tie rule and a recorded fallback flag. The output
+length is pointwise at most either component length. For binary outcomes,
+project its endpoints onto $[-1,1]$; this cannot remove the true parameter on
+a coverage event. Report the projection of $T_W$ onto the final interval as
+the point estimate, while retaining $T_W$ as a diagnostic. The reported point
+therefore lies inside its interval. Its RMSE still needs an independent
+analysis; it does not inherit an oracle MSE claim from GLS.
+
+\begin{proposition}[Conditional reduction to feasible uncertainty inputs]
+Suppose the validity-count assumption holds, the bias event has failure
+probability at most $\delta_B$, the covariance event has failure probability
+at most $\delta_\Sigma$, and $I_R$ has coverage at least
+$1-\alpha_R-\epsilon_{R,n}$. For the independent-sample construction above,
+\[
+ \Prb(\tau_t\in I)\ge
+ 1-\delta_B-\delta_\Sigma-\alpha_N-\alpha_D-\alpha_R-\epsilon_{R,n}.
+\]
+This proposition is conditional on justified inputs $b$ and $W$; it is not a
+completed theorem for fitted high-dimensional calibrated nuisances.
+\end{proposition}
+\begin{proof}
+On the bias and covariance events, apply Chebyshev or the certified Bernstein
+bound to the fixed-pilot linear contrast, Cantelli to~\eqref{eq:debiased-energy},
+and the deterministic bias
+bound. A union bound gives coverage of $I_D$. If both component intervals
+contain the truth, their intersection is nonempty and contains it. A second
+union bound with the reference failure event proves the result. No independence
+between the two final intervals is required.
+\end{proof}
+
+For a prespecified borrowing analysis, one possible allocation is
+$\delta_B=\delta_\Sigma=\alpha/[10(K+1)]$,
+$\alpha_R=\alpha_D=\alpha/3$, and
+$\alpha_N=\alpha-\alpha_R-\alpha_D-\delta_B-\delta_\Sigma$.
+These choices are a design starting point. The reference is then more
+conservative than a nominal $1-\alpha$ target interval; both references must
+be shown in comparisons. In the prespecified no-borrowing case, use the
+original target procedure at level $1-\alpha$.
+
+\section{What increasing \texorpdfstring{$K$}{K} should mean for this method}
+
+The conditional moment result does not introduce a growing-dimensional
+Gaussian-approximation error. Coverage nevertheless needs simultaneous bias
+and covariance certificates for all participating sites. Increasing $K$
+still enters these certificates, numerical stability and interval length.
+
+At an ideal all-valid conditional law with $r=0$,~\eqref{eq:energy-var} gives
+$\E(\widehat{\calB})_+=O(\sqrt\nu)$. The inversion obeys
+\[
+ U_{\calB}\le2(\widehat{\calB})_++8c_D+\sqrt{2c_D\kappa_E\nu},
+ \qquad \E\sqrt{U_{\calB}}=O(\nu^{1/4}).
+\]
+If, additionally, comparable site sizes give $v_W=O(1/(nK))$,
+$\overline C_{\rm count}=O(1/(nK))$, $b=0$, and $\nu=O(K)$, then
+\begin{equation}
+ \E|I_D|=O\{n^{-1/2}K^{-1/4}\}.\label{eq:ideal-length}
+\end{equation}
+This is a conditional, ideal-score rate calculation. It is not an established
+rate for the proposed fitted estimator. A common target variance adds its
+own floor; a covariance upper bound that introduces a substantial artificial
+common variance can also prevent this gain. An unconditional expected-length
+claim additionally needs control of certificate failures and integrability
+of the fallback length. Fixed nonvanishing failure allocations cannot simply
+be ignored in such an argument.
+
+For fitted candidates, a desired budget of order
+$s_{\rm eff}\log(pK)/n$ suggests the sufficient scale requirement
+\[
+ \frac{s_{\rm eff}\log(pK)K^{1/4}}{\sqrt n}\longrightarrow0
+\]
+to make that budget negligible relative to~\eqref{eq:ideal-length}.
+This rate must be proved for the actual training program. It is not supplied
+automatically by minimum-CV-loss tuning. Covariance inflation, coefficient
+norms and the shared-target variance floor need separate bounds.
+
+Existing lower-bound calculations in a randomized binary submodel show why
+uniform weak-bias inference cannot generally have the oracle-valid-set
+$1/\sqrt{nK}$ width. The analogous Gaussian adaptation phenomenon is already
+in the literature \citep{wang2026}. The objective is useful, honestly calibrated
+borrowing within these limits, not perfect weak-source screening.
+
+\section{Communication and computation}
+
+Conditional on an agreed training-only feature map, the one-round version
+can batch these messages:
+\begin{enumerate}
+\item Target sends the common OR coefficients, the block-specific initial
+OR coefficients and derivative-weighted target moments needed for source
+weight calibration, plus split and feature identifiers.
+\item Each source fits its merged weights locally and returns, separately for
+pilot and evaluation samples, its two residual sums, three distinct second
+cross-moments, sample counts and justified score-range bounds.
+\item Target assembles the common four-score block, $W$, the joint contrast,
+the corrected quadratic statistic, and the final interval locally.
+\end{enumerate}
+Patient records remain local in this protocol. Learned pooled preprocessing
+may require a separate agreement step and is not automatically included in
+the estimation-round count. Source-local initial ORs retain the two-round
+dependency for target derivative summaries. Changing sample roles does not
+by itself change the communication depth.
+
+The shared-target representation is a low-rank common block plus private
+$2\times2$ blocks. Use block solves and Woodbury identities for GLS and the
+quadratic trace calculation. Sorting private variance bounds removes subset
+enumeration in the structural upper bound. A claim of linear or near-linear
+total inference cost must include the bias-budget projection step; the
+current dense reference is not claimed to have that complexity. Proximal
+Newton and coordinate descent should remain explicit nuisance-solver options,
+with matched tolerances and result-parity checks.
+
+\section{Extensions after the core design is fixed}
+
+\paragraph{Optional pilot-certified exclusion.}
+Strongly discrepant source arms may be excluded on the pilot only when a
+simultaneous confidence bound for their difference from the target exceeds
+the combined valid-score budgets. On the certification event, no valid arm
+is removed, so $g_a$ remains the original lower bound. An uncertain arm is
+retained. A certification failure allowance must be added to the error budget.
+If fewer than $g_a$ arms remain, return the prespecified reference and record
+the contradiction; do not lower $g_a$ to rescue borrowing. Screening is off
+in the first implementation.
+If enabled later, restrict $Z,H,W$ to the retained arm coordinates and use
+the actual retained dimension in $\nu$; retaining a source in only one arm
+does not change the whole-site denominator of its residual mean.
+
+\paragraph{Cross-fitting and reuse of data.}
+The first proof concerns the independent three-role construction. A safe
+intermediate extension is to construct intervals from prespecified rotations
+with error budgets summing to $\alpha$, then intersect them with a declared
+empty-set fallback. Dependence between rotations does not invalidate the
+union bound, but its length cost must be assessed. Efficient averaging of
+overlapping-fold scores requires an additional argument: conditioning on
+all training sets does not make their evaluations jointly independent.
+The current paper's two-layer estimator and its three-layer diagnostic remain
+separate from this proposed extension.
+
+\paragraph{Failures and reporting.}
+Record fit failures, nonpositive working covariance, extreme budgets and
+empty intersections. Use a justified target reference, or a parameter-space
+interval when no usable reference is available. Never drop repetitions or
+infer new validity counts from favorable results. Save the raw GLS point,
+reported point, both interval components, noise and bias radii, corrected
+dispersion, covariance certificate and all declared budgets.
+
+\section{Development gates and experiment design}
+
+\begin{enumerate}
+\item \textbf{Freeze the statistical contract.} Review the common-outcome
+score, $(g_1,g_0)$ assumptions, target reference, interval target and penalty
+policy. The zero-budget and known-covariance versions are diagnostic modes.
+\item \textbf{Check the conditional algebra.} Reconstruct the quadratic
+statistic from moments and from patient pairs; enumerate small non-Gaussian
+laws; check the variance bound, bias geometry, and arm covariance. These are
+identity checks, not an MC coverage claim.
+\item \textbf{Make the uncertainty inputs useful.} Derive uniform valid-score
+budgets for the calibrated fits and a covariance certificate that is not
+vacuous at practical sample sizes. Sharpen the elementary calibration before
+claiming efficiency from a conservative reference construction.
+\item \textbf{Validate a complete fitted procedure.} Regenerate and refit
+every repetition. Start at small $p$, then $p=100,200$, using local departures
+such as $h/\sqrt n$, both signs, different arm-validity sets and all-valid
+cases. Vary $n$ jointly with $K$; keep the $1000$/site panel as a practical
+slice rather than the only growth experiment.
+Hold the invalid-source fraction fixed in the main growth panels. A single
+invalid source as $K$ increases is a separate dilution diagnostic. Use a
+declared coupling of site populations and target samples across $K$ so that
+changes in case mix do not masquerade as source-count effects.
+\item \textbf{Compare under matched information.} Include calibrated target-only,
+current RoCE, equally informed known-valid references, oracle-valid-set
+diagnostics, and appropriate Guo/RIFL adaptations. Report coverage, expected
+length, point RMSE, fallback frequency, budget size and runtime. Deliberately
+wrong valid-count assumptions and active clipping are boundary cases.
+Distinguish oracles for valid-source identities, nuisance functions and
+covariance; their information is not interchangeable.
+\end{enumerate}
+
+The earlier 124-setting Gaussian study and 90 fitted-score cases inform these
+design choices; they do not validate the procedure defined here. No new
+large-scale fitting campaign is part of this design document. The principal
+methodological question is whether the explicit error protection can be made
+small enough to retain useful borrowing at realistic $n,p,K$.
+
+\paragraph{Checks accompanying this design version.}
+The matrix identities, variance domination and bias geometry were checked in
+60 deterministic-seed matrix cases. An independent enumeration of all
+262,144 configurations in a small randomized binary-outcome model checked
+the patient-pair reconstruction, exact expectation and variance, and the
+one-sided inversion. The example has a nonconstant shared target prediction,
+within-person arm dependence and different valid source arms. There are
+696 passing assertions, including inversion boundaries, the zero-dispersion
+case, the Bernstein radius and covariance-bound matrix checks. These are
+mathematical implementation checks, not a
+fitted-method coverage or efficiency experiment.
+
+\paragraph{Implementation contract.}
+The research interface should expose arguments for the minimum valid-source
+counts (\texttt{valid\_source\_min}), valid-score bias budgets
+(\texttt{valid\_score\_bias}), covariance certificate
+(\texttt{covariance\_certificate}), interval calibration
+(\texttt{interval\_calibration}), split seed (\texttt{split\_seed})
+and nuisance solver (\texttt{nuisance\_solver}).
+The first design uses \texttt{common\_outcome} scores,
+\texttt{honest\_pilot} sample roles and \texttt{second\_moment} calibration.
+Missing bias budgets or covariance certificates must not silently become
+zero-bias or oracle-covariance assumptions. These are proposed interfaces,
+not claims that a production implementation already exists.
+
+\appendix
+\section{An explicit covariance upper bound}\label{app:covariance}
+
+Conditional on training, recenter each patient-score coordinate by a known
+constant so that $|G_{b,i,l}|\le L_{b,l}$ on its full support. Centering does
+not change covariance. Bounds may come from bounded outcomes and the actual
+weight caps; a sample maximum is not a population bound. Known constant
+coordinates can have $L_{b,l}=0$.
+
+For pilot size $m_b$, write $\widehat\mu_l=\mathbb P_{b,\calP}G_l$ and
+$\widehat M_{lk}=\mathbb P_{b,\calP}G_lG_k$. Allocate $\delta_b$ across the
+$d_b+d_b(d_b+1)/2=N_b$ mean and second-moment entries. Hoeffding gives
+simultaneously, with probability at least $1-\delta_b$,
+\[
+ |\widehat\mu_l-\mu_l|\le r_l=L_l\sqrt{2\log(2N_b/\delta_b)/m_b},\qquad
+ |\widehat M_{lk}-M_{lk}|\le r_{lk}=L_lL_k\sqrt{2\log(2N_b/\delta_b)/m_b}.
+\]
+Let $\widehat\Omega_b^P=\widehat M-\widehat\mu\widehat\mu^T$ and
+\[
+ E_{lk}=r_{lk}+|\widehat\mu_l|r_k+|\widehat\mu_k|r_l+r_lr_k,
+ \quad e_{b,l}=\sum_k E_{lk},\quad
+ U_b^{\rm mom}=\widehat\Omega_b^P+\diag(e_{b,1},\ldots,e_{b,d_b}).
+\]
+Symmetric diagonal dominance gives $\Omega_b\preceq U_b^{\rm mom}$ on
+that event. A second, deterministic upper bound is
+$U_b^{\rm range}=d_b\diag(L_{b,1}^2,\ldots,L_{b,d_b}^2)$, since
+$\Var(v^TG_b)\le(\sum_l|v_l|L_{b,l})^2\le v^TU_b^{\rm range}v$.
+Choose $\overline\Omega_b$ as the one of these two matrices with smaller
+trace, using a fixed tie rule. Both are upper bounds on the confidence event,
+so this pilot-only selection preserves coverage; it is not an entrywise
+minimum. Row-specific inflation preserves known constant coordinates.
+Set
+$W=L\diag\{\overline\Omega_b/n_b^E\}_bL^T$ and
+$\sum_b\delta_b\le\delta_\Sigma$. Check positive definiteness before solving.
+This is fully computable given valid range bounds, but can be extremely loose
+when weight caps are large. Boundedness is needed here even though
+Proposition~\ref{prop:ustat} itself only needs second moments. Replacing this
+certificate by an unproved empirical covariance would change the guarantee.
+
+\section{Proof of the quadratic reduction}\label{app:quadratic}
+
+Put $A=L^TD_WL$. Within a site,
+\[
+ \overline G_b^TA_{bb}\overline G_b-
+ \tr\{A_{bb}S_b^E/n_b^E\}
+ =\frac{\sum_{i\ne k}G_{bi}^TA_{bb}G_{bk}}{n_b^E(n_b^E-1)}.
+\]
+Cross-site terms are the ordinary products of independent means. This gives
+a quadratic form whose entire within-patient diagonal blocks are zero, and
+establishes unbiasedness. After centering each patient block, its linear
+part has variance $4r^TD_W\Sigma_ED_Wr$. Its quadratic part has variance
+\begin{align*}
+ &2\sum_{b\ne c}\frac{\tr(A_{bc}\Omega_cA_{cb}\Omega_b)}{n_b^En_c^E}
+ +2\sum_b\frac{\tr\{(A_{bb}\Omega_b)^2\}}{n_b^E(n_b^E-1)}\\
+ &\hspace{2em}\le2\kappa_E\tr\{(D_W\Sigma_E)^2\}.
+\end{align*}
+The linear and quadratic parts are uncorrelated: each putative third-moment
+term contains an independent centered patient block occurring only once.
+No within-patient independence or symmetry is needed. Since
+$D_WWD_W=D_W$ and $\Sigma_E\preceq W$,
+\[
+ r^TD_W\Sigma_ED_Wr\le\calB,
+ \qquad \tr\{(D_W\Sigma_E)^2\}\le\nu.
+\]
+This proves~\eqref{eq:energy-var}. Cantelli bounds
+$\calB-\widehat{\calB}$ by
+$\sqrt{c_D(4\calB+2\kappa_E\nu)}$ outside an event of probability
+$\alpha_D$. Solving the resulting quadratic inequality gives
+\eqref{eq:energy-upper}. A negative discriminant has no feasible positive
+energy on the concentration event; the stated nonnegative convention is safe.
+
+\section{Bias geometry and a count-based upper bound}\label{app:count-bound}
+
+The identities $P_WWP_W=P_W$, $R_{\calA}WR_{\calA}=R_{\calA}$ and
+$P_WWR_{\calA}=R_{\calA}$ follow from $H^TR_{\calA}=0$ and the GLS definitions.
+After conjugation by $W^{1/2}$ these are nested orthogonal projectors.
+Their difference is therefore positive semidefinite, has rank
+$2(K+1)-|\calA|$, and satisfies $D_WWD_W=D_W$.
+
+For $H^Td_V=\ell$, direct multiplication gives
+\[
+ \widetilde d_V-a_W=D_WWd_V,\qquad
+ C_V=d_V^TWD_WWd_V\ge0.
+\]
+Consequently $|(\widetilde d_V-a_W)^Tr|\le\sqrt{C_V\calB}$.
+The reference projection adds coefficients only on $\calA$, so
+$\widetilde d_V$ remains supported on the true valid set; this proves
+\eqref{eq:bias-geometry}. In particular, residual disagreement alone cannot
+control a common drift. The nonzero budgets in $B_V$ must remain.
+
+For the shared-target block structure, replace each private source block
+\[
+ \begin{pmatrix}d_{1j}&c_j\\c_j&d_{0j}\end{pmatrix}
+ \quad\text{by}\quad
+ \begin{pmatrix}d_{1j}+|c_j|&0\\0&d_{0j}+|c_j|\end{pmatrix}.
+\]
+The difference is positive semidefinite; call the resulting matrix
+$\overline W\succeq W$. This is an explicit conservative bound, not an
+assertion that private arm covariance is zero. For each admissible $V$, take
+$d_V$ as GLS under $\overline W_V$. Then
+$C_V\le v_V(\overline W)-v_W$.
+
+Writing the target anchor/common covariance blocks as $A_0,B_0,C_0$, the
+selected private pool variances $u_a$ give source-pool contrast coefficients
+\[
+ \beta(u_1,u_0)=\{A_0+C_0-B_0-B_0^T+\diag(u_1,u_0)\}^{-1}
+                    (A_0-B_0^T)\ell.
+\]
+Anchor coefficients are $\ell-\beta$ and within-arm source coefficients use
+positive inverse-private-variance shares. Selecting the largest private
+variances in each arm maximizes $v_V(\overline W)$ for the prescribed counts,
+including any mandatory known-valid coordinates. The smallest and largest
+allowed pools bound $(u_1,u_0)$ in a rectangle.
+
+Set $\widetilde b=|I-R_{\calA}W|^Tb$. A conservative common-family bias envelope
+is the maximum of
+\[
+ \sum_a\left\{|\ell_a-\beta_a|\widetilde b_{t,a}
+       +|\beta_a|\max_j\widetilde b_{j,a}\right\}
+\]
+over that rectangle. With positive private variances and a positive definite
+displayed matrix throughout it, each coefficient follows a common
+linear-fractional parameter along one coordinate. Convexity of the weighted
+absolute-value sum makes the four corners sufficient. An arm with no
+guaranteed sources fixes its pool coefficient to zero and uses the remaining
+one-dimensional calculation. The resulting pair
+$(\overline B_{\rm count},\overline C_{\rm count})$ supplies
+\eqref{eq:bias-radius}. Exact subset calculations must verify this shortcut on
+small instances before it is used for large $K$.

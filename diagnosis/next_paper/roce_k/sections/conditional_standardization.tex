@@ -1,0 +1,206 @@
+\section{A conditional exact-calibration benchmark in finite strata}
+\label{sec:conditional-standardization}
+
+This is a separate feasible finite-stratum procedure. It changes score
+construction and sample use; it is not merely a smaller constant for the
+previous fitted-score method. Its purpose is to determine whether useful
+borrowing is possible once empirical design imbalance is removed.
+It does not establish a high-dimensional or general model-robust RoCE theorem.
+
+\subsection{Conditional target and exact calibration}
+
+Assume the causal identification conditions under which $\mu_t^a(x)=\E_t[Y\mid A=a,X=x]$ is the target potential-outcome mean.
+Let $X$ take $L$ known values, and condition on all observed covariates and
+treatments, denoted $\mathcal D$. Let $\hat p_{t,x}$ be the full-target empirical
+cell proportions. Define
+\[
+ \mu_{t,X}^a=\sum_x\hat p_{t,x}\mu_t^a(x),\qquad
+ \tau_X=\mu_{t,X}^1-\mu_{t,X}^0.
+\]
+This is the average of conditional treatment effects over the observed target
+covariates, not the average of realized counterfactual outcomes.
+The population parameter remains $\tau_t=\E_t\{\mu_t^1(X)-\mu_t^0(X)\}$.
+For each arm, at least $g_a$ sources share the target conditional outcome means
+in every cell. The remaining conditional means are arbitrary in $[0,1]$;
+no lower bound on their nonzero deviations is assumed.
+
+If source $j$ has $N_{jxa}$ observed patients in cell $(x,a)$, exact design
+calibration gives
+\[
+ q_j^a(x)=\frac{n_j\hat p_{t,x}}{N_{jxa}},\qquad
+ Z_j^a=\sum_x\hat p_{t,x}\bar Y_{jxa}.
+\]
+For any common cellwise predictor $m^a$, including an estimated predictor,
+\[
+ \sum_x\hat p_{t,x}m^a(x)+\frac1{n_j}\sum_i
+ \ind(A_{ji}=a)q_j^a(X_{ji})\{Y_{ji}-m^a(X_{ji})\}
+ =Z_j^a.
+\]
+Thus the fitted prediction cancels exactly. Given $\mathcal D$, a valid source
+has mean $\mu_{t,X}^a$ with no nuisance fitting drift. The weights use designs,
+not the evaluated outcomes. This is a saturated instance of balancing and
+standardization, not a new weighting principle \citep{sbw2015,arb2018}.
+
+The implementation requires at least two observations in every used source
+cell/arm to estimate cell variances unbiasedly. If this fails, it uses the
+prespecified target-only conditional band for that repetition. No repetition
+is discarded. The fallback decision depends only on designs. One can use
+only the original 500 held-out source observations, or all 1,000 observations;
+both options are reported. Target outcomes are used for a target conditional
+band and the CATE-range certificate. No true outcome means, propensities or
+variances enter the procedure.
+
+\subsection{A dispersion bound for independent cell means}
+
+The general source statistic is $Z_j=\sum_h a_{jh}\bar Y_{jh}$, with independent
+Bernoulli outcomes within and between cells conditional on $\mathcal D$.
+The coefficients can have either sign: an arm mean uses $a_{jh}=\hat p_{t,h}$;
+a TATE contrast stacks $+\hat p_{t,h}$ and $-\hat p_{t,h}$.
+For $N_{jh}\ge2$ put
+\begin{align*}
+ \hat v_j&=\sum_h a_{jh}^2
+       \frac{\bar Y_{jh}(1-\bar Y_{jh})}{N_{jh}-1},&
+ v_{jh}&=\frac{a_{jh}^2}{4N_{jh}},& P_j&=\sum_hv_{jh},\\
+ \widehat D&=K^{-1}\sum_j(Z_j-\bar Z)^2
+                 -\frac{K-1}{K^2}\sum_j\hat v_j,&
+ D&=K^{-1}\sum_j(\E[Z_j\mid\mathcal D]-\E[\bar Z\mid\mathcal D])^2.
+\end{align*}
+Then $\E(\widehat D\mid\mathcal D)=D$. Define
+\begin{align*}
+ L_D&=4\max_jP_j/K,\\
+ Q_D&=\frac2{K^4}\left[(\sum_jP_j)^2+
+       \{(K-1)^2-1\}\sum_jP_j^2+
+       (K-1)^2\sum_{jh}\frac{v_{jh}^2}{N_{jh}-1}\right],\\
+ c_D&=\frac{2(K-1)}{K^2}\max_{jh}\frac{v_{jh}}{N_{jh}-1}.
+\end{align*}
+Use the earlier exponential inversion with $L_D,Q_D,c_D$ to get $U_D$ at
+failure probability $\alpha_D$.
+
+\begin{proposition}[Conditional cell-mean dispersion]
+Under independent bounded binary outcomes given the designs, the preceding
+$U_D$ satisfies $\Prb(D\le U_D\mid\mathcal D)\ge1-\alpha_D$.
+For $K=1$, set $D=U_D=0$.
+\end{proposition}
+\begin{proof}
+Set $A=I/K-\boldsymbol1\boldsymbol1^T/K^2$. The patient quadratic matrix has
+zero diagonal. Within the same source cell its off-diagonal entries are
+$A_{jj}a_{jh}^2/\{N_{jh}(N_{jh}-1)\}$; between different cells they are
+$A_{jk}a_{jh}a_{k\ell}/(N_{jh}N_{k\ell})$.
+The latter also applies to different cells in the same source.
+For centered patient outcomes, the linear term has entries
+$a_{jh}(A\theta)_j/N_{jh}$, where $\theta_j=\E[Z_j\mid\mathcal D]$.
+This follows from constant conditional means within each cell and is valid
+when those means differ across cells.
+
+Replace centered Bernoulli variables in the MGF by independent Gaussians with
+proxy variance $1/4$, using the zero-diagonal coordinatewise argument.
+On cell-constant vectors the scaled quadratic matrix is positive semidefinite;
+its nonzero spectrum is that of
+$\diag(\sqrt P)A\diag(\sqrt P)$. On each cell's orthogonal complement it
+has eigenvalue $-A_{jj}v_{jh}/(N_{jh}-1)$ with multiplicity $N_{jh}-1$.
+The Gaussian linear vector is in the positive subspace, has squared norm at
+most $(\max_jP_j)D/K$, and the squared Frobenius norm is $Q_D/2$.
+Consequently
+\[
+ \log\E\{e^{-t(\widehat D-D)}\mid\mathcal D\}
+ \le \frac{t^2(L_DD+Q_D)}{2(1-c_Dt)},\quad 0<t<1/c_D.
+\]
+Chernoff's bound and the previously stated quadratic inversion give the result.
+\end{proof}
+
+\subsection{One conditional compatibility procedure}
+
+The source center is $T_S=K^{-1}\sum_j(Z_j^1-Z_j^0)$. Its outcome-noise
+proxy is known from the design:
+\[
+ V_S^+=K^{-2}\sum_{jxa}\frac{\hat p_{t,x}^2}{4N_{jxa}},\qquad
+ r_S=\sqrt{2V_S^+\log(2/\alpha_S)}.
+\]
+There is no claim of unconditional independence between the two arms. Here
+conditioning on all designs leaves outcomes in disjoint treatment cells
+independent; the common target-covariate uncertainty is handled separately.
+
+The arm dispersion certificate is
+\[
+ B_A=\sqrt{(K-g_1)U_1/g_1}+\sqrt{(K-g_0)U_0/g_0}.
+\]
+If $g_\cap=g_1+g_0-K>0$, the TATE certificate is
+$B_C=\sqrt{(K-g_\cap)U_\tau/g_\cap}$. The adaptive option allocates half
+its dispersion error to the two arm certificates and half to the TATE
+certificate, then uses $\min(B_A,B_C)$. This data-dependent minimum is
+protected by the simultaneous events. Without a guaranteed intersection,
+it uses only $B_A$ and reallocates the dispersion allowance by a fixed rule.
+Thus arm-specific valid sets are preserved.
+
+The source conditional band is $J_S=[T_S\pm(r_S+B)]$.
+The target conditional band $J_T$ estimates $\tau_X$ with all target outcomes,
+using unsmoothed cell means when an arm is observed and .5 otherwise. Empty
+arms contribute an explicit worst-case bias allowance. A weighted Hoeffding
+bound provides its conditional outcome radius.
+Intersect $J_S,J_T$ when possible and use the shorter conditional band when
+the intersection is empty. If source cells are unavailable, use $J_T$.
+
+To pass from $\tau_X$ to $\tau_t$, let $R^+$ be a simultaneous upper bound
+on the true CATE range from target cellwise binomial intervals. With target
+sample size $n_t$, add
+\[
+ r_X=R^+\sqrt{\log(2/\alpha_X)/(2n_t)}
+\]
+to both conditional endpoints and clip to $[-1,1]$.
+The procedure handles the common target composition uncertainty once.
+Its fixed failure allocation is
+\[
+ \underbrace{.005}_{\text{range}}+
+ \underbrace{.01}_{\text{composition}}+
+ \underbrace{.01}_{\text{source outcomes}}+
+ \underbrace{.01}_{\text{target outcomes}}+
+ \underbrace{.015}_{\text{dispersion}}=.05.
+\]
+On the simultaneous events the conditional intersection contains $\tau_X$,
+and enlargement contains $\tau_t$. No independence between those events is
+needed. The design-dependent unavailable-source branch uses the same target
+outcome, range and composition events.
+
+The comparison target-only interval uses the same unsmoothed stratified point
+and range certificate, with .005 range error and .0225 each for outcome and
+composition error. It therefore has its own .95 finite-sample guarantee.
+
+\subsection{A point rule with an explicit conditional property}
+
+Keep the midpoint as a recorded summary, and optionally project the target
+point estimate onto the selected conditional compatibility band before
+population enlargement. On the event $\tau_X\in J_S$, this projection cannot
+increase absolute error relative to the unprojected target point for $\tau_X$.
+Indeed the target point lies in its own band; projection onto a nonempty
+intersection equals projection onto $J_S$. If an empty intersection selects
+$J_S$, the same contraction applies; if it selects $J_T$, the target point
+is unchanged. Clipping to the known effect range preserves this property.
+This is not a universal MSE guarantee for the population parameter $\tau_t$;
+target composition error and certificate failures still matter. Both point
+rules are evaluated with new seeds, without choosing the better rule separately
+in each scenario.
+
+\subsection{Scope, rates, and the next extension}
+
+This benchmark assumes finite strata and conditional-mean transport for the
+guaranteed valid sites. It does not transfer automatically to cases where only
+a population-average source moment is valid. For fixed $L$, uniformly adequate
+cell counts, $g_a/K$ bounded away from zero, and zero conditional dispersion,
+$P_j=O(n_s^{-1})$, $Q_D=O(n_s^{-2}K^{-1})$, and
+$c_D=O(n_s^{-2}K^{-1})$. The source bias allowance has order
+$n_s^{-1/2}K^{-1/4}$, while source outcome noise is
+$O(n_s^{-1/2}K^{-1/2})$. Target composition remains of order $n_t^{-1/2}$
+when the effect is heterogeneous. Uniformly adequate random cell counts
+require a joint sample-size/source-count condition; $K\to\infty$ with fixed
+per-site sample size alone does not guarantee it. Coverage remains protected
+by the target fallback, but useful source efficiency need not.
+
+Exact balance removes the fitted remainder in this saturated experiment.
+The relevant next question is how approximate balance and regularized outcome
+fits change that remainder and its noise correction uniformly in $K$.
+\citet{arb2018} gives a high-dimensional linear-outcome foundation; a recent
+nonlinear residual-balancing preprint studies derivative and curvature control
+\citep{meza2025}. Those results require their own assumptions and have not been
+proved to deliver the present multi-source conditional procedure. Balancing
+weights themselves are established methodology; the open contribution is
+uniform inference with unknown arm-specific valid sources and weak deviations.

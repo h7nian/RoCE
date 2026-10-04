@@ -1,0 +1,250 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern,amsmath,amssymb,booktabs,graphicx,enumitem}
+\usepackage[round,authoryear]{natbib}
+\usepackage[colorlinks=true,linkcolor=blue,urlcolor=blue,citecolor=blue]{hyperref}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{5pt}
+\setlength{\emergencystretch}{2em}
+\title{RoCE-K: residual compatibility experiments}
+\author{}
+\date{1 October 2026}
+\begin{document}
+\maketitle
+\textbf{Scope.} These are oracle residual-score experiments and a mathematical
+implementation audit. They do not validate fitted high-dimensional RoCE,
+cross-fitting with overlapping training sets, or a full growing-source theorem.
+The reported design has 114 settings and 138,000 setting-specific repetitions.
+The original six extra-pilot settings are archived separately and excluded from
+the final panel. No historical results or production estimators were changed.
+
+\section{Research question and experimental decisions}
+
+We test whether source-residual compatibility can jointly protect against weak
+bias and increasing source counts. The target decomposition is
+\[
+ \tau=d+r_1-r_0,\qquad
+ d=E_t(m^1-m^0),\quad r_a=\mu_t^a-E_tm^a.
+\]
+The target score is $(m^1-m^0,\psi_t^1-m^1,\psi_t^0-m^0)$, so the shared
+target component is included only once. The source module supplies a set for
+each $r_a$. Intersect those constraints with the joint target region, then
+project onto $(1,1,-1)$. Source valid sets may differ by arm.
+
+Searching under uncertain validity is motivated by \citet{guo2023}; the
+multiscale frequency shape is motivated by \citet{wang2026}. Our count-search
+baseline is not a reproduction of Guo's searching-and-sampling algorithm.
+Our fixed site means, heterogeneous variances and target localization also
+differ from the latter paper's Gaussian mixture experiment. Its optimality
+and length theorems are not asserted for this prototype.
+
+The initial 90 settings use 1,000 repetitions each. The main Gaussian panel
+has $K=8,32,128,512,2048$, two target shared-noise levels, and four bias
+patterns. Sources in a fixed quarter of the sites have treated-arm shifts
+equal to $0$, $2\sigma K^{-1/3}$, $2\sigma K^{-1/4}$ or $4\sigma$, where
+$\sigma$ is a source residual standard error. Additional panels cover
+different valid arm sets, equal-arm shifts, one extreme source, heterogeneous
+variances, weaker valid-count guarantees, pilot variance estimation and binary
+patient scores. Main experiments declare at least $75\%$ valid sources in
+each arm; their identities are not supplied to the procedures.
+
+After the main Gaussian results, 18 confirmation settings were declared with
+2,000 new-seed repetitions each. They compare an error-budgeted intersection
+of Fourier and dispersion certificates. Six further settings, also with
+2,000 new-seed repetitions, have actual and declared validity fractions of
+$1/2$ or $1/4$. This is a boundary study under valid assumptions, not a
+violation of the validity-count guarantee.
+
+\section{Inference and numerical safeguards}
+
+For independent Gaussian residual means $X_j\sim N(\theta_j,v_j)$,
+the corrected empirical characteristic function is
+\[
+ \widehat F(t)=K^{-1}\sum_j\exp(itX_j+t^2v_j/2).
+\]
+With $\rho=g/K$, candidate $r$ is retained when
+$|\widehat F(t)-\rho e^{itr}|\le1-\rho+\Delta(t)$ at every frequency.
+The grid is $t_\ell=\sqrt\ell/(2\sqrt{v_{\max}})$ for
+$\ell=1,\ldots,\lceil\log(eK)\rceil$. It is specified before evaluation;
+no frequency is selected for favorable coverage.
+
+Let $m$ be the number of frequencies, $x=\log(4m/\alpha_s)$,
+$M_j=\exp(t^2v_j/2)$, $V=\sum_j(M_j^2-1)$ and $B=\max_j(M_j+1)$.
+Two valid Gaussian noise allowances are
+\begin{align*}
+ \Delta_H(t)&=\frac2K\sqrt{x\sum_jM_j^2},\\
+ \Delta_B(t)&=\frac{\sqrt2}{K}
+ \left\{\frac{Bx}{3}+\sqrt{2Vx+(Bx/3)^2}\right\}.
+\end{align*}
+The first uses Hoeffding. For the second, each real or imaginary component
+has variance at most $M_j^2-1$, and its centered absolute value is at most
+$M_j+1$. Apply Bernstein to both tails of both components and union across
+frequencies. The smaller of these deterministic bounds can be selected before
+evaluation without another error allocation. This tightening is not an
+empirically tuned critical value.
+
+All Fourier disks are inverted analytically into periodic intervals and
+intersected as interval sets. No candidate grid is used to measure coverage.
+The target ellipsoid is projected over every residual-interval rectangle.
+The unconstrained optimum and four analytically optimized edges give its
+endpoints; disconnected source sets are retained through projection.
+Numerical endpoints receive small outward padding. Independent constrained
+optimization and dense disk-membership checks verify these calculations.
+
+The target region uses failure allowance $.025$, and each source arm receives
+$.0125$. In the combined method, each arm splits that allowance equally
+between Fourier and dispersion. This is an intersection of simultaneously
+protected constraints, not selection of the shortest unadjusted interval.
+The dispersion comparator uses noncentral chi-square inversion only for
+homogeneous exact Gaussian noise. Its heterogeneous version uses a moment
+bound. Empty feasible sets return the prespecified target interval with a
+flag; no repetition is dropped. Midpoints of the resulting intervals are
+reported as exploratory point estimates.
+
+\section{Results in the Gaussian oracle experiment}
+
+The following table uses independent confirmation data: $K=2048$, no shared
+target variance floor, and 2,000 repetitions per setting. Length is relative
+to the ordinary $95\%$ target-only interval. The valid-set oracle has extra
+information and is explicitly separated from implementable comparators.
+
+\begin{center}\small
+\input{confirmation_table}
+\end{center}
+
+At weak shifts, dispersion is shorter than Fourier in this known-variance
+model. At strong shifts, Fourier is shorter. The combined certificates retain
+most of the weak-bias gain and improve the strong-bias result, in part because
+different certificates can be more useful in different arms. Most protected
+intervals overcover relative to $95\%$; the experiment does not establish
+optimal calibration or oracle efficiency. Source counts this large are a
+growth stress test, not a claim about typical federated study sizes.
+
+When shared target noise is present, it can mask the weak bias in a naive
+TATE interval and limit the gain from sources. This differs from correctness
+of the source residual module itself. Small-$K$ protected intervals can be
+longer than ordinary target-only intervals, because their joint-region and
+source-uncertainty protection is costly.
+
+\paragraph{Point estimation and fallback require a separate repair.}
+For the combined interval at $K=2048$ without a target variance floor,
+the all-valid confirmation RMSE is $.00663$, versus $.00100$ conditional
+on no fallback. The $.8\%$ fallback cases account for $97.7\%$ of squared
+error. At weak shifts the corresponding share is $92.0\%$, and at strong
+shifts $93.8\%$. Therefore a shorter interval does not establish a better
+point-estimation rule. A diagnostic projection of naive pooling into the
+interval helps some weak-bias cases but worsens strong-bias RMSE; it is not
+adopted as a universal fix.
+
+There is also an asymptotic issue. In the exact Gaussian zero-floor setting,
+if source residual sets shrink to their true pair while the target ellipsoid
+keeps a fixed error allowance, a nonvanishing probability of target-region
+incompatibility can remain. Returning a target-width interval on that event
+can prevent the desired expected-length gain in $K$. Shrinking the target
+failure allocation or constructing a suitable shorter fallback are research
+options requiring their own validation. The present fallback is retained
+in every reported result; neither failures nor their MSE contributions are
+removed.
+
+\begin{figure}[p]
+\centering
+\includegraphics[width=\linewidth]{gaussian_main.pdf}
+\caption{Initial Gaussian panel. Shading gives pointwise Monte Carlo Wilson
+intervals for coverage. The two shared-noise levels use the same underlying
+random draws. Each setting has 1,000 repetitions and $n=1000$ per site.}
+\end{figure}
+\begin{figure}[p]
+\centering
+\includegraphics[width=\linewidth]{independent_confirmation.pdf}
+\caption{Independent confirmation, 2,000 repetitions per setting. Combined
+certificates use a prespecified split of the source error allowance.}
+\end{figure}
+
+\section{Estimated variance and non-Gaussian scores}
+
+\paragraph{Patient budget.}
+Every reported setting has 1,000 patients per site. The source variance panel
+uses 250 independent pilot patients and 750 evaluation patients; target
+summaries use 1,000 patients and known target covariance. The initial version
+of those six cells used 1,000 evaluation observations plus 250 additional
+pilot observations. They are retained as auxiliary-information diagnostics
+but replaced in the reported panel. Source variances and local shifts were
+recomputed for the corrected evaluation size.
+
+Gaussian pilot covariance is generated with the correct two-arm Wishart
+dependence. Simultaneous chi-square variance intervals receive total failure
+allowance $.005$. For certified lower and upper mean variances $l_j,u_j$,
+deconvolution uses $l_j$ and adds the attenuation bound
+$K^{-1}\sum_j\{1-\exp[-t^2(u_j-l_j)/2]\}$. The two source error allowances
+are then $.01$ each. Estimated-variance plug-in is separately labeled as a
+diagnostic without this certificate.
+
+\paragraph{Binary observed-data model.}
+Each site has $X\in\{-1,1\}$ with equal probabilities and randomized
+treatment probability $1/2$. Common predictions are
+$m^1(X)=.55+cX/2$ and $m^0(X)=.45-cX/2$, with $c=0$ or $.3$.
+Target outcomes follow those Bernoulli means, so TATE is exactly $.10$.
+Selected sources have additive arm shifts. The oracle merged weights are
+two. Multinomial counts of the eight $(X,A,Y)$ states generate the exact
+patient-score means and unbiased variances, without materializing every row.
+
+For a patient score of range $B_j$, variance $s_j^2$, and sample size $n_j$,
+a telescoping characteristic-function comparison with centered Gaussian
+summands gives the deconvolved error bound
+\[
+ e^{t^2v_j/2}\frac{|t|^3}{6n_j^2}
+ \{B_js_j^2+2\sqrt{2/\pi}\,s_j^3\},\qquad v_j=s_j^2/n_j.
+\]
+The bounded-score method adds the average of these bounds over sources. Its
+complex-exponential variance bound is $M_j^2\min(1,t^2v_j)$ and its centered
+bound is $2M_j$. The target uses a second-moment ellipsoid, rather than an
+unproved exact Gaussian pivot. This is deliberately a conservative reference.
+The Gaussian-approximation versions are also shown, but good empirical
+coverage does not certify them uniformly for growing $K$.
+
+The binary experiment exposes a practical obstacle: with a nonzero target
+variance floor, the fully protected target moment region can make the final
+interval substantially wider than nominal target-only inference. Tightening
+the target calibration is therefore as important as tightening the source
+module. Similarly, valid pilot variance bounds carry a visible length cost.
+
+\begin{figure}[p]
+\centering
+\includegraphics[width=\linewidth]{binary_scores.pdf}
+\caption{Binary patient-score experiment at weak shifts, 1,000 repetitions
+per setting. Fourier (Bernstein) here uses a Gaussian approximation; bounded
+protection adds a distributional error bound and a target moment region.}
+\end{figure}
+
+\section{Boundary, reliability and next decision}
+
+The actual-minority panel puts either $1/2$ or $1/4$ of treated-source centers
+at the target residual, and the remainder one source standard error away.
+Both centers have at least the declared mass. They therefore both satisfy
+the population source compatibility constraints at every frequency. Target
+information is required to distinguish them. Observed borrowing gains are
+weaker with the lower valid fraction; the experiment does not claim the same
+uniform shrinking rate as under strict majority validity.
+
+Nine automated tests cover analytic arc inversion, independent numerical
+projection, singular prediction components, exact distribution comparisons,
+calibration simulations, minority ambiguity and patient budgets. Every saved
+interval, coverage value, length and RMSE was independently recomputed during
+the result audit. Paired length differences and Monte Carlo standard errors
+are exported. No complete-method theorem is inferred from these checks.
+
+The next design decision is to retain residual compatibility as the main
+framework and study a prespecified combination of Fourier and dispersion
+certificates. Priorities are useful target and source calibration under
+estimated distributions, valid nuisance-bias allowances, and a joint
+$(n,K)$ length theorem. Full high-dimensional nuisance fitting should enter
+after those components remain useful under their uncertainty costs.
+
+All raw records, frozen source versions, protocols, the variance-budget
+correction and audit receipts are stored under the experiment's scratch
+directory. Older manuscript designs and results remain available.
+
+\bibliographystyle{plainnat}
+\bibliography{references}
+\end{document}
