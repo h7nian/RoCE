@@ -5,6 +5,68 @@ The current paper's estimator and frozen Slurm campaigns remain separate.
 Numerical references, fitted-score diagnostics and conditional derivations
 must not be described as a completed full-method theorem.
 
+## Target protection, approximation and design growth (4 October 2026,v20)
+
+NEXT-PAPER TARGET PROTECTION AND APPROXIMATION (2026-10-04,v20): completed
+7200 outcome setting-specific repetitions (36x200) and7800 design-only draws
+(39x200). A4800-repeat paired model-class extension reuses existing draws and
+is not counted again. All outcome panels use1000 patients/site.
+
+One observed-target coefficient ellipsoid protects CATE range and empirical
+variance; empirical Bernstein reduces composition cost while applying the
+same improvement to target-only. At p4,K256,h=.15,length is .1584 versus .2615
+for matched universal protection and .2853 for improved protected target-only.
+Ordinary target-normal is .1214 there. At p4,K2048,h=0,new length .1119 is
+below normal .1228; at p10 it is still longer (.1443 vs .1234). No true range
+or constant-effect information is passed to inference.
+
+Model approximation now corrects mean drift,variance-centering bias,and the
+quadratic MGF together. A universal bounded-invalid option needs no supplied
+nonlinearity amplitude when target/valid means are linear. Its wider class
+can cost length and does not automatically retain the linear fourth-root rate.
+A fixed-design nonlinear-invalid example at K262144 has old conditional
+coverage0 but population coverage1; repaired conditional coverage is1 under
+the declared envelope and .990 under bounded-invalid protection. The latter
+source band itself covers all repeats; two losses arise in target combination.
+
+The random-design eta=.2 attempt was rejected for negative probabilities at
+support corners. The final grid ends at .15,without clipping; old attempts and
+verified reusable cells remain archived. Conditional and population intervals,
+all radii and design failures are saved. Matrix-Chernoff lower/upper bounds,
+leverage control,and expected-width/fallback conditions are stated explicitly.
+Design-only source removal is an eligibility diagnostic,not yet a fitted CI.
+
+56 tests pass. All old intervals in24 paired extension cells match exactly.
+Artifacts: implementation/next_paper/v20/target_protection_20261004_v1/.
+Published RoCE-K version7: 6855f9cdef4d70d49b4a9a1ce326b341c867dd40; main.tex and experiments_20261004b.tex.
+Main text follows conditional balance,leave-out correction,dispersion protection,
+and target composition; older approaches are retained in the appendix and v6
+is preserved separately. Production RoCE/ENAR and old results are unchanged.
+
+New entry points in `residual_compatibility/` are `run_target_protection.py`,
+`run_projection_stress.py`, `run_design_stability.py`, and
+`review_target_protection.py`. Their controls include `--profile`, `--run-name`,
+`--repeats`, `--workers`, and `--bounded-invalid` where applicable.
+`population_protection.py` holds the observed-data coefficient/range/variance
+certificate and projection-error budgets; `conditional_linear_bands()` remains
+the shared conditional inference engine. Budget keys use `mu1`, `mu0`, and
+`contrast`; mean-bias arrays order treated before control.
+
+All new target-protection comparisons share the exact conditional bands and
+use matched error allocations. The same target certificate improves the
+standalone comparator. Universal-range legacy behavior is preserved and checked
+against v19. The unknown-amplitude bounded-invalid option requires only bounded
+invalid means, but retains linear target/valid means and declared valid counts.
+General nonlinear or sparse target fitting remains unfinished.
+
+Read `report/REPORT_zh.txt`, `compiled/main.pdf`, and
+`compiled/experiments_20261004b.pdf`. The corrected random-design panel is
+`misspecification_v2`; `misspecification_bounded` and `projection_stress_bounded`
+are paired model-class extensions. The initial invalid grid is preserved and
+excluded from final admissible-setting summaries. No patient draws were dropped
+from the final valid settings. Design-only count-adjusted eligibility does not
+claim an evaluated precision improvement.
+
 ## Continuous linear-balance benchmark (4 October 2026, v19)
 
 NEXT-PAPER CONTINUOUS LINEAR BALANCE (2026-10-04, v19): completed6600

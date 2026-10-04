@@ -8,6 +8,42 @@ Repository commits use h7nian <zhan9381@umn.edu> and only the main branch.
 Personal tooling/session records stay outside the repository. Earlier Git
 history is archived on scratch under implementation/releases/20261004_authorship_cleanup/.
 
+NEXT-PAPER TARGET PROTECTION AND APPROXIMATION (2026-10-04,v20): completed
+7200 outcome setting-specific repetitions (36x200) and7800 design-only draws
+(39x200). A4800-repeat paired model-class extension reuses existing draws and
+is not counted again. All outcome panels use1000 patients/site.
+
+One observed-target coefficient ellipsoid protects CATE range and empirical
+variance; empirical Bernstein reduces composition cost while applying the
+same improvement to target-only. At p4,K256,h=.15,length is .1584 versus .2615
+for matched universal protection and .2853 for improved protected target-only.
+Ordinary target-normal is .1214 there. At p4,K2048,h=0,new length .1119 is
+below normal .1228; at p10 it is still longer (.1443 vs .1234). No true range
+or constant-effect information is passed to inference.
+
+Model approximation now corrects mean drift,variance-centering bias,and the
+quadratic MGF together. A universal bounded-invalid option needs no supplied
+nonlinearity amplitude when target/valid means are linear. Its wider class
+can cost length and does not automatically retain the linear fourth-root rate.
+A fixed-design nonlinear-invalid example at K262144 has old conditional
+coverage0 but population coverage1; repaired conditional coverage is1 under
+the declared envelope and .990 under bounded-invalid protection. The latter
+source band itself covers all repeats; two losses arise in target combination.
+
+The random-design eta=.2 attempt was rejected for negative probabilities at
+support corners. The final grid ends at .15,without clipping; old attempts and
+verified reusable cells remain archived. Conditional and population intervals,
+all radii and design failures are saved. Matrix-Chernoff lower/upper bounds,
+leverage control,and expected-width/fallback conditions are stated explicitly.
+Design-only source removal is an eligibility diagnostic,not yet a fitted CI.
+
+56 tests pass. All old intervals in24 paired extension cells match exactly.
+Artifacts: implementation/next_paper/v20/target_protection_20261004_v1/.
+Published RoCE-K version7: 6855f9cdef4d70d49b4a9a1ce326b341c867dd40; main.tex and experiments_20261004b.tex.
+Main text follows conditional balance,leave-out correction,dispersion protection,
+and target composition; older approaches are retained in the appendix and v6
+is preserved separately. Production RoCE/ENAR and old results are unchanged.
+
 NEXT-PAPER CONTINUOUS LINEAR BALANCE (2026-10-04, v19): completed6600
 fresh-design repetitions,33 settings x200,n1000/site. The source module now has
 a separate continuous-covariate linear-model benchmark: exact signed balance,

@@ -2136,3 +2136,16 @@ normal-target comparisons,declared-range sensitivity and nonlinear boundaries.
 51 tests pass and18 replayed repetitions match exactly. Published the version6
 method and report in RoCE-K. Artifacts: implementation/next_paper/v19/
 continuous_balance_20261004_v1/. Production RoCE and ENAR are unchanged.
+
+## 2026-10-04 — target composition, approximation and random-design growth [COMPLETE]
+
+Added an observed-target joint coefficient certificate and variance-sensitive
+population enlargement,with a matching target-only comparison. Derived full
+mean/variance/concentration corrections for model error and a bounded-invalid
+option. A fixed-design counterexample exposes coverage hidden by population
+enlargement. Completed7200 outcome setting-repetitions and7800 design draws;
+paired extensions are not recounted. Preserved the rejected probability-support
+setting and verified exact reuse of unchanged cells.56 tests pass;24 paired
+extension cells retain every old interval exactly. Published RoCE-K version7
+with the earlier methods in the appendix and the v6 entry preserved.
+Artifacts: implementation/next_paper/v20/target_protection_20261004_v1/.

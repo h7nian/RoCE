@@ -1,0 +1,118 @@
+\section{Estimating target composition protection from the observed data}
+\label{sec:target-protection}
+
+The universal CATE range 2 can dominate population interval width. We now
+construct one target-outcome confidence event that simultaneously controls the
+range and empirical variance of the true CATE. The target-only comparator uses
+the identical event and composition method. No simulated true range or slope
+enters the procedure.
+
+Let $b=(\beta_t^1-\beta_t^0)_{1:p}$ denote the slope contrast, excluding the
+intercept. The target features have a \emph{predeclared} rectangular support
+$\prod_{r=1}^p[l_r,u_r]$; observed minima and maxima do not define that support.
+Let $X_{ta}$ include its intercept, and let $\widehat b$ be the difference of
+its two OLS slope vectors. Conditional on all target designs,
+\[
+ V_b=\tfrac14\left\{(X_{t1}^TX_{t1})^{-1}+
+                         (X_{t0}^TX_{t0})^{-1}\right\}_{1:p,1:p}
+\]
+is a sub-Gaussian variance proxy, since outcomes lie in $[0,1]$ and the target
+conditional means are linear. Thus, for every vector $v$,
+\[
+ \E\{\exp[v^T(\widehat b-b)]\mid\mathcal D\}
+ \le\exp(\tfrac12v^TV_bv).
+\]
+The proxy is determined by the design, not estimated from outcome residuals.
+
+Put $x_R=\log(1/\alpha_R)$ and
+$r_R^2=p+2\sqrt{p x_R}+2x_R$. A sub-Gaussian quadratic-form bound
+\citep{hsu2012} gives the conditional confidence region
+\[
+ \mathcal C_b=\{v:(v-\widehat b)^TV_b^{-1}(v-\widehat b)\le r_R^2\},
+ \qquad\Prb(b\in\mathcal C_b\mid\mathcal D)\ge1-\alpha_R.
+\]
+This is a sub-Gaussian confidence ellipsoid, not an exact Gaussian confidence
+region. Applying the bound to $V_b^{-1/2}(\widehat b-b)$ proves the claim.
+
+\subsection{One event for both range and variance}
+
+Let $w_r=u_r-l_r$. On the same confidence event, the CATE range is at most
+\[
+ R^+=\min\left\{2,\max_{s\in\{-1,1\}^p}
+   \left[(w\odot s)^T\widehat b+
+        r_R\sqrt{(w\odot s)^TV_b(w\odot s)}\right]\right\}.
+\]
+This follows by maximizing the rectangular-support range
+$\sum_r w_r|b_r|$ over the ellipsoid. The implementation enumerates signs through
+$p=12$; above that it uses the valid upper bound
+$\sum_r w_r(|\widehat b_r|+r_R\sqrt{V_{b,rr}})$, capped at 2.
+The first experiments focus on $p=4,10$.
+
+Let $S_X$ be the target sample covariance of features with denominator $n_t-1$.
+Writing $V_b=L_bL_b^T$, the true empirical CATE variance is bounded by
+\[
+ V_X^+=\min\left\{
+  \left[\sqrt{\widehat b^TS_X\widehat b}
+       +r_R\sqrt{\lambda_{\max}(L_b^TS_XL_b)}\right]^2,
+  \frac{n_t}{n_t-1}\frac{(R^+)^2}{4}\right\}.
+\]
+The first term is the triangle inequality in the $S_X$ seminorm; the second is
+the bounded-range sample-variance inequality. The observed matrix $S_X$ does
+not require a separate confidence event: both statements hold deterministically
+for every $b\in\mathcal C_b$.
+
+\subsection{Population enlargement and error allocation}
+
+For the true, fixed CATE function, the empirical Bernstein inequality of
+\citet[Theorem 4]{maurer2009}, applied in both directions, gives
+\[
+ r_X^{\rm EB}=\sqrt{\frac{2V_X^+\log(4/\alpha_X)}{n_t}}
+        +\frac{7R^+\log(4/\alpha_X)}{3(n_t-1)}.
+\]
+The range-only alternative is
+$r_X^{\rm H}=R^+\sqrt{\log(2/\alpha_X)/(2n_t)}$.
+Although their feasible bounds depend on target outcomes, coverage follows
+from the union of the coefficient event and the concentration event for the
+\emph{true} CATE. It does not require independence between those events.
+An adaptive option takes their minimum only after allocating $\alpha_X/2$ to
+each inequality. Taking the unadjusted minimum is not justified.
+
+For the source-assisted procedure, the fixed allocation is
+\[
+ \alpha_R=.005,\quad\alpha_X=.01,\quad
+ \alpha_S=.01,\quad\alpha_T=.01,\quad\alpha_D=.015.
+\]
+The new universal-range, range-only, empirical-Bernstein and adaptive comparisons
+share exactly the same conditional source and target bands. The coefficient
+allowance is unused in the universal-range control. The v19 allocation is
+retained separately as a historical comparator, rather than silently changed.
+For standalone target-only, use the same $.005$ coefficient event and $.0225$
+each for outcomes and composition. This preserves a common $.05$ total failure
+budget while improving the comparator together with the proposed method.
+
+These certificates address target composition, not arbitrary target outcome
+misspecification. At larger $p$, the coefficient region can be too wide for a
+useful range bound. Variance-sensitive composition can still improve before
+range estimation becomes precise; the experiments report both components.
+
+\subsection{Adaptation when the target effect is nearly constant}
+
+For fixed $p$, bounded support and well-conditioned target designs, the proxy
+$V_b$ is $O(n_t^{-1})$. The coefficient region consequently contributes
+$O_p(n_t^{-1/2})$ to the empirical CATE standard-deviation bound. If
+$\sigma_\tau^2=\Var_t\{\tau(X)\}$, this gives
+\[
+ r_X^{\rm EB}=O_p(\sigma_\tau n_t^{-1/2}+n_t^{-1}).
+\]
+In particular, a constant CATE has $b=0$, $R^+=O_p(n_t^{-1/2})$ and
+$V_X^+=O_p(n_t^{-1})$, so the composition allowance is $O_p(n_t^{-1})$.
+The algorithm is not told that the effect is constant.
+
+The same order in expectation on good designs follows from conditional
+second-moment bounds for the coefficient error and Jensen's inequality for
+its $S_X$ seminorm. For the true CATE, the sample variance is unbiased and its
+expected square root is at most $\sigma_\tau$. Combine the good-design
+expectation with the bounded-width fallback term in
+Section~\ref{sec:design-stability}. These statements require the stated
+fixed-dimension/conditioning regime; they are not uniform high-dimensional
+claims or optimality results. Source model approximation remains separate.

@@ -1,0 +1,139 @@
+\section{Random-design growth, fallback, and expected length}
+\label{sec:design-stability}
+
+Design failure does not itself invalidate coverage: the source-failure branch
+uses the protected target band, and target-design failure returns the full
+parameter interval. Conditional outcome guarantees and the unconditional
+composition event can therefore be combined for every $K$. Conditions making
+all designs good are needed for useful borrowing and length rates, rather
+than for removing a fallback error from the coverage bound.
+
+\subsection{An explicit sufficient design condition}
+
+Let $d=p+1$, assume independent patients within each site, and suppose uniformly
+\[
+ \|\phi(X)\|_2^2\le L_d,\qquad
+ \lambda_{\min}\{\E_j[\ind(A=a)\phi(X)\phi(X)^T]\}\ge\kappa>0.
+\]
+For $n_j$ patients, matrix Chernoff \citep[Corollary 5.2]{tropp2012} gives
+\[
+ \Prb\{\lambda_{\min}(X_{ja}^TX_{ja})<n_j\kappa/2\}
+ \le d\exp\{-n_j\kappa/(8L_d)\}.
+\]
+The bound concerns the total site sample, so no deterministic arm sample size
+is assumed. A union bound over both arms at the target and all sources gives
+\[
+ q_{\rm lower}\le 2(K+1)d\exp\{-n_{\min}\kappa/(8L_d)\}.
+\]
+On this event's complement,
+\[
+ \max_i h_{jai}\le\frac{2L_d}{n_j\kappa},\qquad
+ \operatorname{cond}(X_{ja})\le\sqrt{2L_d/\kappa}.
+\]
+The first inequality ensures the leverage guard when its right-hand side is
+below $.98$; it also rules out a saturated arm fit. To control the fixed
+condition-number guard as dimension grows, additionally assume the population
+arm-Gram maximum eigenvalues are at most $\Lambda$, uniformly. The upper
+Chernoff bound gives, for $c_+=2\log2-1$,
+\[
+ q_{\rm upper}\le 2(K+1)d\exp\{-c_+n_{\min}\Lambda/L_d\}.
+\]
+On the combined event, $\operatorname{cond}(X_{ja})\le2\sqrt{\Lambda/\kappa}$,
+which must lie below the numerical guard. Since $\Lambda\ge\kappa$,
+\[
+ q_{n,p,K}:=q_{\rm lower}+q_{\rm upper}
+ \le4(K+1)d\exp\{-n_{\min}\kappa/(8L_d)\}.
+\]
+These statistical bounds concern exact arithmetic. The implementation separately
+checks balance residuals and records any numerical failure as a fallback.
+
+For bounded coordinates, $L_d=d$ is available. Thus
+$d\log(Kd)/(n_{\min}\kappa)\to0$ is one sufficient joint-growth condition.
+It is deliberately conservative, and its probability bound can be vacuous at
+finite sample sizes where the observed designs work well. The experiments
+report the sufficient bound and empirical failures separately.
+
+Let $B_t=\|b_t\|_2$. On good designs and with leverage bounded by $h_*<1$,
+\begin{align*}
+ S_{ja}&\le\frac{2B_t^2}{n_j\kappa},&
+ \|\gamma_{ja}\|_\infty&\le\frac{2\sqrt{L_d}B_t}{n_j\kappa},\\
+ G_{ja},F_{ja}&=O\!\left(\frac{L_dB_t^4}{n_j^3\kappa^3}\right),&
+ \max_i d_{jai}&=O\!\left(\frac{L_dB_t^2}{n_j^2\kappa^2}\right).
+\end{align*}
+Here $F_j\le G_j$, and
+$G_j\le\|\gamma_j\|_\infty^2\|\gamma_j\|_2^2/(1-h_*)^2$.
+For the common target mean, a bounded-difference argument supplies
+\[
+ \|b_t-\E_t\phi(X)\|_2
+ \le \sqrt{L_d/n_t}+\sqrt{2L_d\log(1/\delta_t)/n_t}
+\]
+with probability at least $1-\delta_t$. This target event is paid for once,
+not once per source. Bounded population feature-mean norm and
+$L_d\log(1/\delta_t)/n_t=O(1)$ give $B_t=O(1)$.
+
+\subsection{From conditional rates to expected length}
+
+Under exact linear means, the zero-diagonal representation also gives
+\[
+ \Var(\widehat D\mid\mathcal D)
+ \le\|Qm\|_2^2+\|Q\|_F^2/8\le LD+Q_0.
+\]
+The linear and off-diagonal quadratic parts have zero covariance for independent
+centered outcomes, and bounded outcome variances are at most $1/4$.
+At $D=0$, $\E|\widehat D|\le\sqrt{Q_0}$. Put $x=\log(1/\alpha_D)$ and
+$M=\sqrt{Q_0}+cx$. The inversion formula implies
+\[
+ \E(U_D\mid\mathcal D)
+ \le M+xL+\sqrt{2xLM+x^2L^2+2xQ_0}.
+\]
+This follows from $|\widehat D+cx|$ and Jensen's inequality; an $O_p$ bound
+alone would not establish the same expected-length claim.
+
+For balanced source sizes, $L_d/(n_s\kappa)=o(1)$, bounded $B_t$ and
+$\kappa$ bounded away from zero, the preceding design bounds give
+\[
+ \E\sqrt{U_D}=O(n_s^{-1/2}K^{-1/4}).
+\]
+The same order holds for local dispersion $D=O(n_s^{-1}K^{-1/2})$,
+including the studied weak-shift sequence. Positive valid-source proportions
+are required; contrast certificates additionally require a positive guaranteed
+intersection proportion. Arm certificates remain available without that
+intersection.
+
+Conditional intersection or shorter fallback never exceeds the source-band
+length when source fits are available. Population enlargement is uniformly
+$O(n_t^{-1/2})$ for the bounded range/variance methods. Let
+$r_n=n_s^{-1/2}K^{-1/4}+n_t^{-1/2}$. Since reported intervals are clipped to
+$[-1,1]$,
+\[
+ \E|I|\le C r_n+2\Prb(\hbox{bad design event}).
+\]
+Thus merely showing fallback probability tends to zero does not prove the
+expected-width rate. A sufficient stronger requirement is
+$q_{n,p,K}+\delta_t=O(r_n)$; using $o(r_n)$ makes the fallback contribution
+negligible. This distinguishes unconditional coverage, probability-order width,
+and expected width. For fixed $p$, the empirical-Bernstein composition method
+permits replacing the target term by
+$\sigma_\tau n_t^{-1/2}+n_t^{-1}$, using the expectation argument in
+Section~\ref{sec:target-protection}; its fallback probability must then be
+controlled on that smaller total-width scale.
+
+For approximate models, retaining these rates also requires the valid-source
+mean-bias allowance to be negligible relative to $r_n$, the variance-centering
+allowance $a_KC_B$ to be small on the $n_s^{-1}K^{-1/2}$ dispersion scale, and
+the added concentration constant to have the corresponding order. A fixed
+nonzero approximation envelope need not provide improving width as $K$ grows.
+
+\subsection{Design-only removal as a separate possible policy}
+
+If $m$ sources fail an outcome-independent design rule, retaining the others
+leaves $K'=K-m$ sources and at least $g_a'=\max(0,g_a-m)$ valid sources per
+arm. Conditional inference could be rerun with those conservative counts when
+positive. This follows by removing at most $m$ members of each unknown valid
+set; it does not require knowing which discarded sites were valid.
+
+The current main estimator still requires all source designs. The stability
+study records only whether this count-adjusted alternative would remain
+\emph{eligible}; it does not claim that the alternative was fitted or that its
+intervals are shorter. It is a concrete way to investigate the fixed-$n_s$,
+large-$K$ boundary after the present all-designs-required analysis.

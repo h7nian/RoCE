@@ -1,0 +1,162 @@
+\section{Controlled model approximation changes three parts of inference}
+\label{sec:approximation-control}
+
+Correctness of the target and valid sources alone is insufficient for the
+previous leave-out dispersion proof: the variance correction also involves
+invalid sources. We make the missing terms explicit. The controlled extension
+below requires declared or separately certified error budgets. It does not
+estimate arbitrary nonlinear approximation errors for free. If budgets are
+estimated rather than declared, their certificate-failure probabilities must
+be included separately in the total error allocation. The present corrected
+experiments use fixed declared envelopes.
+
+For one arm or a stacked contrast, retain $H_j$, $D_j=\diag(d_j)$ and the
+quadratic matrix $Q$ from the linear branch. Here $n_j$ counts observations
+in the current arm; contrast bounds combine the two arm-specific quantities. Let
+\[
+ m_j=\E(W_j\mid\mathcal D),\qquad u_j=(I-H_j)m_j,\qquad
+ \zeta_j=m_j^TD_ju_j.
+\]
+Direct expectation gives
+\[
+ \E(\widehat v_j\mid\mathcal D)=v_j+\zeta_j,\qquad
+ \E(\widehat D\mid\mathcal D)=D-a_K\sum_j\zeta_j.
+\]
+In particular, positive $\zeta_j$ makes the correction subtract too much noise and
+can hide source dispersion. A budget only for valid-source mean bias does not
+repair this error.
+
+\subsection{Observable design factors and declared residual envelopes}
+
+Suppose $\|u_j\|_2\le\rho_j$. For a uniform approximation error
+$\|r_j\|_\infty\le\epsilon_j$ in
+$\E(Y_j\mid\mathcal D)=X_j\beta_j+r_j$, one may use
+$\rho_j=\epsilon_j\sqrt{n_j}$, because $I-H_j$ is a contraction.
+Let $d_j^{\max}=\max_i d_{ji}$, $G_j=\sum_i d_{ji}^2$ and
+$c_j=\|(I-H_j)D_jH_j\|_{\rm op}$. Then
+\[
+ |\zeta_j|\le B_j:=\min\left\{
+   \tfrac12\sqrt{G_j}\rho_j,
+   d_j^{\max}\rho_j^2+\tfrac12\sqrt{n_j}\,c_j\rho_j\right\}.
+\]
+The first inequality uses $\|m_j\|_\infty\le1/2$. For the second, write
+$m_j=H_jm_j+u_j$ and use $\|H_jm_j\|_2\le\sqrt{n_j}/2$.
+With thin QR basis $U_j$,
+\[
+ c_j^2=\lambda_{\max}\left\{
+ U_j^TD_j^2U_j-(U_j^TD_jU_j)^2\right\}.
+\]
+Thus the design factors are computable without a dense patient matrix.
+
+If at most $q$ sources can be nonlinear, define
+\[
+ C_B=\operatorname{TopSum}_q(B_j),\qquad
+ C_U=\operatorname{TopSum}_q\{(d_j^{\max})^2\rho_j^2\},
+\]
+where $\operatorname{TopSum}_q$ sums the $q$ largest entries. This protects an
+unknown nonlinear subset. If no count restriction is justified, use $q=K$.
+For a contrast, construct these sums separately by arm and add them; no common
+nonlinear subset is assumed. In the targeted experiment, target and valid
+sources remain linear, so $q_a\le K-g_a$ is justified. The treated-arm uniform
+approximation envelope is fixed in advance across all simulated amplitudes.
+
+\subsection{Correct the quadratic certificate, not just its center}
+
+The patient matrix remains zero diagonal, but its linear term changes to
+\[
+ (Qm)_j=\gamma_j(A\Gamma^Tm)_j-\tfrac{a_K}{2}
+        \{D_ju_j+(I-H_j)D_jm_j\}.
+\]
+Therefore
+\[
+ \|Qm\|_2^2\le LD+
+  \frac{a_K^2}{2}\left(\sqrt{C_U}+\tfrac12\sqrt{\sum_jG_j}\right)^2.
+\]
+Let $Q_0$ be the exact-linear constant. Replace it by
+\[
+ Q_0^{\rm app}=Q_0+\frac{a_K^2}{2}
+          \left(C_U+\sqrt{C_U\sum_jG_j}\right).
+\]
+The same Gaussian MGF domination now applies to
+$\widehat D-\E(\widehat D\mid\mathcal D)$, with variance proxy
+$LD+Q_0^{\rm app}$ and the same scale $c$. Since
+$a_K\sum_j\zeta_j\le a_K C_B$, use
+\[
+ y=\widehat D+a_K C_B+c\log(1/\alpha_D)
+\]
+in the earlier quadratic inversion, together with $Q_0^{\rm app}$.
+This gives a valid upper bound for $D$. At zero projection error it reduces
+exactly to the preceding linear-model certificate.
+
+\subsection{Arbitrary bounded invalid means require no supplied amplitude}
+
+If the target and the guaranteed valid sources are exactly linear, only the
+remaining at most $K-g_a$ sources per arm can have nonzero projection residuals.
+For those sources, bounded outcomes alone imply
+\[
+ \|u_{ja}\|_2\le\|m_{ja}\|_2\le\tfrac12\sqrt{n_{ja}}.
+\]
+Thus the preceding formulas can use $\rho_{ja}=\sqrt{n_{ja}}/2$ and
+$q_a=K-g_a$ without knowing an invalid source's nonlinearity amplitude.
+The valid-source mean-bias allowance remains zero. This gives conditional
+coverage with arbitrary bounded invalid-source means, under the retained
+linear target/valid-source and valid-count assumptions.
+
+The smaller declared-envelope option uses a narrower model class and may be
+more precise. The universal bounded-invalid option pays for a larger possible
+variance-centering error. Its present bound can have an $O(n_s^{-1/2})$
+source-radius floor as $K$ grows, even in favorable data. This is a limitation
+of this certificate, not a proved minimax lower bound. The exact-linear
+fourth-root rate must not be attributed automatically to the broader option.
+
+\subsection{Mean-bias budgets remain necessary when valid models are approximate}
+
+If a valid source's conditional score mean differs from $\mu_{t,X}^a$ by at
+most $h_{ja}$, its unknown valid-subset mean is bounded by the average of the
+$g_a$ largest $h_{ja}$. Add those arm-specific averages to the arm dispersion
+radius. For the contrast certificate, average the $g_\cap$ largest
+$h_{j1}+h_{j0}$. The target conditional band likewise needs its own mean-bias
+allowance.
+
+For a common transported mean of the form $\phi^T\beta_t^a+r_t^a$, with
+$\sup_x|r_t^a(x)|\le\epsilon_t^a$, exact balance supplies the computable
+valid-source allowance
+\[
+ h_{ja}=\epsilon_t^a(1+\|\gamma_{ja}\|_1),
+\]
+and the target allowance is the analogous sum over its two arms. These bounds
+are conservative. For an approximately linear target, use universal composition
+protection unless the target coefficient certificate is also extended to cover
+its approximation bias. The empirical Bernstein target experiment in this
+version retains an exactly linear target.
+
+\subsection{A conditional counterexample and what it establishes}
+
+Fix each treatment arm's design to $N/4$ observations at $x=-1$, $N/2$ at
+$x=0$, and $N/4$ at $x=1$, with $N=500$. Fit the basis $(1,x)$ and balance
+to mean zero; then $\gamma_i=1/N$. Valid treated means are $.5$, control means
+are $.4$, and one quarter of sources have treated means
+\[
+ .5+\delta_K+\eta f(x),\qquad f(x)=x^2-.5,\quad
+ \delta_K=2\sqrt{.5/1000}\,K^{-1/4}.
+\]
+All target and valid-source models are linear. For fixed $\eta>0$, $f$ is
+orthogonal to the fitted basis, while the invalid-source average shift is
+$\delta_K$. Thus true source dispersion is
+$D=\tfrac14\tfrac34\delta_K^2\to0$. But
+\[
+ \zeta_{\rm invalid}
+ =\sum_g N_g d_g\{\delta_K+\eta f(x_g)\}\eta f(x_g)
+ \longrightarrow \eta^2\sum_gN_gd_g f(x_g)^2>0.
+\]
+Consequently, the uncorrected dispersion statistic converges to a negative
+constant as $K$ increases with this fixed design and $N$. Its nominal upper
+bound eventually becomes zero, while the pooled bias remains larger than its
+$K^{-1/2}$ outcome-noise scale. The source conditional interval can therefore
+lose coverage. A wide population enlargement can conceal that failure.
+
+This is a counterexample to the proposed \emph{conditional} extension without
+model-error correction. It is not presented as an i.i.d. random-design
+population simulation. The exact grouped-Bernoulli experiment and the separate
+random-design study are reported distinctly. Neither good population coverage
+nor this counterexample alone proves a general nonlinear procedure.

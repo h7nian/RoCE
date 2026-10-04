@@ -1,0 +1,210 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern,amsmath,amssymb,booktabs,graphicx}
+\usepackage[colorlinks=true,linkcolor=blue,urlcolor=blue]{hyperref}
+\setlength{\parindent}{0pt}\setlength{\parskip}{5pt}
+\setlength{\emergencystretch}{2em}
+\title{RoCE-K: target protection, model approximation and design stability}
+\author{}\date{4 October 2026}
+\begin{document}\maketitle
+
+\textbf{Summary.} The target-protection change gives a useful reduction beyond
+range estimation alone, while improving the target-only comparator in parallel.
+A separate stress test exposes a real failure of the uncorrected conditional
+source certificate under nonlinear invalid means. Correcting variance centering
+and its concentration bound restores the guarantee within a stated model class.
+The design study makes the large-$K$ fallback problem concrete. These are
+separate conclusions; favorable population coverage is not used to conceal a
+failed conditional source interval.
+
+\section{Accounting and unchanged scientific targets}
+
+There are 7,200 outcome setting-specific repetitions: 12 target-protection
+settings, eight random-design approximation settings and 16 fixed-design stress
+settings, each with 200 repetitions and 1,000 patients per site. Methods share
+data within each repetition, and approximation amplitudes share seeds within
+source-count settings. Thus these are not 7,200 mutually independent datasets.
+A further 7,800 design-only repetitions vary source sample sizes. Paired broader-
+model reanalyses of 4,800 existing repetitions are not counted again.
+
+The random-design DGP retains the preceding bounded continuous-feature model,
+source covariate tilt .4, four outcome signal slopes, and population TATE .10.
+Target dimensions are $p=4,10$, source counts are $64,256$, and target CATE
+heterogeneity is $h=0,.15$. Constant-effect checks also use $K=2048$; all-valid
+controls use $K=256$. Each arm is guaranteed at least $3K/4$ valid sources.
+
+The approximation panel leaves the means at target and valid sources linear and adds
+$\eta x_1x_2$ to treated means only at invalid sources, retaining their weak
+intercept shift. The final grid is $\eta=0,.05,.10,.15$. A check of the probability support
+rejected the original $\eta=.2$ setting because some support corners
+have negative probabilities. That aborted attempt remains archived; there is
+no probability clipping. Unchanged completed cells were reused only after
+setting equality and exact replay checks.
+
+All feasible procedures use observed summaries and declared model assumptions.
+True coefficients, variances and target ranges are used only for audit and
+coverage evaluation. Both conditional and population intervals, source bands,
+noise radii, dispersion radii and composition radii are saved.
+
+\section{Target protection with a fair target-only comparator}
+
+A single conditional sub-Gaussian confidence ellipsoid for target treatment-
+effect slopes supplies an upper CATE range and an upper empirical CATE variance.
+The range-only method plugs the former into Hoeffding; the empirical Bernstein
+method uses both. A simultaneous-minimum variant spends half its composition
+error on each inequality. Every new source-assisted variant uses identical
+conditional source and target bands, verified directly from saved arrays.
+
+The allocation is .005 for coefficient uncertainty, .01 for composition,
+.01 each for source and target outcome noise, and .015 for dispersion.
+Target-only uses the same coefficient event and .0225 each for its other two
+components. The table's universal control uses this matched allocation; v19's
+allocation is retained separately in the numerical files. The coverage column
+refers to the source-assisted Bernstein interval.
+
+\begin{center}\small
+\resizebox{\linewidth}{!}{\input{target_table}}
+\end{center}
+
+Range-only protection helps at $p=4$ but is typically capped at 2 at $p=10$.
+Variance-sensitive protection improves both dimensions. At $p=4,K=256,h=.15$,
+mean length falls from .2615 to .1584, versus .2853 for the simultaneously
+improved protected target-only method. Ordinary target-normal remains shorter
+at .1214 in that setting. At $p=4,K=2048,h=0$, the new .1119 interval is shorter
+than the ordinary target-normal .1228 interval, without supplying the true
+constant-effect structure to the algorithm. This improvement is not universal:
+at $p=10,K=2048$ the new .1443 interval still exceeds the normal .1234 reference.
+
+\begin{figure}[ht]\centering
+\includegraphics[width=\linewidth]{target_protection.pdf}
+\caption{Constant-effect weak-bias settings, 200 repetitions each. Both the
+source-assisted and protected target-only methods use the new observed-data
+certificate. Ordinary normal intervals remain a separate reference.}
+\end{figure}
+
+The main design proves that, for fixed dimension and well-conditioned target
+designs, the Bernstein composition allowance has order
+$\sigma_\tau n_t^{-1/2}+n_t^{-1}$. At constant CATE it is second order,
+$O_p(n_t^{-1})$, without telling the algorithm that the effect is constant.
+This is a model-specific rate, not a general high-dimensional optimality claim.
+
+\section{Why invalid-source nonlinearity requires a real correction}
+
+For $m_j=E(W_j\mid\mathcal D)$ and $u_j=(I-H_j)m_j$, the leave-out variance
+bias is $\zeta_j=\sum_i d_{ji}m_{ji}u_{ji}$. Consequently
+\[
+ E(\widehat D\mid\mathcal D)=D-a_K\sum_j \zeta_j.
+\]
+Positive variance bias can suppress the dispersion certificate. The repair
+therefore changes both its centering allowance and the MGF variance proxy.
+If valid sources are themselves approximate, their mean-bias allowance must
+also be included; adding only one of these terms is insufficient.
+
+The random-design panel compares the uncorrected method with a fixed treated-
+arm approximation envelope .2 and with the universal bound implied by bounded
+outcomes. In the latter, $\|u_{ja}\|_2\le\sqrt{n_{ja}}/2$, and at most
+$K-g_a$ sources per arm need this bound. It does not require a supplied
+nonlinearity amplitude, but still assumes a linear target and guaranteed valid
+sources. At $K=256,\eta=.15$, population lengths are .1592 (uncorrected), .1629
+(declared envelope), .1739 (bounded invalid means), and .2848 (improved protected
+target-only). The observed conditional coverage in those source rows is 1;
+that alone does not validate the uncorrected nonlinear procedure.
+
+\subsection{A fixed-design counterexample isolates the issue}
+
+Each treatment arm has 500 patients at $x=-1,0,1$ in proportions $1/4,1/2,1/4$.
+The working basis is $(1,x)$. Valid treated means equal .5 and controls .4;
+one quarter of sources have treated means
+\[
+ .5+\delta_K+\eta(x^2-.5),\qquad
+ \delta_K=2\sqrt{.5/1000}\,K^{-1/4}.
+\]
+The grouped-binomial simulator exactly reproduces the patient-level sufficient
+statistics; it is not a Gaussian approximation or a fit to billions of stored
+patient records. Literal patient calculations were independently checked.
+This is a conditional-design experiment, separate from the i.i.d. random-design
+population panel.
+
+At $K=262144$:
+\begin{center}\small
+\resizebox{\linewidth}{!}{\input{projection_table}}
+\end{center}
+
+At $\eta=.4$, the original conditional coverage is zero while population
+coverage is 1 after its wide range-2 enlargement. Conditional width is only
+.000402 without correction. The declared-envelope repair has coverage 1 and
+width .005498. The broader bounded-invalid version has combined conditional
+coverage .990 and width .025698; its source band itself covers in every
+repetition. Its two combined-band misses occur when the target band removes
+truth from the intersection, an event included in the confidence allocation.
+A wider source band need not yield nested reported intersections.
+
+\begin{figure}[ht]\centering
+\includegraphics[width=\linewidth]{projection_stress.pdf}
+\caption{Fixed-design nonlinear-invalid stress at $\eta=.4$. Conditional
+coverage and width are shown separately from population enlargement. The two
+repairs use narrower declared and broader bounded-invalid model classes.}
+\end{figure}
+
+The manuscript provides the corresponding asymptotic counterexample: true
+weak-shift dispersion vanishes, but the uncorrected variance-centering bias
+stays positive at fixed per-site design. Its nominal upper bound can collapse
+to zero. This invalidates that conditional extension, rather than proving an
+unconditional lower bound for every nonlinear method. The universal repair
+also has a cost: its current source radius can stop improving with $K$ at an
+$O(n_s^{-1/2})$ scale. The exact-linear fourth-root rate is not automatically
+inherited by this broader class.
+
+\section{Random-design growth and fallback}
+
+The design-only panel varies $n_s=120,200,1000$, $p=10,45$, $K=4,16,64$ and
+logistic treatment-allocation strength $0,2.5$, keeping $n_t=1000$. Three extra
+$p=4$ settings increase $(n_s,K)$ together. Every design failure is retained.
+
+\begin{center}\small
+\resizebox{\linewidth}{!}{\input{design_table}}
+\end{center}
+
+At $n_s=120,p=45$ and strength 2.5, any-source failure rises from .45 at $K=4$
+to 1 at $K=64$. Raising $n_s$ to 200 removes observed failures in that cell.
+The count-adjusted eligibility column asks only whether discarding failed
+sites would leave $g_a'=\max(0,g_a-m)>0$; no alternative CI was fitted there.
+Eligibility is not evidence of a precision gain.
+
+The main text derives the sufficient bound
+\[
+ 2(K+1)d\exp\{-n_{\min}\kappa/(8L_d)\}
+\]
+for the lower Gram-eigenvalue event, plus explicit leverage and weight bounds.
+A population upper-eigenvalue assumption and a second Chernoff term control
+the numerical condition guard when dimension grows. It can be
+vacuous in finite samples and is reported as such. The table's design diagnostic
+uses the source-only version of this union bound. The growing-$n_s$ trajectory
+shows a regime where it becomes informative, although 200 trials cannot
+empirically verify extremely small probabilities.
+
+Unconditional coverage follows from the protected fallback even when failures
+are common. Useful width and expected width need additional conditions. In
+particular, an $O_p$ width bound is insufficient: the manuscript now controls
+$E\sqrt{U_D}$ and includes the clipped-interval contribution
+$2P(\text{bad design})$. That probability must be controlled on the desired
+width scale, not merely shown to tend to zero.
+
+\section{Verification and remaining work}
+
+The research suite passes 56 tests, including exact non-Gaussian coefficient
+and dispersion checks, direct leave-out calculations, agreement between grouped and patient
+calculations, probability-support checks and scalar Chernoff checks. Final source
+replays preserve the v19 reference and representative new intervals. All old
+methods in the 24 broader-model paired cells match their stored intervals
+exactly. No failure of the target coefficient certificate was observed in the main
+random-design panels.
+
+The next task is to improve the usefulness of the broad model-error certificate
+and test an implemented design-only source-removal policy. A nonlinear or
+sparse target model still needs its own valid fitting-remainder and composition
+certificates. Current-paper RoCE/ENAR defaults and all previous results remain
+unchanged.
+
+\end{document}

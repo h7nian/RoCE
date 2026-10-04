@@ -1,10 +1,9 @@
 \section{Continuous covariates: exact linear balance and leave-out dispersion}
 \label{sec:continuous-balance}
 
-Our target is the population treatment effect $\tau_t$, identified by the
-target data. Sources improve precision while their validity may be unknown.
-This section develops the conditional linear-model branch for continuous
-covariates; the finite-stratum benchmark is retained in the appendix. It combines established exact linear balancing with
+The finite-stratum benchmark does not supply a variance correction for
+arbitrary continuous covariates. This section gives a separate conditional
+linear-model branch. It combines established exact linear balancing with
 leave-out heteroskedastic variance correction \citep{arb2018,kss2020}, and
 then calibrates the source dispersion at the patient level. The new coverage
 argument below is not a direct application of their asymptotic theorems.
@@ -12,8 +11,8 @@ argument below is not a direct application of their asymptotic theorems.
 \subsection{Model and score construction}
 
 Condition on all covariates and treatment assignments, $\mathcal D$. Outcomes
-are independent given $\mathcal D$ and lie in $[0,1]$. For the initial noise-correction derivation, assume for every site $j$ and
-arm $a$, including invalid sources, that
+are independent given $\mathcal D$ and lie in $[0,1]$. For every site $j$ and
+arm $a$, including invalid sources, assume
 \[
  \E(Y_{ji}\mid X_{ji},A_{ji}=a)=\phi(X_{ji})^T\beta_j^a.
 \]
@@ -23,8 +22,6 @@ target conditional mean for arm $a$. There is no minimum nonzero source shift.
 Usual causal identification assumptions connect the target conditional means
 to potential-outcome means. This is an outcome-model-assisted branch, not a
 claim of double robustness under arbitrary outcome misspecification.
-Section~\ref{sec:approximation-control} relaxes the invalid-source model while
-retaining a linear target and the guaranteed valid sources.
 
 Let $b_t=\mathbb P_t\phi(X)$ and let $X_{ja}$ stack the observed design rows
 for source $j$, arm $a$. If the matrix has full column rank, define
@@ -157,11 +154,7 @@ interval is used.
 Use the arm-wise bias certificate
 $B_A=\sum_a\sqrt{(K-g_a)U_a/g_a}$. If $g_\cap=g_1+g_0-K>0$, a contrast
 certificate is $B_C=\sqrt{(K-g_\cap)U_\tau/g_\cap}$. The adaptive option
-uses $\min(B_A,B_C)$ only after simultaneously calibrating both. To see the
-geometry, select any $g$ truly valid source coordinates, whose mean bias is
-zero. For $g<K$, the between-group variance identity gives
-$D\ge g\bar r^2/(K-g)$; hence $|\bar r|\le\sqrt{(K-g)D/g}$.
-For $g=K$ the mean bias is zero. No site classification is needed. This preserves
+uses $\min(B_A,B_C)$ only after simultaneously calibrating both. This preserves
 arm-specific valid sets and permits arbitrarily small source deviations.
 
 The source center and its conditional outcome radius are
@@ -171,25 +164,20 @@ The source center and its conditional outcome radius are
 \]
 The full-target linear-balance estimate has the analogous radius
 $r_T=\sqrt{\log(2/\alpha_T)\sum_aS_{ta}/2}$.
-Let $J_S=[T_S\pm(r_S+B)]$ and $J_T=[T_t\pm r_T]$. Their conditional
-compatibility interval is the intersection when nonempty and the shorter band
-otherwise. Projecting the target point onto that interval gives one fixed
-point rule; the midpoint remains a comparison. Source-design failure uses
-$J_T$, while target-design failure returns $[-1,1]$. For a \emph{declared} CATE range bound $R$, add
+Use the previous conditional intersection, shorter-empty-fallback, and target
+projection rules. For a \emph{declared} CATE range bound $R$, add
 $R\sqrt{\log(2/\alpha_X)/(2n_t)}$ to the conditional endpoints and clip to
-$[-1,1]$. The original benchmark uses the universal bound $R=2$. A sensitivity
+$[-1,1]$. The primary analysis uses the universal bound $R=2$. A sensitivity
 with $R=.5$ imposes an extra class assumption; it is not an estimated range or
 an input obtained from the simulated truth.
 
-The original benchmark allocation is $.01$ for target composition, $.01$ each for
+The fixed failure allocation is $.01$ for target composition, $.01$ each for
 source and target outcome noise, and $.02$ for the dispersion family. In the
 adaptive case, the latter splits into $.005$ per arm and $.01$ for the contrast.
 The arm-only option uses $.01$ per arm. Thus the finite-sample coverage bound
 is at least $.95$ for every $K$ under the stated class. A standalone protected
 target comparator instead allocates $.025$ each to outcomes and composition.
 An ordinary target-normal interval is retained as an asymptotic comparison.
-Section~\ref{sec:target-protection} specifies the updated allocation when
-range and variance are estimated from target outcomes.
 
 If uniformly $S_j=O(n_s^{-1})$, $G_j,F_j=O(n_s^{-3})$,
 $\max_i d_{ji}=O(n_s^{-2})$, and valid proportions stay positive, then at
