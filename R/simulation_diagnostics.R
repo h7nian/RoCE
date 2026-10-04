@@ -6,9 +6,14 @@
 
 .simulation_diagnostic_group_columns <- function(results) {
   preferred <- c(
-    "experiment", "dgp_type", "outcome_family", "config", "heterogeneity_type",
+    "experiment", "dgp_type", "dgp_version", "dgp_configuration", "working_dimension",
+    "truth_method", "outcome_family", "config", "heterogeneity_type",
     "estimand_type", "p", "K", "rho", "cutoff",
     "n_site", "n_folds", "nlambda_init", "nuisance_lambda_rule",
+    "target_nuisance_method", "source_validation_method", "source_nuisance_method", "aggregation_mode",
+    "calibration_layout", "compiled_nuisance_solver", "nuisance_cv_certificate", "nuisance_tol", "nuisance_training_policy",
+    "roce_crossfit_levels", "calibration_recipe", "target_propensity_initialization",
+    "target_training_radius", "target_inference_radius", "baseline_inference_policy",
     "n_bootstrap", "n_weight_bootstrap", "M_tau", "M_tau_inference",
     "estimand_scope", "method"
   )

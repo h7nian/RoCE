@@ -1,7 +1,7 @@
 #!/bin/bash
 # NOTE: Despite the .cmd suffix, this is a Bash SLURM submission script.
-#SBATCH --output=log/%A_%a.out
-#SBATCH --error=log/%A_%a.err
+#SBATCH --output=/scratch.global/zhan9381/FACE-HD/%A_%a.out
+#SBATCH --error=/scratch.global/zhan9381/FACE-HD/%A_%a.err
 #SBATCH --time=2-00:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -14,7 +14,7 @@
 #SBATCH --cpus-per-task=64
 #SBATCH --mem=96g
 #SBATCH --job-name=RoCE
-#SBATCH -p preempt,saffo-2tb,msismall,msilarge,msilong,amdsmall,agsmall,amdlarge,amd512,amd2tb
+#SBATCH -p preempt,msismall,agsmall,amdsmall,amd512,ag2tb,msibigmem,saffo-2tb
 #SBATCH --nice=5
 #SBATCH --requeue
 #SBATCH --signal=B:USR1@120
@@ -31,7 +31,7 @@
 # When preempted, SLURM sends this signal before killing the job
 handle_preemption() {
     echo "$(date): Received preemption signal (SIGUSR1). Saving checkpoint..."
-    local checkpoint_dir="${CHECKPOINT_DIR:-${SLURM_SUBMIT_DIR}/checkpoints}"
+    local checkpoint_dir="${CHECKPOINT_DIR:-/scratch.global/${USER}/FACE-HD/runs/checkpoints}"
     mkdir -p "${checkpoint_dir}"
     # Touch a flag file to signal R to save checkpoint immediately
     touch "${checkpoint_dir}/.preempt_signal_${SLURM_JOB_ID}"
@@ -107,7 +107,7 @@ export NESTED_PARALLEL=1
 #        Verified C1 at n=5000,K=3,p=10: K_f=3 raised one/two-round
 #        coverage from 0.886/0.878 to 0.945/0.955.
 # arg13: n_sims (integer) - default: 500
-# arg14: dgp_type (roce, face) - default: roce
+# arg14: dgp_type (bounded, roce, face) - default: bounded
 # arg15: ate_deviation (numeric, FACE paper only) - default: 0.0
 # arg16: n_deviated_sites (integer, FACE paper only) - default: 0
 # arg17: use_lambda_cache (TRUE/FALSE) - default: TRUE
@@ -145,13 +145,14 @@ HETEROGENEITY_TYPE="${arg10:-none}"
 SHIFT_STRENGTH="${arg11:-0.5}"
 N_FOLDS="${arg12:-10}"
 N_SIMS="${arg13:-500}"
-DGP_TYPE="${arg14:-roce}"
+DGP_TYPE="${arg14:-bounded}"
 ATE_DEVIATION="${arg15:-0.0}"
 N_DEVIATED_SITES="${arg16:-0}"
 USE_LAMBDA_CACHE="${arg17:-TRUE}"
 VERBOSE_EVERY="${arg18:-10}"
 PARALLEL_STRATEGY="${arg19:-outer_priority}"
 ESTIMATE_ATE="${arg20:-FALSE}"
+if [[ "$DGP_TYPE" == "bounded" && -z "${arg20:-}" ]]; then ESTIMATE_ATE="TRUE"; fi
 
 normalize_bool() {
     case "$1" in
@@ -173,8 +174,8 @@ if [[ ! "$PARALLEL_STRATEGY" =~ ^(outer_priority|balanced|outer_only)$ ]]; then
     echo "ERROR: parallel_strategy must be one of: outer_priority, balanced, outer_only."
     exit 2
 fi
-if [[ ! "$DGP_TYPE" =~ ^(roce|face)$ ]]; then
-    echo "ERROR: dgp_type must be one of: roce, face."
+if [[ ! "$DGP_TYPE" =~ ^(bounded|roce|face)$ ]]; then
+    echo "ERROR: dgp_type must be one of: bounded, roce, face."
     exit 2
 fi
 if [[ ! "$OUTCOME_TYPE" =~ ^(binary|continuous)$ ]]; then
@@ -204,20 +205,22 @@ fi
 # Must match main.R and main.sh::build_setting_id()
 if [[ -n "${SETTING_ID_FROM_FILE:-}" ]]; then
     SETTING_ID="${SETTING_ID_FROM_FILE}"
-elif [[ "$DGP_TYPE" == "face" ]]; then
-    SETTING_ID="n${arg1}_K${arg2}_p${arg3}_${arg4}_${ESTIMAND_TYPE}_${OUTCOME_TYPE}_face_dev${ATE_DEVIATION}_nd${N_DEVIATED_SITES}_kf${N_FOLDS}_ate${ESTIMATE_ATE}"
+elif [[ "$DGP_TYPE" == "face" || "$DGP_TYPE" == "bounded" ]]; then
+    SETTING_ID="n${arg1}_K${arg2}_p${arg3}_${arg4}_${ESTIMAND_TYPE}_${OUTCOME_TYPE}_${DGP_TYPE}_dev${ATE_DEVIATION}_nd${N_DEVIATED_SITES}_kf${N_FOLDS}_ate${ESTIMATE_ATE}"
 else
     SETTING_ID="n${arg1}_K${arg2}_p${arg3}_${arg4}_${ESTIMAND_TYPE}_${OUTCOME_TYPE}_${SITE_ALLOCATION}_tf${TRANSFORM_TYPE}_ht${HETEROGENEITY_TYPE}_ss${SHIFT_STRENGTH}_kf${N_FOLDS}_ate${ESTIMATE_ATE}"
 fi
 
 # Set directories with setting-specific paths
-export CHECKPOINT_DIR="checkpoints/${arg4}"
-export RESULTS_DIR="results"
-mkdir -p ${CHECKPOINT_DIR} ${RESULTS_DIR} log
+RUN_ROOT="${ROCE_RUN_ROOT:-/scratch.global/${USER}/FACE-HD/runs}"
+export CHECKPOINT_DIR="${CHECKPOINT_DIR:-${RUN_ROOT}/checkpoints/${arg4}}"
+export RESULTS_DIR="${RESULTS_DIR:-${RUN_ROOT}/results}"
+LOG_DIR="${RUN_ROOT}/log"
+mkdir -p "$CHECKPOINT_DIR" "$RESULTS_DIR" "$LOG_DIR"
 
 # Create unique log file name using setting id
 ARRAY_TAG="${SLURM_ARRAY_TASK_ID:-0}"
-LOG_FILE="log/${SETTING_ID}_${SLURM_JOB_ID}_${ARRAY_TAG}.out"
+LOG_FILE="${LOG_DIR}/${SETTING_ID}_${SLURM_JOB_ID}_${ARRAY_TAG}.out"
 
 echo "=============================================="
 echo "RoCE Simulation Job"
@@ -246,7 +249,7 @@ echo "  parallel_strategy:   ${PARALLEL_STRATEGY}"
 echo "  estimate_ate:        ${ESTIMATE_ATE}"
 echo "  dgp_type:            ${DGP_TYPE}"
 echo "  ROCE_MAIN_USE_SOURCE: ${ROCE_MAIN_USE_SOURCE}"
-if [[ "$DGP_TYPE" == "face" ]]; then
+if [[ "$DGP_TYPE" == "face" || "$DGP_TYPE" == "bounded" ]]; then
 echo "  ate_deviation:       ${ATE_DEVIATION}"
 echo "  n_deviated_sites:    ${N_DEVIATED_SITES}"
 fi

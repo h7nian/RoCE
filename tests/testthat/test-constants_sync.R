@@ -37,6 +37,7 @@ test_that("R and C++ numerical constants are in sync", {
     list(cpp = "VAR_MIN",             r_val = VARIANCE_MIN),
     list(cpp = "WEIGHT_MIN",          r_val = WEIGHT_MIN),
     list(cpp = "WEIGHT_MAX",          r_val = WEIGHT_MAX),
+    list(cpp = "RATIO_CLIP_MAX",      r_val = INFERENCE_RATIO_MAX),
     list(cpp = "PARAM_MAX",           r_val = PARAM_MAX),
     list(cpp = "CV_FAILURE_PATIENCE", r_val = NUISANCE_CV_FAILURE_PATIENCE),
     list(cpp = "ACTIVE_SET_THRESHOLD", r_val = ACTIVE_SET_THRESHOLD),

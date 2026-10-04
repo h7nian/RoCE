@@ -10,10 +10,13 @@ build_rhc_data_split(
   target_site = NULL,
   phi = base::identity,
   standardize_features = TRUE,
-  seed = 42L
+  seed = 42L,
+  preprocessing_rows = NULL
 )
 }
 \arguments{
+\item{preprocessing_rows}{Optional retained-cohort training rows used to compute
+feature centers and scales. The fitted transform is applied to every row.}
 \item{cohort}{Output of \code{\link{build_rhc_cohort}}. If \code{NULL},
 the cohort is built with default options.}
 

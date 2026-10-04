@@ -35,9 +35,7 @@ results/
 # Per-job temp directories (used by diagnosis pipeline checkpoint state)
 tmp/
 
-# Rcpp generated files
-src/RcppExports.cpp
-R/RcppExports.R
+# Native registration bindings are committed so R CMD INSTALL works after cloning.
 
 
 # ---- added 2026-09-07 (iterate-with-discipline bootstrap) ----
@@ -64,3 +62,9 @@ diagnosis/face_probe/validation/chunks*/
 diagnosis/face_probe/validation/*.out
 diagnosis/logs/
 diagnosis/out/
+
+# Generated diagnostic output; source and protocols remain versioned.
+diagnosis/**/logs/
+diagnosis/**/out/
+__pycache__/
+*.pyc

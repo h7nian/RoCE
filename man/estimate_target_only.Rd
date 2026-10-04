@@ -21,7 +21,8 @@ estimate_target_only(
 \item{use_rcal}{Logical. If TRUE, use RCAL. If FALSE (default), use glmnet.}
 
 \item{use_crossfit}{Logical. If TRUE (default), use cross-fitted nuisances
-for variance-valid inference (use_rcal is ignored in this mode).}
+nuisance fitting. Combining it with \code{use_rcal = TRUE} is unsupported
+and raises an error.}
 
 \item{n_folds}{Number of cross-fitting folds (default uses data-driven value).}
 

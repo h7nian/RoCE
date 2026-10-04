@@ -47,6 +47,7 @@ export(calculate_aggregated_variance)
 
 # Data generation exports
 export(generate_simulation_data)
+export(generate_bounded_data)
 export(split_data_by_site)
 export(generate_base_covariates)
 export(transform_covariates)

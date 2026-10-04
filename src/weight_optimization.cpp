@@ -71,6 +71,29 @@ inline double compute_diagonal_curvature_coordinate(
     return std::max(hess_diag, NumericalConstants::VAR_MIN);
 }
 
+inline std::pair<double, double> weight_kkt_residual(
+        const VectorXd& eta, const VectorXd& penalties,
+        const WeightSmoothContext& ctx) {
+    const double sum_eta = eta.sum();
+    const double dotC = eta.dot(ctx.C_ot);
+    VectorXd covariance_product = VectorXd::Zero(eta.size());
+    if (ctx.has_cross) covariance_product = ctx.C_cross_sym * eta;
+    double residual = 0.0;
+    double scale = 0.0;
+    for (int j = 0; j < eta.size(); ++j) {
+        const double gradient = compute_smooth_gradient_coordinate(
+            j, eta(j), sum_eta, dotC, covariance_product(j), ctx);
+        const double violation = eta(j) == 0.0 ?
+            std::max(std::abs(gradient) - penalties(j), 0.0) :
+            std::abs(gradient + std::copysign(penalties(j), eta(j)));
+        residual = std::max(residual, violation);
+        scale = std::max(scale, compute_diagonal_curvature_coordinate(j, ctx));
+        scale = std::max(scale, std::abs(2.0 * (ctx.C_ot(j) - ctx.V_ot) / ctx.n_t));
+        scale = std::max(scale, penalties(j));
+    }
+    return std::make_pair(residual, scale);
+}
+
 // Off-diagonal Hessian entry H_{jk} for j != k, used only to detect whether
 // the quadratic objective separates across coordinates. From
 //   ∂²V/∂η_j ∂η_k = 2*V_ot/n_t - 2*C_ot(j)/n_t - 2*C_ot(k)/n_t
@@ -304,10 +327,17 @@ List optimize_weights_cpp(const VectorXd& estimates, const VectorXd& V_t,
                 );
             }
         }
-        return List::create(Named("weights")    = eta,
-                            Named("converged")  = true,
-                            Named("iterations") = 1,
-                            Named("psd_ridge")  = psd_ridge);
+        const auto kkt = weight_kkt_residual(eta, penalties, smooth_ctx);
+        if (kkt.first <= tol * kkt.second) {
+            return List::create(Named("weights") = eta,
+                                Named("converged") = true,
+                                Named("iterations") = 1,
+                                Named("psd_ridge") = psd_ridge,
+                                Named("kkt_residual") = kkt.first,
+                                Named("kkt_threshold") = tol * kkt.second);
+        }
+        // Numerically small coupling can matter for large weights. Continue
+        // on the exact objective if the diagonal shortcut fails its KKT check.
     }
 
     for (int iter = 0; iter < max_iter; iter++) {
@@ -368,17 +398,25 @@ List optimize_weights_cpp(const VectorXd& estimates, const VectorXd& V_t,
         }
         
         if (check_convergence_cpp(eta_old, eta, tol)) {
-            return List::create(Named("weights") = eta, 
-                               Named("converged") = true, 
-                               Named("iterations") = iter + 1,
-                               Named("psd_ridge") = psd_ridge);
+            const auto kkt = weight_kkt_residual(eta, penalties, smooth_ctx);
+            if (kkt.first <= tol * kkt.second) {
+                return List::create(Named("weights") = eta,
+                                   Named("converged") = true,
+                                   Named("iterations") = iter + 1,
+                                   Named("psd_ridge") = psd_ridge,
+                                   Named("kkt_residual") = kkt.first,
+                                   Named("kkt_threshold") = tol * kkt.second);
+            }
         }
     }
     
+    const auto kkt = weight_kkt_residual(eta, penalties, smooth_ctx);
     return List::create(Named("weights") = eta, 
                        Named("converged") = false, 
                        Named("iterations") = max_iter,
-                       Named("psd_ridge") = psd_ridge);
+                       Named("psd_ridge") = psd_ridge,
+                       Named("kkt_residual") = kkt.first,
+                       Named("kkt_threshold") = tol * kkt.second);
 }
 
 // C++ version of aggregated estimate calculation

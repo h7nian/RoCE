@@ -17,7 +17,7 @@ validate_simulation_params(
   K = NULL,
   p = NULL,
   config = NULL,
-  dgp_type = "face",
+  dgp_type = "bounded",
   ate_deviation = 0,
   n_deviated_sites = 0L,
   warn_ignored = TRUE
@@ -48,7 +48,7 @@ validate_simulation_params(
 
 \item{config}{Configuration string (NULL to skip, else must be "C1"-"C4")}
 
-\item{dgp_type}{"face" (FACE negative-transfer DGP, default) or "roce"}
+\item{dgp_type}{"bounded" (default), "face", or "roce".}
 
 \item{ate_deviation}{Numeric ATE deviation for FACE paper non-informative sites (>= 0)}
 

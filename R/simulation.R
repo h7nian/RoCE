@@ -10,7 +10,8 @@
 #   3. run_simulation_study - Full study orchestration with checkpointing
 
 .is_tate_method <- function(method) {
-  grepl("_ate(?:_armwise|_hard_threshold|_quadratic_bias)?$", method, perl = TRUE)
+  grepl("_ate(?:_armwise|_hard_threshold|_quadratic_bias|_separate_arms|_joint_tate)?$",
+        method, perl = TRUE)
 }
 
 .bind_sim_result_list <- function(rows) {
@@ -104,6 +105,7 @@
   if (is.null(components) || is.null(components$variance_method)) {
     return(list(
       comparison_variance_method = NA_character_,
+      comparison_inference_scope = "not_recorded",
       comparison_se_analytic = NA_real_,
       comparison_se_bootstrap = NA_real_,
       comparison_n_bootstrap = NA_integer_,
@@ -118,6 +120,7 @@
   dr <- components$dr_weight_diagnostics %||% list()
   list(
     comparison_variance_method = as.character(components$variance_method),
+    comparison_inference_scope = components$inference_scope %||% "not_recorded",
     comparison_se_analytic = as.numeric(components$se_analytic),
     comparison_se_bootstrap = as.numeric(components$se_bootstrap),
     comparison_n_bootstrap = as.integer(components$n_bootstrap),
@@ -495,6 +498,23 @@
 }
 
 .named_source_diagnostics <- function(result, prefix = "") {
+  if ((result$aggregation_mode %||% "common_tate") != "common_tate") {
+    diagnostics <- lapply(c("mu1", "mu0"), function(arm) {
+      arm_result <- result$arm_results[[arm]]
+      # The pointwise candidate means remain arm-specific, while the weights
+      # may have been jointly optimized. Their Wald discrepancies are also
+      # arm-specific, so reuse the same checked diagnostic reconstruction.
+      arm_phase2 <- result$intermediates$phase2_by_arm[[arm]]
+      arm_result$weights <- result$weights_by_arm[[arm]]
+      for (field in c("fold_weights", "fold_wald_statistics",
+                      "fold_penalty_coefficients", "fold_source_included")) {
+        arm_result[[field]] <- arm_phase2[[field]]
+        colnames(arm_result[[field]]) <- names(arm_result$weights)
+      }
+      .named_source_diagnostics(arm_result, paste0(prefix, arm, "_"))
+    })
+    return(unlist(diagnostics, use.names = TRUE))
+  }
   required <- c(
     "weights", "source_estimates", "target_only", "fold_weights",
     "fold_wald_statistics", "fold_penalty_coefficients"
@@ -759,8 +779,16 @@
     ), call. = FALSE)
   }
   clip_total <- result$clip_diagnostics$total
+  anchor_weights <- if ((result$aggregation_mode %||% "common_tate") == "common_tate") {
+    c(target_anchor_weight = 1 - sum(result$weights))
+  } else {
+    c(target_anchor_weight_mu1 = 1 - sum(result$weights_by_arm$mu1),
+      target_anchor_weight_mu0 = 1 - sum(result$weights_by_arm$mu0))
+  }
+  optimizer_iterations <- unlist(result$fold_weight_optimizer_iterations, use.names = FALSE)
+  optimizer_ridge <- unlist(result$fold_weight_psd_ridge, use.names = FALSE)
   c(
-    target_anchor_weight = 1 - sum(result$weights),
+    anchor_weights,
     mean_abs_source_weight = mean(abs(result$weights)),
     max_abs_source_weight = max(abs(result$weights)),
     max_wald_statistic = max(result$fold_wald_statistics),
@@ -768,10 +796,10 @@
     penalized_source_fold_fraction =
       mean(result$fold_penalty_coefficients > 0),
     max_weight_optimizer_iterations =
-      max(result$fold_weight_optimizer_iterations),
-    max_weight_psd_ridge = max(result$fold_weight_psd_ridge),
+      max(optimizer_iterations),
+    max_weight_psd_ridge = max(optimizer_ridge),
     weight_psd_ridge_fold_fraction =
-      mean(result$fold_weight_psd_ridge > 0),
+      mean(optimizer_ridge > 0),
     se_fixed_weights = result$se_fixed_weights,
     weight_layer_indirect_variance = result$weight_layer$indirect_variance,
     weight_layer_cross_term = result$weight_layer$cross_term,
@@ -840,7 +868,7 @@
 #'   \code{effect_mod_strength}.
 #' @param shift_strength Numeric multiplier for covariate shift intensity.
 #' @param n_folds Integer. Number of cross-fitting folds (>= 3, default 10)
-#' @param use_lambda_cache Logical. If TRUE, enable lambda caching
+#' @param use_lambda_cache Logical. If TRUE, reuse identical nuisance fits
 #'   within cross-fitting nuisance-model loops.
 #' @param aggregation_lambda Positive truncated-Wald penalty multiplier.
 #'   Its reciprocal is the source penalty-activation cutoff. The locked
@@ -873,7 +901,8 @@
 #' @param n_source_sizes Optional integer vector of per-site source sample
 #'   sizes (FACE DGP only); when supplied, \code{K} and the total are derived
 #'   from it and \code{n_total} is ignored.
-#' @param dgp_type Data-generating process, \code{"face"} or \code{"roce"}.
+#' @param dgp_type Data-generating process, \code{"face"}, \code{"roce"}, or \code{"bounded"}.
+#' @param dgp_control Bounded-DGP controls; see \code{\link{generate_bounded_data}}.
 #' @param ate_deviation Non-negative additive source treatment-shift deviation
 #'   under the FACE DGP: a mean shift for Gaussian outcomes and a log-odds
 #'   shift for binary outcomes. The historical argument name is retained for
@@ -903,6 +932,10 @@
 #'   least 2. The analytic standard error remains in \code{se}.
 #' @return data frame with results
 #' @export
+#' @inheritParams run_crossfit
+#' @param additional_aggregation_modes Optional subset of
+#'   \code{c("separate_arms", "joint_tate")}. Adds TATE comparison rows using
+#'   the same fitted nuisances as the primary common-weight estimator.
 run_single_simulation <- function(sim_id, n_total = 1000, K = 3, p = 4,
                                  config = "C1",
                                  methods = c("two_round_crossfit", "one_round_crossfit",
@@ -928,7 +961,7 @@ run_single_simulation <- function(sim_id, n_total = 1000, K = 3, p = 4,
                                  rho_reuse_reference = NULL,
                                  parallel_treatment_arms = FALSE,
                                  # FACE paper DGP parameters
-                                 dgp_type = "face",
+                                 dgp_type = "bounded",
                                  ate_deviation    = 0.0,
                                  n_deviated_sites = 0L,
                                  deviation_mechanism = c("treated_arm", "both_arms"),
@@ -939,7 +972,41 @@ run_single_simulation <- function(sim_id, n_total = 1000, K = 3, p = 4,
                                  nuisance_lambda_rule = c("min", "1se"),
                                  include_hard_threshold_diagnostic = FALSE,
                                  include_quadratic_bias_rule = TRUE,
-                                 n_weight_bootstrap = 0L) {
+                                 n_weight_bootstrap = 0L,
+                                 nuisance_solver = NULL,
+                                 target_nuisance_method = c("lasso", "hou_calibrated"),
+                                 source_validation_method = c("initial", "calibrated"),
+                                 calibration_layout = c("block", "compact"),
+                                 additional_aggregation_modes = character(0),
+                                 nuisance_tol = TOL_DEFAULT, calibration_control = NULL,
+                                 nuisance_cache_dir = NULL, dgp_control = NULL, checkpoint_dir = NULL,
+                                 crossfit_layers = NULL, nuisance_cv_certificate = NULL) {
+  if (!is.null(checkpoint_dir) && !is.null(rho_reuse_reference)) {
+    stop("checkpoint_dir cannot be combined with rho_reuse_reference.", call. = FALSE)
+  }
+  if (!is.null(dgp_control) && dgp_type != "bounded") {
+    stop("dgp_control applies only to dgp_type = 'bounded'.", call. = FALSE)
+  }
+  if (dgp_type == "bounded") dgp_control <- .bounded_dgp_control(dgp_control)
+  target_nuisance_method <- match.arg(target_nuisance_method)
+  calibration_control <- .validate_calibration_control(calibration_control, target_nuisance_method)
+  source_validation_method <- .resolve_crossfit_validation(
+    source_validation_method, crossfit_layers, calibration_control, target_nuisance_method)
+  calibration_layout <- match.arg(calibration_layout)
+  nuisance_tol <- .validate_lambda_scalar(nuisance_tol, "run_single_simulation", "nuisance_tol", allow_zero = FALSE)
+  if (!is.character(additional_aggregation_modes) || anyNA(additional_aggregation_modes) ||
+      any(!additional_aggregation_modes %in% c("separate_arms", "joint_tate"))) {
+    stop("additional_aggregation_modes must contain separate_arms and/or joint_tate.", call. = FALSE)
+  }
+  additional_aggregation_modes <- unique(additional_aggregation_modes)
+  if (length(additional_aggregation_modes) && !isTRUE(estimate_ate)) {
+    stop("additional_aggregation_modes requires estimate_ate=TRUE.", call. = FALSE)
+  }
+
+  previous_solver <- .set_nuisance_solver(nuisance_solver)
+  on.exit(.restore_nuisance_solver(previous_solver), add = TRUE)
+  previous_certificate <- .set_nuisance_cv_certificate(nuisance_cv_certificate)
+  on.exit(.restore_nuisance_cv_certificate(previous_certificate), add = TRUE)
 
   nuisance_lambda_rule <- .match_nuisance_lambda_rule(
     nuisance_lambda_rule, "run_single_simulation",
@@ -1025,12 +1092,12 @@ run_single_simulation <- function(sim_id, n_total = 1000, K = 3, p = 4,
 
   # Resolve explicit per-site sample sizes up front so logging and result
   # bookkeeping use a concrete (n_total, K) consistent with the allocation.
-  if (dgp_type == "face" && (!is.null(n_source_sizes) || !is.null(n_target))) {
+  if (dgp_type %in% c("face", "bounded") && (!is.null(n_source_sizes) || !is.null(n_target))) {
     site_sizes <- resolve_face_site_sizes(n_total, n_target, n_source_sizes, K)
     n_total    <- site_sizes$n_total
     K          <- site_sizes$K
   }
-  result_heterogeneity_type <- if (identical(dgp_type, "face")) {
+  result_heterogeneity_type <- if (dgp_type %in% c("face", "bounded")) {
     .face_heterogeneity_type(
       ate_deviation, n_deviated_sites, effect_mod_strength, deviation_mechanism
     )
@@ -1067,7 +1134,7 @@ run_single_simulation <- function(sim_id, n_total = 1000, K = 3, p = 4,
                                    effect_mod_strength = effect_mod_strength,
                                    n_target         = n_target,
                                    n_source_sizes   = n_source_sizes,
-                                   warn_ignored     = FALSE)
+                                   warn_ignored     = FALSE, dgp_control = dgp_control)
   data_split <- split_data_by_site(data)
   stage_times$data_gen <- as.numeric(difftime(Sys.time(), data_gen_start, units = "secs"))
 
@@ -1143,6 +1210,11 @@ run_single_simulation <- function(sim_id, n_total = 1000, K = 3, p = 4,
           precomputed_folds = precomputed_folds,
           target_only_ps_cache = target_only_ps_cache,
           target_only_fit_cache = target_only_fit_cache,
+          target_nuisance_method = target_nuisance_method,
+          source_validation_method = source_validation_method, crossfit_layers = crossfit_layers,
+          calibration_layout = calibration_layout, nuisance_tol = nuisance_tol,
+          calibration_control = calibration_control, nuisance_cache_dir = nuisance_cache_dir,
+          checkpoint_dir = checkpoint_dir,
           nuisance_lambda_rule = nuisance_lambda_rule,
           parallel_arms = parallel_treatment_arms
         )
@@ -1152,7 +1224,24 @@ run_single_simulation <- function(sim_id, n_total = 1000, K = 3, p = 4,
           reference_tate$arm_results$mu1$fold_results[[1L]]$
             source_results[[1L]]$nuisance_nlambda
         )
+        reference_control <- .validate_calibration_control(
+          reference_tate$calibration_control, reference_tate$target_nuisance_method)
+        reference_validation <- .match_source_validation(
+          reference_tate$source_validation_method, reference_control)
+        same_validation <- identical(reference_validation, source_validation_method) ||
+          (.complete_source_validation(reference_validation) &&
+           .complete_source_validation(source_validation_method))
         if (!identical(reference_nlambda, as.integer(nlambda_init)) ||
+            !identical(reference_tate$use_lambda_cache, use_lambda_cache) ||
+            !identical(reference_tate$nuisance_cache_dir, nuisance_cache_dir) ||
+            !identical(reference_tate$nuisance_training_policy, NUISANCE_TRAINING_POLICY) ||
+            !identical(reference_tate$nuisance_solver, nuisance_solver_cpp()) ||
+            !identical(reference_tate$nuisance_cv_certificate %||% FALSE, .nuisance_cv_certificate_enabled()) ||
+            !identical(reference_tate$target_nuisance_method, target_nuisance_method) ||
+            !same_validation ||
+            !identical(reference_tate$calibration_layout, calibration_layout) ||
+            !identical(reference_tate$nuisance_tol, nuisance_tol) ||
+            !identical(reference_control, calibration_control) ||
             !identical(reference_tate$nuisance_lambda_rule,
                        nuisance_lambda_rule) ||
             !isTRUE(all.equal(reference_tate$M_tau, M_tau)) ||
@@ -1160,8 +1249,8 @@ run_single_simulation <- function(sim_id, n_total = 1000, K = 3, p = 4,
                              M_tau_inference))) {
           stop(
             paste0(
-              "rho_reuse_reference nuisance grid, CV rule, and truncation ",
-              "parameters must match the current run."
+              "rho_reuse_reference nuisance grid, CV rule, cache policy, training ",
+              "policy, solver, calibration settings, and truncation parameters must match the current run."
             ),
             call. = FALSE
           )
@@ -1197,6 +1286,11 @@ run_single_simulation <- function(sim_id, n_total = 1000, K = 3, p = 4,
         precomputed_folds = precomputed_folds,
         target_only_ps_cache = target_only_ps_cache,
         target_only_fit_cache = target_only_fit_cache,
+          target_nuisance_method = target_nuisance_method,
+          source_validation_method = source_validation_method, crossfit_layers = crossfit_layers,
+          calibration_layout = calibration_layout, nuisance_tol = nuisance_tol,
+          calibration_control = calibration_control, nuisance_cache_dir = nuisance_cache_dir,
+          checkpoint_dir = checkpoint_dir,
         nuisance_lambda_rule = nuisance_lambda_rule
       )
     }
@@ -1228,7 +1322,8 @@ run_single_simulation <- function(sim_id, n_total = 1000, K = 3, p = 4,
   }
 
   # Run two-round cross-fitting algorithm
-  # Note: n_folds >= 3 is required for proper two-level cross-fitting calibration
+  # Calibrated inner validation uses three-level cross-fitting (minimum 4
+  # original folds); the initial-validation comparison accepts 3 folds.
   if ("two_round_crossfit" %in% methods) {
     two_round_start <- Sys.time()
     log_info(verbose, "    Running two-round cross-fitting (nlambda=%d)...\n", nlambda_init)
@@ -1248,6 +1343,11 @@ run_single_simulation <- function(sim_id, n_total = 1000, K = 3, p = 4,
         precomputed_folds = precomputed_folds,
         target_only_ps_cache = target_only_ps_cache,
         target_only_fit_cache = target_only_fit_cache,
+          target_nuisance_method = target_nuisance_method,
+          source_validation_method = source_validation_method, crossfit_layers = crossfit_layers,
+          calibration_layout = calibration_layout, nuisance_tol = nuisance_tol,
+          calibration_control = calibration_control, nuisance_cache_dir = nuisance_cache_dir,
+          checkpoint_dir = checkpoint_dir,
         nuisance_lambda_rule = nuisance_lambda_rule,
         parallel_arms = parallel_treatment_arms
       )
@@ -1269,6 +1369,11 @@ run_single_simulation <- function(sim_id, n_total = 1000, K = 3, p = 4,
         precomputed_folds = precomputed_folds,
         target_only_ps_cache = target_only_ps_cache,
         target_only_fit_cache = target_only_fit_cache,
+          target_nuisance_method = target_nuisance_method,
+          source_validation_method = source_validation_method, crossfit_layers = crossfit_layers,
+          calibration_layout = calibration_layout, nuisance_tol = nuisance_tol,
+          calibration_control = calibration_control, nuisance_cache_dir = nuisance_cache_dir,
+          checkpoint_dir = checkpoint_dir,
         nuisance_lambda_rule = nuisance_lambda_rule
       )
     }
@@ -1426,6 +1531,7 @@ run_single_simulation <- function(sim_id, n_total = 1000, K = 3, p = 4,
     tate_start <- Sys.time()
     tate_truth <- data$mu1_true - data$mu0_true
     target_only_tate <- NULL
+    target_anchor_tate <- NULL
 
     for (crossfit_method in c("two_round_crossfit", "one_round_crossfit")) {
       if (crossfit_method %in% methods) {
@@ -1447,6 +1553,11 @@ run_single_simulation <- function(sim_id, n_total = 1000, K = 3, p = 4,
             precomputed_folds = precomputed_folds,
             target_only_ps_cache = target_only_ps_cache,
             target_only_fit_cache = target_only_fit_cache,
+          target_nuisance_method = target_nuisance_method,
+          source_validation_method = source_validation_method, crossfit_layers = crossfit_layers,
+          calibration_layout = calibration_layout, nuisance_tol = nuisance_tol,
+          calibration_control = calibration_control, nuisance_cache_dir = nuisance_cache_dir,
+          checkpoint_dir = checkpoint_dir,
             nuisance_lambda_rule = nuisance_lambda_rule
           )
         }
@@ -1523,7 +1634,9 @@ run_single_simulation <- function(sim_id, n_total = 1000, K = 3, p = 4,
         # sensitivity reuse even when the two arms were fitted sequentially.
         direct_tate_results[[crossfit_method]] <- direct_tate_res
         if (is.null(target_only_tate)) {
-          target_only_tate <- direct_tate_res$target_only
+          target_anchor_tate <- direct_tate_res$target_only
+          target_only_tate <- if (target_nuisance_method == "lasso") direct_tate_res$target_only else
+            .target_tate_reference(precomputed_folds$target_folds, family, nuisance_lambda_rule)
         }
 
         direct_tate_row <- .make_simulation_result_row(
@@ -1567,6 +1680,21 @@ run_single_simulation <- function(sim_id, n_total = 1000, K = 3, p = 4,
           }
         }
         results_list[[length(results_list) + 1L]] <- direct_tate_row
+
+        for (mode in additional_aggregation_modes) {
+          alternative <- calculate_tate_crossfit_aggregation(
+            data_split, mu1_cf, mu0_res, lambda_selection = aggregation_lambda,
+            aggregation_mode = mode, verbose = FALSE)
+          alternative_row <- .make_simulation_result_row(
+            sim_id = sim_id, method = paste0(crossfit_method, "_ate_", mode),
+            estimate = alternative$estimate, se = alternative$se, truth = tate_truth,
+            n_total = n_total, K = K, p = p, config = config,
+            heterogeneity_type = heterogeneity_type, estimand_type = estimand_type)
+          alternative_row$aggregation_mode <- mode
+          diagnostics <- c(.summarize_tate_aggregation_diagnostics(alternative), crossfit_diagnostics)
+          for (name in names(diagnostics)) alternative_row[[name]] <- diagnostics[[name]]
+          results_list[[length(results_list) + 1L]] <- alternative_row
+        }
 
         # The smooth quadratic-bias rule is the pre-specified sensitivity
         # estimator; it reuses the same arm-specific nuisance fits. The gate
@@ -1683,6 +1811,13 @@ run_single_simulation <- function(sim_id, n_total = 1000, K = 3, p = 4,
         target_only_tate$estimate, tate_truth,
         target_only_tate$estimate - tate_truth
       )
+      if (target_nuisance_method != "lasso") {
+        results_list[[length(results_list) + 1L]] <- .make_simulation_result_row(
+          sim_id = sim_id, method = "target_anchor_ate",
+          estimate = target_anchor_tate$estimate, se = target_anchor_tate$se,
+          truth = tate_truth, n_total = n_total, K = K, p = p, config = config,
+          heterogeneity_type = heterogeneity_type, estimand_type = estimand_type)
+      }
     }
 
     tate_comparison_methods <- setdiff(
@@ -1768,6 +1903,17 @@ run_single_simulation <- function(sim_id, n_total = 1000, K = 3, p = 4,
     results$ci_lower <- results$estimate - Z_ALPHA_05 * results$se
     results$ci_upper <- results$estimate + Z_ALPHA_05 * results$se
     results$dgp_type <- dgp_type
+    results$dgp_version <- data$dgp_version %||% dgp_type
+    results$dgp_configuration <- if (dgp_type == "bounded") {
+      sprintf("%s;covariate_shift=%.17g;source_treatment_scale=%.17g", data$dgp_version,
+        data$dgp_control$covariate_shift, data$dgp_control$source_treatment_scale)
+    } else dgp_type
+    results$dgp_covariate_shift <- data$dgp_control$covariate_shift %||% NA_real_
+    results$dgp_source_treatment_scale <- data$dgp_control$source_treatment_scale %||% NA_real_
+    results$working_dimension <- ncol(data$W_outcome)
+    results$dgp_max_signal_slopes <- data$max_signal_slopes %||% NA_integer_
+    results$truth_method <- if (estimand_type == "sample") "sample_conditional_mean" else
+      data$truth_method %||% "fixed_reference_integration"
     # DGP provenance: the misspecification strength actually applied (0 under
     # C1 and for the roce DGP), so cells from different DGP definitions cannot
     # be merged silently under the same config label.
@@ -1781,6 +1927,28 @@ run_single_simulation <- function(sim_id, n_total = 1000, K = 3, p = 4,
     # grids must remain distinguishable in downstream aggregation and audits.
     results$nlambda_init <- as.integer(nlambda_init)
     results$nuisance_lambda_rule <- nuisance_lambda_rule
+    results$nuisance_training_policy <- NUISANCE_TRAINING_POLICY
+    results$baseline_inference_policy <- BASELINE_INFERENCE_POLICY
+    results$target_nuisance_method <- target_nuisance_method
+    results$source_validation_method <- source_validation_method
+    results$source_nuisance_method <- calibration_control$source_nuisance_method
+    results$calibration_layout <- calibration_layout
+    results$nuisance_cache_backend <- if (!use_lambda_cache) "none" else
+      if (!is.null(checkpoint_dir)) "checkpoint" else if (is.null(nuisance_cache_dir)) "memory" else "shared"
+    results$nuisance_tol <- nuisance_tol
+    results$calibration_recipe <- calibration_control$recipe
+    results$target_propensity_initialization <- calibration_control$target_propensity_initialization
+    results$target_training_radius <- calibration_control$target_radius %||% M_tau
+    results$target_inference_radius <- calibration_control$target_radius %||% M_tau_inference
+    results$roce_crossfit_levels <- if (source_validation_method != "outer_fit" &&
+      (target_nuisance_method == "hou_calibrated" ||
+       (.complete_source_validation(source_validation_method) &&
+        calibration_control$source_nuisance_method == "calibrated"))) 3L else 2L
+    if (!"aggregation_mode" %in% names(results)) results$aggregation_mode <- NA_character_
+    common_rows <- grepl("_ate($|_quadratic_bias$|_hard_threshold$)", results$method) &
+      grepl("^(one|two)_round_crossfit", results$method)
+    results$aggregation_mode[common_rows] <- "common_tate"
+    results$aggregation_mode[is.na(results$aggregation_mode)] <- "not_applicable"
     results$n_bootstrap <- n_bootstrap
     results$n_weight_bootstrap <- n_weight_bootstrap
     results$M_tau <- M_tau
@@ -1811,6 +1979,8 @@ run_single_simulation <- function(sim_id, n_total = 1000, K = 3, p = 4,
       results[[diagnostic_name]] <- cell_diagnostics[[diagnostic_name]]
     }
     results$rho_reuse_enabled <- !is.null(rho_reuse_reference)
+    results$compiled_nuisance_solver <- nuisance_solver_cpp()
+    results$nuisance_cv_certificate <- .nuisance_cv_certificate_enabled()
     results$rho_reuse_changed_sources <- if (is.null(rho_reuse_reference)) {
       ""
     } else {
@@ -1850,6 +2020,7 @@ run_single_simulation <- function(sim_id, n_total = 1000, K = 3, p = 4,
     attr(results, "roce_simulation_artifacts") <- list(
       data_split = data_split,
       tate_truth = data$mu1_true - data$mu0_true,
+      arm_truth = c(mu1 = data$mu1_true, mu0 = data$mu0_true),
       direct_tate_results = direct_tate_results
     )
   }
@@ -1910,7 +2081,7 @@ run_single_simulation <- function(sim_id, n_total = 1000, K = 3, p = 4,
     )
   }
   methods <- as.character(simulation_args$methods %||% character(0))
-  if (!identical(simulation_args$dgp_type %||% "face", "face") ||
+  if (!identical(simulation_args$dgp_type %||% "bounded", "face") ||
       !isTRUE(simulation_args$estimate_ate) ||
       !"one_round_crossfit" %in% methods ||
       "two_round_crossfit" %in% methods) {
@@ -2157,7 +2328,13 @@ summarize_results <- function(results) {
     group_cols,
     intersect(
       c(
+        "p", "dgp_version", "dgp_configuration", "working_dimension", "truth_method",
+        "misspecification_strength", "deviation_mechanism", "rho",
         "nlambda_init", "nuisance_lambda_rule", "n_bootstrap",
+        "target_nuisance_method", "source_validation_method", "source_nuisance_method", "aggregation_mode",
+        "calibration_layout", "compiled_nuisance_solver", "nuisance_cv_certificate", "nuisance_tol", "nuisance_training_policy",
+        "roce_crossfit_levels", "calibration_recipe", "target_propensity_initialization",
+        "target_training_radius", "target_inference_radius", "baseline_inference_policy",
         "n_weight_bootstrap",
         "M_tau", "M_tau_inference"
       ),
@@ -2289,7 +2466,7 @@ summarize_results <- function(results) {
 #'   deviation and effect-modification arguments.
 #' @param shift_strength Numeric covariate shift multiplier.
 #' @param n_folds Integer cross-fitting fold count.
-#' @param use_lambda_cache Logical. If TRUE, enable lambda caching
+#' @param use_lambda_cache Logical. If TRUE, reuse identical nuisance fits
 #'   within cross-fitting nuisance-model loops.
 #' @param aggregation_lambda Positive truncated-Wald penalty multiplier passed
 #'   to every simulation replicate.
@@ -2299,7 +2476,8 @@ summarize_results <- function(results) {
 #'   \code{"outer_priority"} (default), \code{"balanced"}, or
 #'   \code{"outer_only"}.
 #' @param estimate_ate Logical. Also estimate ATE via A_val=0?
-#' @param dgp_type "roce" or "face".
+#' @param dgp_type "roce", "face", or "bounded".
+#' @param dgp_control Bounded-DGP controls; see \code{\link{generate_bounded_data}}.
 #' @param ate_deviation Additive source treatment-shift deviation on the FACE
 #'   outcome linear-predictor scale. The historical argument name is retained
 #'   for compatibility; for binary outcomes this is a log-odds shift, not the
@@ -2318,6 +2496,7 @@ summarize_results <- function(results) {
 #'   per primary soft direct-TATE fit; 0 disables the diagnostic.
 #' @return Data frame of simulation results.
 #' @export
+#' @inheritParams run_single_simulation
 run_simulation_study <- function(n_sims = 500,
                                 n_total_vec = c(500, 1000, 2000),
                                 K_vec = c(2, 3, 5),
@@ -2339,7 +2518,7 @@ run_simulation_study <- function(n_sims = 500,
                                 verbose_every = 10L,
                                 parallel_strategy = c("outer_priority", "balanced", "outer_only"),
                                 estimate_ate = FALSE,
-                                dgp_type = "face",
+                                dgp_type = "bounded",
                                 ate_deviation    = 0.0,
                                 n_deviated_sites = 0L,
                                 deviation_mechanism = c("treated_arm", "both_arms"),
@@ -2347,7 +2526,51 @@ run_simulation_study <- function(n_sims = 500,
                                 n_target         = NULL,
                                 n_source_sizes   = NULL,
                                 nuisance_lambda_rule = c("min", "1se"),
-                                n_weight_bootstrap = 0L) {
+                                n_weight_bootstrap = 0L,
+                                nuisance_solver = NULL,
+                                target_nuisance_method = c("lasso", "hou_calibrated"),
+                                source_validation_method = c("initial", "calibrated"),
+                                calibration_layout = c("block", "compact"),
+                                additional_aggregation_modes = character(0),
+                                nuisance_tol = TOL_DEFAULT, calibration_control = NULL,
+                                nuisance_cache_dir = NULL, dgp_control = NULL,
+                                methods = NULL, M_tau = M_TAU_DEFAULT,
+                                M_tau_inference = M_TAU_INFERENCE_DEFAULT, crossfit_layers = NULL, nuisance_cv_certificate = NULL) {
+  previous_certificate <- .set_nuisance_cv_certificate(nuisance_cv_certificate)
+  on.exit(.restore_nuisance_cv_certificate(previous_certificate), add = TRUE)
+  nuisance_cv_certificate <- .nuisance_cv_certificate_enabled()
+  available_methods <- c("two_round_crossfit", "one_round_crossfit",
+    "target_only", "sample_size", "inverse_variance", "federated_dr",
+    "pooled_dr", "tilted_aipw", "oracle_dr")
+  if (is.null(methods)) methods <- available_methods
+  if (!is.character(methods) || !length(methods) || anyNA(methods) ||
+      any(!methods %in% available_methods) || anyDuplicated(methods)) {
+    stop("methods must contain distinct supported simulation methods.", call. = FALSE)
+  }
+  validate_truncation_parameters(M_tau, M_tau_inference)
+  if (!is.null(dgp_control) && dgp_type != "bounded") {
+    stop("dgp_control applies only to dgp_type = 'bounded'.", call. = FALSE)
+  }
+  if (dgp_type == "bounded") dgp_control <- .bounded_dgp_control(dgp_control)
+  target_nuisance_method <- match.arg(target_nuisance_method)
+  calibration_control <- .validate_calibration_control(calibration_control, target_nuisance_method)
+  source_validation_method <- .resolve_crossfit_validation(
+    source_validation_method, crossfit_layers, calibration_control, target_nuisance_method)
+  calibration_layout <- match.arg(calibration_layout)
+  nuisance_tol <- .validate_lambda_scalar(nuisance_tol, "run_simulation_study", "nuisance_tol", allow_zero = FALSE)
+  if (!is.character(additional_aggregation_modes) || anyNA(additional_aggregation_modes) ||
+      any(!additional_aggregation_modes %in% c("separate_arms", "joint_tate"))) {
+    stop("additional_aggregation_modes must contain separate_arms and/or joint_tate.", call. = FALSE)
+  }
+  additional_aggregation_modes <- unique(additional_aggregation_modes)
+  if (length(additional_aggregation_modes) && !isTRUE(estimate_ate)) {
+    stop("additional_aggregation_modes requires estimate_ate=TRUE.", call. = FALSE)
+  }
+  if (!is.numeric(n_cores) || length(n_cores) != 1L || !is.finite(n_cores) ||
+      n_cores < 1L || n_cores != floor(n_cores)) {
+    stop("run_simulation_study: n_cores must be one positive integer CPU budget.", call. = FALSE)
+  }
+  n_cores <- as.integer(n_cores)
   deviation_mechanism <- match.arg(deviation_mechanism)
 
   parallel_strategy <- match.arg(parallel_strategy)
@@ -2368,8 +2591,8 @@ run_simulation_study <- function(n_sims = 500,
   # grid axes to the single allocation they imply, so the study still sweeps p
   # and config while every cell uses the requested per-site sizes.
   if (!is.null(n_source_sizes) || !is.null(n_target)) {
-    if (dgp_type != "face") {
-      stop("n_target / n_source_sizes are supported only for dgp_type = 'face'.",
+    if (!dgp_type %in% c("face", "bounded")) {
+      stop("n_target / n_source_sizes are supported only for dgp_type = 'face' or 'bounded'.",
            call. = FALSE)
     }
     site_sizes  <- resolve_face_site_sizes(NULL, n_target, n_source_sizes, K = NULL)
@@ -2430,6 +2653,17 @@ run_simulation_study <- function(n_sims = 500,
   cat(sprintf("  checkpoint: %s (setting every %d, sim every %d)\n",
               if (use_checkpoint) "ON" else "OFF", ckpt_interval, sim_ckpt_interval))
 
+  configuration_names <- setdiff(names(formals(run_simulation_study)),
+    c("n_cores", "checkpoint_config", "nested_parallel", "parallel_strategy", "verbose_every"))
+  run_configuration <- mget(configuration_names, envir = environment(), inherits = FALSE)
+  run_configuration <- lapply(run_configuration, function(value) {
+    if (is.numeric(value)) as.numeric(value) else value
+  })
+  run_configuration$nuisance_solver <- nuisance_solver %||% nuisance_solver_cpp()
+  run_configuration$nuisance_training_policy <- NUISANCE_TRAINING_POLICY
+  run_configuration$baseline_inference_policy <- BASELINE_INFERENCE_POLICY
+  run_configuration$dgp_version <- if (dgp_type == "bounded") BOUNDED_DGP_VERSION else dgp_type
+
   # Try to load checkpoint
   checkpoint <- if (use_checkpoint) load_checkpoint(ckpt_file) else NULL
 
@@ -2438,6 +2672,9 @@ run_simulation_study <- function(n_sims = 500,
   resume_sim_idx <- 0
 
   if (!is.null(checkpoint)) {
+    if (!identical(checkpoint$run_configuration, run_configuration)) {
+      stop("Checkpoint method/configuration does not match this run (or lacks configuration metadata). Use a new checkpoint for a different procedure.", call. = FALSE)
+    }
     all_results <- checkpoint$all_results
 
     if (!is.null(checkpoint$sim_results) && !is.null(checkpoint$current_sim_idx)) {
@@ -2525,12 +2762,15 @@ run_simulation_study <- function(n_sims = 500,
       ".bind_sim_result_list", ".abort_with_context",
       ".warn_with_context", ".require_method_result",
       "n_cores_internal_parallel", "nlambda_init",
-      "nuisance_lambda_rule", "estimand_type",
+      "nuisance_lambda_rule", "nuisance_solver", "nuisance_cv_certificate", "estimand_type",
+      "target_nuisance_method", "source_validation_method", "crossfit_layers", "calibration_layout",
+      "additional_aggregation_modes", "nuisance_tol", "calibration_control", "nuisance_cache_dir",
       "site_allocation", "transform_type", "outcome_type",
       "heterogeneity_type", "shift_strength", "n_folds",
       "aggregation_lambda",
       "n_weight_bootstrap",
-      "estimate_ate", "dgp_type", "ate_deviation", "n_deviated_sites"
+      "estimate_ate", "dgp_type", "dgp_control", "ate_deviation", "n_deviated_sites",
+      "methods", "M_tau", "M_tau_inference"
     ), envir = environment())
   }
 
@@ -2542,6 +2782,7 @@ run_simulation_study <- function(n_sims = 500,
       cat(sprintf("\n[WARN] Preemption signal at setting %d/%d. Saving checkpoint...\n",
                   i, total_settings))
       state <- list(
+        run_configuration = run_configuration,
         all_results = all_results,
         current_setting_idx = i - 1,
         total_settings = total_settings,
@@ -2561,11 +2802,6 @@ run_simulation_study <- function(n_sims = 500,
     cat(sprintf("\n[%s] Setting %d/%d: n=%d, K=%d, p=%d, config=%s\n",
                 format(Sys.time(), "%H:%M:%S"), i, total_settings,
                 params$n_total, params$K, params$p, params$config))
-
-    methods <- c("two_round_crossfit", "one_round_crossfit",
-                 "target_only", "sample_size", "inverse_variance",
-                 "federated_dr", "pooled_dr", "tilted_aipw",
-                 "oracle_dr")
 
     # Resume data if available
     if (i == start_idx && !is.null(resume_sim_results)) {
@@ -2628,7 +2864,7 @@ run_simulation_study <- function(n_sims = 500,
               shift_strength = shift_strength,
               n_folds = n_folds,
               use_lambda_cache = use_lambda_cache,
-              aggregation_lambda = aggregation_lambda,
+              aggregation_lambda = aggregation_lambda, M_tau = M_tau, M_tau_inference = M_tau_inference,
               estimate_ate = estimate_ate,
               dgp_type = dgp_type,
               ate_deviation = ate_deviation,
@@ -2636,7 +2872,14 @@ run_simulation_study <- function(n_sims = 500,
               deviation_mechanism = deviation_mechanism,
               n_target = n_target,
               n_source_sizes = n_source_sizes,
-              n_weight_bootstrap = n_weight_bootstrap)
+              n_weight_bootstrap = n_weight_bootstrap,
+              nuisance_solver = nuisance_solver,
+              nuisance_cv_certificate = nuisance_cv_certificate,
+              target_nuisance_method = target_nuisance_method,
+              source_validation_method = source_validation_method, crossfit_layers = crossfit_layers,
+              calibration_layout = calibration_layout, nuisance_tol = nuisance_tol,
+              calibration_control = calibration_control, nuisance_cache_dir = nuisance_cache_dir, dgp_control = dgp_control,
+              additional_aggregation_modes = additional_aggregation_modes)
           })
 
           batch_elapsed <- as.numeric(
@@ -2656,6 +2899,7 @@ run_simulation_study <- function(n_sims = 500,
           if (use_checkpoint &&
               end_sim %% sim_ckpt_interval == 0 && end_sim < n_sims) {
             state <- list(
+        run_configuration = run_configuration,
               all_results = all_results, current_setting_idx = i,
               total_settings = total_settings, sim_results = sim_results,
               current_sim_idx = end_sim, n_sims = n_sims,
@@ -2666,8 +2910,7 @@ run_simulation_study <- function(n_sims = 500,
         }
     } else {
         # --- Sequential execution ---
-        n_cores_internal <- min(params$K,
-                               max(1, parallel::detectCores() - 1))
+        n_cores_internal <- max(1L, min(params$K, n_cores))
         if (n_cores_internal > 1) {
           cat(sprintf("  Using %d internal cores for source-site parallelization\n",
                       n_cores_internal))
@@ -2705,7 +2948,7 @@ run_simulation_study <- function(n_sims = 500,
             shift_strength = shift_strength,
             n_folds = n_folds,
             use_lambda_cache = use_lambda_cache,
-            aggregation_lambda = aggregation_lambda,
+            aggregation_lambda = aggregation_lambda, M_tau = M_tau, M_tau_inference = M_tau_inference,
             estimate_ate = estimate_ate,
             dgp_type = dgp_type,
             ate_deviation = ate_deviation,
@@ -2713,7 +2956,14 @@ run_simulation_study <- function(n_sims = 500,
             deviation_mechanism = deviation_mechanism,
             n_target = n_target,
             n_source_sizes = n_source_sizes,
-            n_weight_bootstrap = n_weight_bootstrap
+            n_weight_bootstrap = n_weight_bootstrap,
+            nuisance_solver = nuisance_solver,
+            nuisance_cv_certificate = nuisance_cv_certificate,
+            target_nuisance_method = target_nuisance_method,
+            source_validation_method = source_validation_method, crossfit_layers = crossfit_layers,
+            calibration_layout = calibration_layout, nuisance_tol = nuisance_tol,
+            calibration_control = calibration_control, nuisance_cache_dir = nuisance_cache_dir, dgp_control = dgp_control,
+            additional_aggregation_modes = additional_aggregation_modes
           )
 
           sim_elapsed <- as.numeric(difftime(Sys.time(), sim_start, units = "secs"))
@@ -2726,6 +2976,7 @@ run_simulation_study <- function(n_sims = 500,
           if (use_checkpoint &&
               sim_id %% sim_ckpt_interval == 0 && sim_id < n_sims) {
             state <- list(
+        run_configuration = run_configuration,
               all_results = all_results, current_setting_idx = i,
               total_settings = total_settings, sim_results = sim_results,
               current_sim_idx = sim_id, n_sims = n_sims,
@@ -2748,6 +2999,7 @@ run_simulation_study <- function(n_sims = 500,
     # Setting-level checkpoint
     if (use_checkpoint && (i %% ckpt_interval == 0 || i == total_settings)) {
       state <- list(
+        run_configuration = run_configuration,
         all_results = all_results, current_setting_idx = i,
         total_settings = total_settings, timestamp = Sys.time()
       )

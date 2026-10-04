@@ -15,10 +15,10 @@
 # ============================================================================
 
 # ----------------------------------------------------------------------------
-# Variable sets (follow Hirano & Imbens 2001 "Estimation of Causal Effects
-# Using Propensity Score Weighting", Biostatistics).
-# cat1 is reserved for site partitioning and therefore excluded from the
-# covariate vector.
+# Historical observed-variable profile motivated by Connors et al. (1996)
+# and Hirano & Imbens (2001), Health Services and Outcomes Research Methodology.
+# This is not an exact reconstruction of their published 72-term design.
+# The selected site variable is excluded from the covariate vector.
 # ----------------------------------------------------------------------------
 
 .RHC_CONTINUOUS_VARS <- c(
@@ -84,12 +84,12 @@ load_rhc_raw <- function() {
 }
 
 
-# Median-impute continuous variables; mode-impute binary/categorical. Both are
-# computed on the cohort as a whole so that the site split is independent of
-# per-site sample sizes. Both helpers fail fast when no valid value is available
+# Median-impute numeric variables; mode-impute categorical variables. Both are
+# computed on the cohort as a whole by default, or on explicit training rows.
+# Both helpers fail fast when no valid value is available
 # to use as a fill, since silently returning all-NA / unchanged data would
 # defer the failure to a far less informative location downstream.
-.rhc_impute_continuous <- function(x, var_name = "<unknown>") {
+.rhc_impute_continuous <- function(x, var_name = "<unknown>", training_rows = NULL) {
   if (!is.numeric(x)) {
     x_chr <- trimws(as.character(x))
     missing <- is.na(x) | x_chr == ""
@@ -108,7 +108,8 @@ load_rhc_raw <- function() {
     x_num[!missing] <- as.numeric(x_chr[!missing])
     x <- x_num
   }
-  med <- stats::median(x, na.rm = TRUE)
+  med <- if (is.null(training_rows)) stats::median(x, na.rm = TRUE) else
+    stats::median(x[training_rows], na.rm = TRUE)
   if (is.na(med)) {
     stop(sprintf(
       ".rhc_impute_continuous: variable '%s' has no non-NA values (n=%d); cannot compute a median for imputation.",
@@ -119,8 +120,9 @@ load_rhc_raw <- function() {
   x
 }
 
-.rhc_impute_mode <- function(x, var_name = "<unknown>") {
-  tab <- sort(table(x, useNA = "no"), decreasing = TRUE)
+.rhc_impute_mode <- function(x, var_name = "<unknown>", training_rows = NULL) {
+  tab <- if (is.null(training_rows)) sort(table(x, useNA = "no"), decreasing = TRUE) else
+    sort(table(x[training_rows], useNA = "no"), decreasing = TRUE)
   if (length(tab) == 0L) {
     stop(sprintf(
       ".rhc_impute_mode: variable '%s' has no non-NA values (n=%d); cannot determine a mode for imputation.",
@@ -160,18 +162,32 @@ load_rhc_raw <- function() {
 #'   \code{"No insurance"} when \code{site_var = "ninsclas"}, pass
 #'   \code{c("Medicaid" = "Medicaid_any", "Medicare & Medicaid" =
 #'   "Medicaid_any", "No insurance" = NA)}.
+#' @param covariate_profile \code{"historical"} preserves the original features.
+#'   \code{"log_missing"} replaces urine output, creatinine, bilirubin and white
+#'   cell count by \code{log1p} values and adds an observed urine-missingness
+#'   indicator. \code{"grouped_log_missing"} additionally groups primary colon
+#'   and lung cancer diagnoses and combines trauma/orthopedic diagnosis flags.
+#'   These are named sensitivity specifications; no rows or outcomes select
+#'   the coding. The grouped profile coarsens clinical information.
 #' @return A data frame with columns: \code{A} (0/1 treatment, with 1 = RHC),
 #'   \code{Y} (numeric outcome defined by \code{outcome}), \code{site_var}
 #'   (the raw value of \code{site_var}, preserved for site partitioning),
 #'   plus the covariates listed in \code{.RHC_CONTINUOUS_VARS},
 #'   \code{.RHC_BINARY_VARS}, and the one-hot expansion of
 #'   \code{.RHC_CATEGORICAL_VARS} (with \code{site_var} excluded).
+#' @param preprocessing_rows Optional training-row indices in the retained
+#'   cohort, after site and missing-treatment/outcome exclusions. NULL retains
+#'   the historical whole-cohort imputation.
+#' @param categorical_levels Optional named list of fixed category levels.
 #' @export
 build_rhc_cohort <- function(raw = NULL,
                              outcome = c("death30", "death180", "los"),
                              site_var = .RHC_SITE_VAR,
-                             site_recode = NULL) {
+                             site_recode = NULL,
+                             covariate_profile = c("historical", "log_missing", "grouped_log_missing"),
+                             preprocessing_rows = NULL, categorical_levels = NULL) {
   outcome <- match.arg(outcome)
+  covariate_profile <- match.arg(covariate_profile)
   if (is.null(raw)) raw <- load_rhc_raw()
   if (!is.character(site_var) || length(site_var) != 1L || !nzchar(site_var)) {
     stop("site_var must be a single non-empty character string.")
@@ -262,6 +278,8 @@ build_rhc_cohort <- function(raw = NULL,
   A    <- A[keep]
   Y    <- Y[keep]
 
+  .validate_rhc_preprocessing_rows(preprocessing_rows, nrow(raw))
+
   # ---- Covariate subsets (drop the site variable so it is not a predictor) ----
   continuous_vars  <- setdiff(.RHC_CONTINUOUS_VARS,  site_var)
   binary_vars      <- setdiff(.RHC_BINARY_VARS,      site_var)
@@ -269,30 +287,61 @@ build_rhc_cohort <- function(raw = NULL,
 
   # ---- Covariates: continuous ----
   X_cont <- setNames(
-    lapply(continuous_vars, function(v) .rhc_impute_continuous(raw[[v]], var_name = v)),
+    lapply(continuous_vars, function(v) .rhc_impute_continuous(raw[[v]], var_name = v,
+      training_rows = preprocessing_rows)),
     continuous_vars
   )
   X_cont <- as.data.frame(X_cont, stringsAsFactors = FALSE)
+  if (covariate_profile != "historical") {
+    for (variable in intersect(c("urin1", "crea1", "bili1", "wblc1"), names(X_cont))) {
+      if (any(X_cont[[variable]] < 0)) {
+        stop("log1p sensitivity requires nonnegative values for ", variable, call. = FALSE)
+      }
+      X_cont[[variable]] <- log1p(X_cont[[variable]])
+      names(X_cont)[names(X_cont) == variable] <- paste0("log1p_", variable)
+    }
+  }
 
   # ---- Covariates: binary indicators (coded 0/1 in source) ----
   X_bin <- setNames(
     lapply(binary_vars, function(v) {
       x <- raw[[v]]
       # Harrell's mirror stores these as 0/1 integers; be defensive anyway.
-      if (is.numeric(x)) return(.rhc_impute_continuous(x, var_name = v))
+      if (is.numeric(x)) return(.rhc_impute_continuous(x, var_name = v,
+        training_rows = preprocessing_rows))
       ch <- toupper(as.character(x))
       as.integer(ch %in% c("1", "YES", "TRUE"))
     }),
     binary_vars
   )
   X_bin <- as.data.frame(X_bin, stringsAsFactors = FALSE)
+  if (covariate_profile != "historical" && "urin1" %in% continuous_vars) {
+    X_bin$urin1_missing <- as.integer(is.na(raw$urin1) | trimws(as.character(raw$urin1)) == "")
+  }
+  if (covariate_profile == "grouped_log_missing") {
+    if (!all(c("trauma", "ortho") %in% names(X_bin))) {
+      stop("Grouped RHC coding requires both trauma and ortho as covariates.", call. = FALSE)
+    }
+    X_bin$injury_diagnosis <- as.integer(X_bin$trauma == 1 | X_bin$ortho == 1)
+    X_bin[c("trauma", "ortho")] <- NULL
+  }
 
   # ---- Covariates: categorical → one-hot ----
   if (length(categorical_vars) > 0L) {
     cat_frame <- setNames(
       lapply(categorical_vars, function(v) {
-        x <- .rhc_impute_mode(as.character(raw[[v]]), var_name = v)
-        factor(x)
+        x <- .rhc_impute_mode(as.character(raw[[v]]), var_name = v,
+          training_rows = preprocessing_rows)
+        if (covariate_profile == "grouped_log_missing" && v == "cat1") {
+          x[x %in% c("Colon Cancer", "Lung Cancer")] <- "Solid Cancer"
+        }
+        if (is.null(categorical_levels)) return(factor(x))
+        levels <- categorical_levels[[v]]
+        if (is.null(levels) || anyNA(x) || any(!x %in% levels)) {
+          stop("Unknown or missing value in the fixed RHC category dictionary: ", v,
+               call. = FALSE)
+        }
+        factor(x, levels = levels)
       }),
       categorical_vars
     )
@@ -388,6 +437,8 @@ build_rhc_cohort <- function(raw = NULL,
 #'   covariates retained in \code{X} and \code{X_dagger} are not modified.
 #' @param seed Integer. Random seed passed to R's RNG for any tie-breaking
 #'   steps; retained for reproducibility (currently unused). Default 42.
+#' @param preprocessing_rows Optional retained-cohort training rows used to
+#'   compute feature centers and scales. The same transform is applied to all rows.
 #' @return A \code{data_split} list with elements named \code{"t"} (target)
 #'   and \code{"s1"}, ..., \code{"s<K-1>"} (source sites). Each element is a
 #'   list with fields \code{n}, \code{X}, \code{X_dagger}, \code{A},
@@ -401,7 +452,8 @@ build_rhc_data_split <- function(cohort      = NULL,
                                  target_site = NULL,
                                  phi         = base::identity,
                                  standardize_features = TRUE,
-                                 seed        = 42L) {
+                                 seed        = 42L,
+                                 preprocessing_rows = NULL) {
   if (is.null(cohort)) cohort <- build_rhc_cohort()
   if (!is.function(phi)) {
     stop("phi must be a function mapping a numeric matrix to a numeric matrix.")
@@ -437,14 +489,18 @@ build_rhc_data_split <- function(cohort      = NULL,
     stop("phi must return only finite numeric working features.")
   }
 
+  .validate_rhc_preprocessing_rows(preprocessing_rows, nrow(X_phi_raw))
+
   feature_center <- if (isTRUE(standardize_features)) {
-    colMeans(X_phi_raw)
+    if (is.null(preprocessing_rows)) colMeans(X_phi_raw) else
+      colMeans(X_phi_raw[preprocessing_rows, , drop = FALSE])
   } else {
     rep(0, ncol(X_phi_raw))
   }
   centered_features <- sweep(X_phi_raw, 2L, feature_center, FUN = "-")
   feature_scale <- if (isTRUE(standardize_features)) {
-    sqrt(colMeans(centered_features^2))
+    if (is.null(preprocessing_rows)) sqrt(colMeans(centered_features^2)) else
+      sqrt(colMeans(centered_features[preprocessing_rows, , drop = FALSE]^2))
   } else {
     rep(1, ncol(X_phi_raw))
   }
@@ -746,11 +802,24 @@ run_rhc_experiment <- function(K               = 5L,
   )
 }
 
+# Build only controls supported by the selected target nuisance program.
+.rhc_calibration_control <- function(target_program, source_program, radius, source_lambda_rules = NULL) {
+  target_program <- match.arg(target_program, c("hou_calibrated", "lasso"))
+  source_program <- match.arg(source_program, c("calibrated", "standard"))
+  control <- list(recipe = "score_derivative", target_propensity_initialization = "logistic",
+                  source_nuisance_method = source_program)
+  if (target_program == "hou_calibrated") control$target_radius <- radius
+  if (!is.null(source_lambda_rules)) control$source_lambda_rules <- source_lambda_rules
+  .validate_calibration_control(control, target_program)
+  control
+}
+
 #' RoCE TATE analysis of the RHC data
 #'
 #' Runs the treated and control nuisance fits on a shared fold partition and
-#' applies the TATE aggregation rule with one common source-weight
-#' vector. The existing arm-specific \code{run_rhc_experiment()} interface is
+#' applies the selected TATE aggregation rule. The historical common-weight
+#' default is retained; joint TATE uses two arm-specific weight vectors.
+#' The existing arm-specific \code{run_rhc_experiment()} interface is
 #' unchanged and remains available for secondary potential-outcome summaries.
 #'
 #' @inheritParams run_rhc_experiment
@@ -761,7 +830,7 @@ run_rhc_experiment <- function(K               = 5L,
 #'   strata so earlier all-site sensitivity analyses stay reproducible.
 #' @param aggregation_lambda Positive truncated-Wald multiplier. Its reciprocal
 #'   is the source penalty-activation cutoff. The locked manuscript analysis
-#'   uses \code{1} (cutoff \code{1}), matching the simulation implementation.
+#'   uses \code{0.5} (cutoff \code{2}); historical defaults are unchanged.
 #' @param comparison_methods Character vector of TATE comparison methods.
 #'   Defaults to the four baselines reported in the manuscript. Supply
 #'   \code{character(0)} to run only target-only and RoCE.
@@ -779,10 +848,26 @@ run_rhc_experiment <- function(K               = 5L,
 #'   \code{"1se"} is available as a more strongly regularized stability
 #'   sensitivity analysis.
 #' @param M_tau Numeric fitting-stage truncation radius. The manuscript uses
-#'   \code{M_TAU_DEFAULT = 5}.
+#'   a source radius of \code{3} and a separately specified target radius of \code{5}.
+#' @param aggregation_mode,target_nuisance_method,source_validation_method,crossfit_layers,calibration_control,calibration_layout,nuisance_solver,nuisance_tol,nuisance_cv_certificate,checkpoint_dir
+#'   Explicit fitting controls forwarded to \code{\link{run_tate_crossfit}}.
+#'   Defaults preserve the historical RHC analysis. Current calibrated analyses
+#'   should select their layer, anchor, calibration recipe and radii explicitly.
+#' @param fold_seed Optional positive integer for RoCE's outer fold assignment.
+#'   \code{NULL} preserves the sample-size-based historical assignment.
+#'   The ordinary target reference uses these same outer folds; other baselines
+#'   retain their own documented fitting procedures on the identical cohort.
+#' @param covariate_profile Named covariate sensitivity passed to
+#'   \code{\link{build_rhc_cohort}}. The historical default is unchanged.
+#' @param preprocessing \code{"cohort"} preserves historical preprocessing.
+#'   \code{"outer_fold"} learns the shared transform outside each RoCE outer
+#'   evaluation fold. Initial/calibration CV still reuse that outer-training
+#'   transform. SS/IVW exclude their own site-validation rows when learning
+#'   preprocessing; the two DR baselines retain their full-sample fitting protocol.
 #' @return A list containing the TATE method comparison, pairwise
-#'   source-assisted TATE estimates and Wald diagnostics, common aggregation
-#'   weights, the full TATE fit, and run metadata.
+#'   source-assisted TATE estimates and arm-labeled Wald diagnostics,
+#'   aggregation weights, ordinary and calibrated target references,
+#'   the full TATE fit, and run metadata.
 #' @export
 run_rhc_tate_experiment <- function(
     K = 5L,
@@ -806,9 +891,32 @@ run_rhc_tate_experiment <- function(
     n_bootstrap = BOOTSTRAP_REPLICATES_DEFAULT,
     parallel_arms = FALSE,
     nlambda_init = LAMBDA_GRID_SIZE_STANDARD,
-    nuisance_lambda_rule = c("min", "1se")) {
+    nuisance_lambda_rule = c("min", "1se"),
+    aggregation_mode = c("common_tate", "separate_arms", "joint_tate"),
+    target_nuisance_method = c("lasso", "hou_calibrated"),
+    source_validation_method = c("initial", "calibrated"),
+    crossfit_layers = NULL,
+    calibration_control = NULL,
+    calibration_layout = c("block", "compact"),
+    nuisance_solver = NULL,
+    nuisance_tol = TOL_DEFAULT,
+    nuisance_cv_certificate = NULL,
+    checkpoint_dir = NULL,
+    fold_seed = NULL,
+    covariate_profile = c("historical", "log_missing", "grouped_log_missing"),
+    preprocessing = c("cohort", "outer_fold")) {
   outcome <- match.arg(outcome)
+  covariate_profile <- match.arg(covariate_profile)
+  preprocessing <- match.arg(preprocessing)
   variance_method <- match.arg(variance_method)
+  aggregation_mode <- match.arg(aggregation_mode)
+  target_nuisance_method <- match.arg(target_nuisance_method)
+  calibration_layout <- match.arg(calibration_layout)
+  if (!is.null(fold_seed) && (length(fold_seed) != 1L ||
+      !is.numeric(fold_seed) || !is.finite(fold_seed) || fold_seed < 1 ||
+      fold_seed > .Machine$integer.max - K || fold_seed != floor(fold_seed))) {
+    stop("fold_seed must be NULL or one positive integer.", call. = FALSE)
+  }
   n_bootstrap <- .validate_bootstrap_replicates(
     n_bootstrap, "run_rhc_tate_experiment"
   )
@@ -823,13 +931,31 @@ run_rhc_tate_experiment <- function(
   n_folds <- as.integer(n_folds)
 
   cohort <- build_rhc_cohort(
-    outcome = outcome, site_var = site_var, site_recode = site_recode
+    outcome = outcome, site_var = site_var, site_recode = site_recode,
+    covariate_profile = covariate_profile
   )
   data_split <- build_rhc_data_split(
     cohort = cohort, K = K, target_site = target_site, phi = phi, seed = seed
   )
   folds <- build_crossfit_folds(data_split, n_folds)
+  if (!is.null(fold_seed)) {
+    folds$target_folds <- partition_into_folds(data_split$t, n_folds, seed = fold_seed)
+    source_sites <- setdiff(names(data_split), "t")
+    folds$source_folds <- stats::setNames(lapply(seq_along(source_sites), function(j) {
+      partition_into_folds(data_split[[source_sites[j]]], n_folds, seed = fold_seed + j)
+    }), source_sites)
+  }
   propensity_cache <- new.env(hash = TRUE, parent = emptyenv())
+
+  comparison_data <- data_split
+  if (preprocessing == "outer_fold") {
+    prepared <- .prepare_rhc_outer_preprocessing(cohort, data_split, folds,
+      cohort_arguments = list(outcome = outcome, site_var = site_var,
+        site_recode = site_recode, covariate_profile = covariate_profile),
+      split_arguments = list(K = K, target_site = target_site, phi = phi, seed = seed))
+    folds <- prepared$folds
+    comparison_data <- prepared$baseline_data
+  }
 
   tate_fit <- run_tate_crossfit(
     data_split = data_split,
@@ -845,8 +971,25 @@ run_rhc_tate_experiment <- function(
     precomputed_folds = folds,
     target_only_ps_cache = propensity_cache,
     parallel_arms = parallel_arms,
+    aggregation_mode = aggregation_mode,
+    target_nuisance_method = target_nuisance_method,
+    source_validation_method = source_validation_method,
+    crossfit_layers = crossfit_layers,
+    calibration_control = calibration_control,
+    calibration_layout = calibration_layout,
+    nuisance_solver = nuisance_solver,
+    nuisance_tol = nuisance_tol,
+    nuisance_cv_certificate = nuisance_cv_certificate,
+    checkpoint_dir = checkpoint_dir,
     verbose = verbose
   )
+
+  ordinary_target <- if (target_nuisance_method == "hou_calibrated") {
+    .target_tate_reference(folds$target_folds, family, nuisance_lambda_rule)
+  } else {
+    tate_fit$target_only
+  }
+  target_anchor <- tate_fit$target_only
 
   comparison_labels <- c(
     sample_size = "SS",
@@ -867,7 +1010,7 @@ run_rhc_tate_experiment <- function(
 
   comparison_results <- if (length(comparison_methods) > 0L) {
     run_all_comparisons_tate(
-      data_split = data_split,
+      data_split = comparison_data,
       family = family,
       n_folds = n_folds,
       variance_method = variance_method,
@@ -891,7 +1034,10 @@ run_rhc_tate_experiment <- function(
     rbind,
     c(
       list(.rhc_method_row(
-        "Target-only", tate_fit$target_only$estimate, tate_fit$target_only$se
+        "Target-only", ordinary_target$estimate, ordinary_target$se
+      )),
+      if (target_nuisance_method == "hou_calibrated") list(.rhc_method_row(
+        "Calibrated target-only", target_anchor$estimate, target_anchor$se
       )),
       comparison_rows,
       list(.rhc_method_row("RoCE", tate_fit$estimate, tate_fit$se))
@@ -899,6 +1045,7 @@ run_rhc_tate_experiment <- function(
   )
   method_levels <- c(
     "Target-only",
+    if (target_nuisance_method == "hou_calibrated") "Calibrated target-only",
     unname(comparison_labels[comparison_methods]),
     "RoCE"
   )
@@ -907,16 +1054,24 @@ run_rhc_tate_experiment <- function(
   source_labels <- names(tate_fit$source_estimates)
   fold_wald <- tate_fit$fold_wald_statistics
   fold_penalty <- tate_fit$fold_penalty_coefficients
-  pairwise <- data.frame(
-    source = source_labels,
-    estimate = as.numeric(tate_fit$source_estimates),
-    weight = as.numeric(tate_fit$weights),
-    mean_wald_statistic = colMeans(fold_wald),
-    max_wald_statistic = apply(fold_wald, 2L, max),
-    penalty_activation_fraction = colMeans(fold_penalty > 0),
-    stringsAsFactors = FALSE
-  )
-  pairwise_gap <- pairwise$estimate - tate_fit$target_only$estimate
+  arm_specific <- aggregation_mode != "common_tate"
+  weights_by_arm <- if (arm_specific) tate_fit$weights_by_arm else
+    list(mu1 = tate_fit$weights, mu0 = tate_fit$weights)
+  pairwise <- data.frame(source = source_labels,
+    estimate = as.numeric(tate_fit$source_estimates), stringsAsFactors = FALSE)
+  for (arm in if (arm_specific) c("mu1", "mu0") else "common") {
+    suffix <- if (arm_specific) paste0("_", arm) else ""
+    columns <- if (arm_specific) paste0(arm, ":", source_labels) else source_labels
+    weights <- if (arm_specific) weights_by_arm[[arm]] else tate_fit$weights
+    stopifnot(length(weights) == length(source_labels),
+              all(columns %in% colnames(fold_wald)),
+              all(columns %in% colnames(fold_penalty)))
+    pairwise[[paste0("weight", suffix)]] <- as.numeric(weights[source_labels])
+    pairwise[[paste0("mean_wald_statistic", suffix)]] <- colMeans(fold_wald[, columns, drop = FALSE])
+    pairwise[[paste0("max_wald_statistic", suffix)]] <- apply(fold_wald[, columns, drop = FALSE], 2L, max)
+    pairwise[[paste0("penalty_activation_fraction", suffix)]] <- colMeans(fold_penalty[, columns, drop = FALSE] > 0)
+  }
+  pairwise_gap <- pairwise$estimate - target_anchor$estimate
   recode_specification <- if (is.null(site_recode)) {
     "none"
   } else {
@@ -932,12 +1087,18 @@ run_rhc_tate_experiment <- function(
   list(
     methods = methods,
     pairwise = pairwise,
-    weights = stats::setNames(as.numeric(tate_fit$weights), source_labels),
-    target_only = tate_fit$target_only,
+    weights = tate_fit$weights,
+    weights_by_arm = weights_by_arm,
+    target_only = ordinary_target,
+    target_anchor = target_anchor,
     tate_fit = tate_fit,
     comparison_results = comparison_results,
     metadata = list(
       estimand = "TATE",
+      preprocessing = preprocessing,
+      data_sha256 = digest::digest(data_split, algo = "sha256"),
+      covariate_profile = covariate_profile,
+      fold_sha256 = digest::digest(folds, algo = "sha256"),
       K = length(source_labels),
       n_sites = length(data_split),
       site_var = site_var,
@@ -955,13 +1116,24 @@ run_rhc_tate_experiment <- function(
       outcome = outcome,
       family = family,
       n_folds = n_folds,
+      seed = seed,
+      fold_seed = fold_seed,
+      aggregation_mode = aggregation_mode,
+      crossfit_layers = tate_fit$crossfit_levels,
+      target_nuisance_method = target_nuisance_method,
+      source_validation_method = tate_fit$source_validation_method,
+      calibration_control = tate_fit$calibration_control,
+      nuisance_solver = tate_fit$nuisance_solver,
+      nuisance_tol = nuisance_tol,
+      nuisance_cv_certificate = tate_fit$nuisance_cv_certificate,
       nlambda_init = nlambda_init,
       nuisance_lambda_rule = nuisance_lambda_rule,
       M_tau = M_tau,
       M_tau_inference = M_tau_inference,
       aggregation_lambda = aggregation_lambda,
       aggregation_cutoff = 1 / aggregation_lambda,
-      target_anchor_weight = 1 - sum(tate_fit$weights),
+      target_anchor_weight = if (!arm_specific) 1 - sum(tate_fit$weights) else NULL,
+      target_anchor_weight_by_arm = vapply(weights_by_arm, function(weight) 1 - sum(weight), numeric(1L)),
       comparison_methods = comparison_methods,
       variance_method = variance_method,
       n_bootstrap = n_bootstrap,

@@ -178,6 +178,11 @@
     ), call. = FALSE)
   }
   dr_diagnostics <- dr_diagnostics1 %||% dr_diagnostics0 %||% NULL
+  scope1 <- mu1_result$components$inference_scope %||% "not_recorded"
+  scope0 <- mu0_result$components$inference_scope %||% "not_recorded"
+  if (!identical(scope1, scope0)) {
+    stop("Cannot combine treatment arms with different baseline inference scopes.", call. = FALSE)
+  }
 
   list(
     estimate = estimate,
@@ -188,6 +193,7 @@
     influence_blocks = tate_blocks,
     components = list(
       estimand = "TATE",
+      inference_scope = scope1,
       variance_method = variance_result$variance_method,
       variance_analytic = variance_result$variance_analytic,
       se_analytic = variance_result$se_analytic,
@@ -381,9 +387,8 @@
 
 #' Fit reusable site-level components for the DR comparison estimators
 #'
-#' Federated-DR and Pooled-DR share the same source-level weighted AIPW fit and
-#' density-ratio influence correction. Computing those components once avoids
-#' duplicate high-dimensional nuisance CV and matrix solves.
+#' Federated-DR reuses source-level weighted AIPW fits and their density-ratio
+#' derivatives. Pooled-DR computes its own derivatives at the pooled fit.
 #'
 #' @param data_split Split data by site.
 #' @param dr_weights_by_site Validated source density-ratio weights.
@@ -412,10 +417,6 @@
   if (is.null(dr_site_components)) {
     target_data <- data_split[["t"]]
     Z_target <- as.matrix(target_data$Z_site)
-    mean_phi_target <- c(1, colMeans(Z_target))
-    Z_target_centered <- sweep(
-      cbind(1, Z_target), 2, mean_phi_target, "-"
-    )
 
     return(.parallel_site_fits(required_sites, function(site) {
       site_data <- data_split[[site]]
@@ -441,28 +442,11 @@
       }
 
       Z_source <- as.matrix(site_data$Z_site)
-      Z_centered <- sweep(cbind(1, Z_source), 2, mean_phi_target, "-")
       n_source <- site_data$n
-      d_alpha <- max(mean(dr_weights), DIVISION_FLOOR)
-      phi_centered <- base_result$phi - base_result$estimate
-      A_s <- -1 / d_alpha * colMeans(
-        as.numeric(dr_weights) * Z_centered * as.numeric(phi_centered)
-      )
-      # calculate_dr_weights() uses A_dummy = 1 for every source observation.
-      # Its score and Jacobian must therefore use the full source sample. The
-      # AIPW pseudo-outcome already carries the requested-arm indicator in its
-      # residual term.
-      density_score_weights <- as.numeric(dr_weights)
-      M_alpha <- t(Z_centered) %*%
-        (Z_centered * density_score_weights) /
-        max(1, n_source)
-      adjustment <- solve_with_ridge(M_alpha) %*% A_s
-      source_correction <- as.numeric(
-        density_score_weights * (Z_centered %*% adjustment)
-      )
-      target_correction <- -as.numeric(
-        Z_target_centered %*% adjustment
-      )
+      density_derivative <- .baseline_density_influence(Z_source, Z_target, dr_weights,
+        base_result$phi, base_result$estimate, mean(dr_weights))
+      source_correction <- density_derivative$source
+      target_correction <- density_derivative$target
       source_influence <-
         as.numeric(base_result$varphi_ot) + source_correction
       source_influence <- source_influence - mean(source_influence)
@@ -925,7 +909,6 @@ estimate_tilted_aipw <- function(data_split, family = "binomial", A_val = 1L,
                       "logit" = logistic(eta_t),
                       "identity" = eta_t,
                       eta_t)
-    m_hat_t <- clip_outcome_pred(m_hat_t, glm_spec$family)
     target_aipw <- calculate_aipw_influence(target_y, target_a, target_x, m_hat_t,
                                             ps_fit_t$fitted, A_val = A_val,
                                             family = glm_spec$family)
@@ -973,11 +956,10 @@ estimate_tilted_aipw <- function(data_split, family = "binomial", A_val = 1L,
             "logit" = logistic(eta_source),
             "identity" = eta_source,
             eta_source)
-      m1_pred <- clip_outcome_pred(m1_pred, glm_spec$family)
 
       # Step 2: Fit propensity model (unpenalized MLE)
       ps_fit <- fit_logit_mle(X_matrix, as.numeric(tr_source))
-      prop_scores <- clip_propensity(ps_fit$fitted)
+      prop_scores <- ps_fit$fitted
 
       # Step 3: Fit density ratio model via exponential tilting (unpenalized)
       # γ_{s,A_val} is the arm-specific density ratio
@@ -1135,8 +1117,10 @@ estimate_tilted_aipw <- function(data_split, family = "binomial", A_val = 1L,
 #' Federated DR-AIPW estimator
 #' 
 #' Each source site uses density ratio weighting to estimate E_t[Y(1)].
-#' All sites estimate the SAME estimand, then aggregate with IVW.
-#' This is the theoretically correct federated baseline.
+#' Under the transport assumptions the site estimates target the same mean and
+#' are combined with IVW. Reported derivatives condition on nuisance tuning,
+#' active sets and the fitted IVW weights; uniform selection inference is not
+#' implied by this calculation.
 #' 
 #' @param data_split Split data by site
 #' @param dr_lambda Regularization for density ratio. If NULL, selected via CV.
@@ -1272,6 +1256,7 @@ estimate_federated_dr <- function(data_split, dr_lambda = NULL,
       se_bootstrap = var_res$se_bootstrap,
       n_bootstrap = var_res$n_bootstrap,
       ivw_weights = weight_by_site,
+      inference_scope = "conditional_nuisance_lambda_active_sets_and_ivw_weights",
       var_target_component = var_target_component,
       var_source_component = var_source_component,
       dr_weight_diagnostics = dr_weight_diagnostics
@@ -1298,8 +1283,6 @@ estimate_federated_dr <- function(data_split, dr_lambda = NULL,
 #'   \code{variance_method = "bootstrap"}.
 #' @param dr_weights_by_site Optional named list of precomputed source-to-target
 #'   density-ratio weights.
-#' @param dr_site_components Optional reusable site-level weighted-AIPW and
-#'   density-ratio correction components.
 #' @param n_cores Number of independent source density-ratio fits to run in
 #'   parallel when \code{dr_weights_by_site} is not supplied.
 #' @return List with estimate, variance, se
@@ -1310,7 +1293,6 @@ estimate_pooled_dr <- function(data_split, dr_lambda = NULL,
                                variance_method = c("bootstrap", "analytic"),
                                n_bootstrap = BOOTSTRAP_REPLICATES_DEFAULT,
                                dr_weights_by_site = NULL,
-                               dr_site_components = NULL,
                                n_cores = 1L) {
   variance_method <- match.arg(variance_method)
   dr_lambda_rule <- .match_nuisance_lambda_rule(
@@ -1331,16 +1313,6 @@ estimate_pooled_dr <- function(data_split, dr_lambda = NULL,
   )
   dr_weight_diagnostics <-
     .density_ratio_clipping_diagnostics(dr_weights_by_site)
-  dr_site_components <- .resolve_dr_site_components(
-    data_split = data_split,
-    dr_weights_by_site = dr_weights_by_site,
-    family = family,
-    A_val = A_val,
-    required_sites = source_sites,
-    n_cores = n_cores,
-    dr_site_components = dr_site_components,
-    caller = "estimate_pooled_dr"
-  )
   
   # Pool all data
   all_y <- target_data$Y
@@ -1354,7 +1326,6 @@ estimate_pooled_dr <- function(data_split, dr_lambda = NULL,
   for (site in source_sites) {
     source_data <- data_split[[site]]
     dr_weights <- dr_weights_by_site[[site]]
-    source_component <- dr_site_components[[site]]
     n_source <- source_data$n
     
     idx_start <- row_cursor + 1L
@@ -1362,11 +1333,8 @@ estimate_pooled_dr <- function(data_split, dr_lambda = NULL,
     row_cursor <- idx_end
     source_meta[[site]] <- list(
       idx = idx_start:idx_end,
-      infl_alpha_source = source_component$source_if_correction,
-      target_if_component = source_component$target_if_component,
       lambda = as.numeric(
-        source_component$lambda %||%
-          attr(dr_weights, "lambda_used") %||% dr_lambda %||% NA_real_
+        attr(dr_weights, "lambda_used") %||% dr_lambda %||% NA_real_
       )
     )
     
@@ -1377,15 +1345,23 @@ estimate_pooled_dr <- function(data_split, dr_lambda = NULL,
     all_sites <- c(all_sites, rep(site, n_source))
   }
   
-  result <- calculate_weighted_site_aipw(y = all_y, a = all_a, X = all_X, weights = all_weights, family = family, A_val = A_val)
+  # This fit must not depend on whether local Federated-DR models were cached
+  # or requested alongside it. Pooled nuisance tuning uses its own RNG stream.
+  nuisance_seed <- 130363L + as.integer(A_val)
+  result <- with_seed(nuisance_seed, calculate_weighted_site_aipw(
+    y = all_y, a = all_a, X = all_X, weights = all_weights, family = family, A_val = A_val))
 
   # Stacked IF: base weighted AIPW IF + DR-weight estimation correction
   N_all <- length(all_y)
   total_correction <- rep(0, N_all)
   for (site in names(source_meta)) {
     meta <- source_meta[[site]]
-    total_correction[meta$idx] <- total_correction[meta$idx] + meta$infl_alpha_source
-    total_correction[seq_len(n_target)] <- total_correction[seq_len(n_target)] + meta$target_if_component
+    density_derivative <- .baseline_density_influence(
+      data_split[[site]]$Z_site, target_data$Z_site, dr_weights_by_site[[site]],
+      result$phi[meta$idx], result$estimate, mean(all_weights), length(meta$idx) / N_all)
+    total_correction[meta$idx] <- N_all / length(meta$idx) * density_derivative$source
+    total_correction[seq_len(n_target)] <- total_correction[seq_len(n_target)] +
+      N_all / n_target * density_derivative$target
   }
   varphi_total <- as.numeric(result$varphi_ot) + total_correction
 
@@ -1441,6 +1417,8 @@ estimate_pooled_dr <- function(data_split, dr_lambda = NULL,
       mean_weight = mean(all_weights),
       source_lambdas = source_lambdas,
       variance_wss = wss,
+      inference_scope = result$inference_scope,
+      nuisance_seed = nuisance_seed,
       dr_weight_diagnostics = dr_weight_diagnostics
     )
   ))
@@ -1450,7 +1428,9 @@ estimate_pooled_dr <- function(data_split, dr_lambda = NULL,
 #' 
 #' Returns both:
 #' - Naive methods (sample_size, inverse_variance): may have bias due to covariate shift
-#' - DR-corrected methods (federated_dr, pooled_dr): theoretically correct
+#' - DR-corrected methods (federated_dr, pooled_dr): require transport and
+#'   nuisance assumptions; their conditional derivative calculations alone do
+#'   not establish validity after tuning and model selection.
 #' 
 #' @param data_split split data by site
 #' @param use_rcal Logical. If TRUE, use RCAL. If FALSE (default), use glmnet.
@@ -1538,18 +1518,13 @@ run_all_comparisons <- function(data_split, use_rcal = FALSE,
   } else {
     NULL
   }
-  shared_dr_components <- if (any(requested %in% dr_methods)) {
-    required_dr_sites <- if ("federated_dr" %in% requested) {
-      names(data_split)
-    } else {
-      setdiff(names(data_split), "t")
-    }
+  shared_dr_components <- if ("federated_dr" %in% requested) {
     .resolve_dr_site_components(
       data_split = data_split,
       dr_weights_by_site = shared_dr_weights,
       family = family,
       A_val = A_val,
-      required_sites = required_dr_sites,
+      required_sites = names(data_split),
       n_cores = n_cores,
       dr_site_components = dr_site_components,
       caller = "run_all_comparisons"
@@ -1607,7 +1582,6 @@ run_all_comparisons <- function(data_split, use_rcal = FALSE,
       variance_method = variance_method,
       n_bootstrap = n_bootstrap,
       dr_weights_by_site = shared_dr_weights,
-      dr_site_components = shared_dr_components,
       n_cores = n_cores
     )
   }

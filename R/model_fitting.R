@@ -138,6 +138,14 @@
     }
     attr(lambda, paste0("cv_", diagnostic_name)) <- diagnostic_value
   }
+  certified <- cv_result$certified_nonconvergent_fold_fits
+  if (!is.null(certified)) {
+    if (!is.numeric(certified) || length(certified) != 1L || !is.finite(certified) ||
+        certified < 0 || certified != floor(certified)) {
+      stop(caller, ": invalid certified nonconvergence count.", call. = FALSE)
+    }
+    attr(lambda, "cv_certified_nonconvergent_fold_fits") <- as.integer(certified)
+  }
   lambda
 }
 
@@ -152,6 +160,7 @@
     "cv_invalid_fold_fits",
     "cv_invalid_lambdas",
     "cv_path_tail_skipped_fold_fits",
+    "cv_certified_nonconvergent_fold_fits",
     "support_penalty_floor",
     "support_penalty_floor_applied",
     "support_path_floor_applied",
@@ -241,6 +250,8 @@
     attr(lambda, "cv_invalid_lambdas") %||% 0L
   attr(result, "cv_path_tail_skipped_fold_fits") <-
     attr(lambda, "cv_path_tail_skipped_fold_fits") %||% 0L
+  attr(result, "cv_certified_nonconvergent_fold_fits") <-
+    attr(lambda, "cv_certified_nonconvergent_fold_fits")
   attr(result, "lambda_selected_on_path") <- selected
   attr(result, "lambda_selected_before_support_floor") <- if (
     isTRUE(path_floor_applied)
@@ -264,6 +275,36 @@
   attr(constrained, "support_path_floor_applied") <-
     any(as.numeric(lambda_grid) < support$floor)
   constrained
+}
+
+# A full-sample lambda_max can be smaller than the penalty required by a CV
+# training subset. Retry only a completely exhausted path, preserving its
+# candidates, folds and convergence criteria. This applies to both initial
+# and derivative-weighted density losses: a nonnegative weighted feature mean
+# also lies between the observed feature extrema.
+.density_ratio_cv_with_retry <- function(run_cv, lambda_grid, Z_site, A,
+                                         linear_moment, A_val) {
+  if (!exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)) set.seed(NULL)
+  cv_rng <- get(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
+  tryCatch(run_cv(lambda_grid), error = function(error) {
+    if (!identical(conditionMessage(error), paste0("aggregate_cv_results: ",
+        "no lambda converged with a finite validation loss across every CV fold."))) stop(error)
+    arm_design <- Z_site[A == A_val, , drop = FALSE]
+    gradient_bound <- max(abs(linear_moment[-1L] - linear_moment[1L] * apply(arm_design, 2L, min)),
+                          abs(linear_moment[-1L] - linear_moment[1L] * apply(arm_design, 2L, max)), 0)
+    retry_max <- gradient_bound * (1 + 1e-6)
+    original_max <- max(lambda_grid)
+    if (!is.finite(retry_max) || retry_max <= original_max) stop(error)
+    extension <- pmin(retry_max, original_max *
+      2^seq_len(ceiling(log2(retry_max / original_max))))
+    retry_grid <- sort(unique(c(as.numeric(lambda_grid), extension)), decreasing = TRUE)
+    assign(".Random.seed", cv_rng, envir = .GlobalEnv)
+    result <- run_cv(retry_grid)
+    result$grid_retry <- list(original_max = original_max, retry_max = retry_max,
+      added_lambdas = length(retry_grid) - length(lambda_grid),
+      original_grid = as.numeric(lambda_grid), retried_grid = retry_grid)
+    result
+  })
 }
 
 .attach_nuisance_fit_attrs <- function(
@@ -303,6 +344,9 @@
     line_search_failures <- NA_integer_
   }
   attr(coefs, "line_search_failures") <- line_search_failures
+  attr(coefs, "solver") <- cpp_result$solver %||% NA_character_
+  attr(coefs, "kkt_residual") <- cpp_result$kkt_residual %||% NA_real_
+  attr(coefs, "kkt_threshold") <- cpp_result$kkt_threshold %||% NA_real_
   attr(coefs, "cv_seconds") <- as.numeric(cv_seconds)
   attr(coefs, "final_fit_seconds") <- as.numeric(final_fit_seconds)
   coefs
@@ -314,7 +358,7 @@
 
 #' Fit initial outcome model using L1-regularized GLM
 #'
-#' Implements the initial outcome model estimation for the two-level cross-fitting
+#' Implements initial outcome model estimation inside three-level cross-fitting
 #' algorithm. Following eq:nuisance_initial_losses in main.tex:
 #'
 #' \deqn{
@@ -334,7 +378,8 @@
 #'        objective scale. Internally this is converted to glmnet's
 #'        treatment-arm-only scale after filtering to \code{A == A_val}.
 #' @param nlambda Number of lambda values in glmnet path (default 100).
-#'        Lower values (e.g., 20) speed up CV with minimal precision loss.
+#'        Changing this value changes the candidates and may change estimates;
+#'        solver comparisons should retain the same prescribed grid.
 #' @param family GLM family: "gaussian" or "binomial".
 #'        Default "binomial".
 #' @param lambda_rule CV selection rule when \code{lambda = NULL}: \code{"min"}
@@ -365,12 +410,6 @@ fit_initial_outcome <- function(W_outcome, Y, A, A_val = 1L, lambda = NULL,
   cv_group_id <- .validate_nuisance_cv_group_id(
     cv_group_id, nrow(W_outcome), "fit_initial_outcome"
   )
-  # A cached lambda can arrive non-finite (NA) from a degenerate fold that fell
-  # back to the constant nuisance; treat it as absent so this fold selects its
-  # own lambda by CV (or falls back itself) instead of erroring on the sentinel.
-  if (!is.null(lambda) && !(length(lambda) == 1L && is.finite(lambda))) {
-    lambda <- NULL
-  }
   if (!is.null(lambda)) {
     lambda <- .validate_lambda_scalar(lambda, "fit_initial_outcome")
   }
@@ -408,6 +447,7 @@ fit_initial_outcome <- function(W_outcome, Y, A, A_val = 1L, lambda = NULL,
     attr(a, "lambda_min")  <- NA_real_
     attr(a, "lambda_1se")  <- NA_real_
     attr(a, "lambda_rule") <- "degenerate_constant"
+    attr(a, "solver") <- "constant"
     a
   }
   # A near-saturated outcome (tiny minority class) at high dimension makes the
@@ -456,12 +496,10 @@ fit_initial_outcome <- function(W_outcome, Y, A, A_val = 1L, lambda = NULL,
       msg <- conditionMessage(e)
       # A CV sub-fold can be single-class even when the full arm is not; signal
       # the constant degenerate fallback handled just below.
-      # Safety net for any residual saturation-driven cv.glmnet failure that
-      # slipped past the pre-check above (a single-class CV sub-fold, or a
-      # non-conformable from inconsistent per-fold lambda paths on near-separable
-      # data): fall back to the constant degenerate nuisance handled just below.
+      # Only an explicit single-class failure permits the constant fallback.
+      # Dimension errors require diagnosis and must not change the estimator.
       if (glmnet_family == "binomial" &&
-          grepl("1 or 0 observations|0 or 1 observations|non-conformable", msg)) {
+          grepl("1 or 0 observations|0 or 1 observations", msg)) {
         return(NULL)
       }
       stop(sprintf("fit_initial_outcome: cv.glmnet failed (family=%s, n_arm=%d, nlambda=%d): %s",
@@ -495,13 +533,14 @@ fit_initial_outcome <- function(W_outcome, Y, A, A_val = 1L, lambda = NULL,
   # Extract coefficients (includes intercept as first element)
   alpha <- as.vector(coef(fit, s = lambda_fit))
   
-  # Return the full-source-scale lambda for caching across folds whose arm
-  # prevalence may differ. lambda_fit records the glmnet-scale value used here.
+  # Record both objective scales. Reuse is allowed only for identical fitting
+  # inputs; lambda_fit is the glmnet-scale value used for this training sample.
   attr(alpha, "lambda_used") <- as.numeric(lambda_use)
   attr(alpha, "lambda_fit") <- as.numeric(lambda_fit)
   attr(alpha, "lambda_min") <- as.numeric(lambda_min)
   attr(alpha, "lambda_1se") <- as.numeric(lambda_1se)
   attr(alpha, "lambda_rule") <- lambda_rule_used
+  attr(alpha, "solver") <- "glmnet"
   
   return(alpha)
 }
@@ -588,6 +627,13 @@ fit_initial_outcome <- function(W_outcome, Y, A, A_val = 1L, lambda = NULL,
 #'
 #' NOTE: This does NOT include ψ'(α_init) term - only uses mean_phi from target
 #'
+#' If no candidate converges in every CV fold, the initial-weight fitter retries
+#' once on the same folds with larger penalties appended to the original grid.
+#' The upper endpoint bounds the intercept-only slope gradients for every
+#' possible CV training subset. Successful original paths and fixed-lambda fits
+#' are unchanged. Retry grids are recorded in the coefficient attribute
+#' \code{cv_grid_retry}; the convergence criteria are unchanged.
+#'
 #' @param Z_site Covariate matrix (n × p)
 #' @param A Treatment indicator vector (n × 1)
 #' @param mean_phi Mean of φ(X) from target site: Ẽ_t[φ(X)]
@@ -601,6 +647,7 @@ fit_initial_outcome <- function(W_outcome, Y, A, A_val = 1L, lambda = NULL,
 #' @param A_val Treatment arm, either 0 or 1.
 #' @param warm_start Optional initial coefficient vector for the final
 #'   optimization.
+#' @inheritParams run_crossfit
 #' @param M_tau Truncation radius of the tilting weight
 #'   \eqn{\exp\{-T_M(\phi'\gamma)\}}, shared by the coordinate descent, its
 #'   CV validation loss, the score and the influence function; \code{Inf}
@@ -613,7 +660,13 @@ fit_initial_density_ratio <- function(Z_site, A, mean_phi, lambda = NULL,
                                        A_val = 1L, M_tau = M_TAU_DEFAULT,
                                        warm_start = NULL,
                                        nlambda = LAMBDA_GRID_SIZE_STANDARD,
-                                       lambda_rule = c("min", "1se"), cv_group_id = NULL) {
+                                       lambda_rule = c("min", "1se"), cv_group_id = NULL,
+                                       nuisance_solver = NULL,
+                                       nuisance_cv_certificate = NULL) {
+  previous_solver <- .set_nuisance_solver(nuisance_solver)
+  on.exit(.restore_nuisance_solver(previous_solver), add = TRUE)
+  previous_certificate <- .set_nuisance_cv_certificate(nuisance_cv_certificate)
+  on.exit(.restore_nuisance_cv_certificate(previous_certificate), add = TRUE)
   A_val <- .validate_A_val(A_val, "fit_initial_density_ratio")
   lambda_rule <- .match_nuisance_lambda_rule(lambda_rule, "fit_initial_density_ratio")
   cv_group_id <- .validate_nuisance_cv_group_id(
@@ -624,6 +677,7 @@ fit_initial_density_ratio <- function(Z_site, A, mean_phi, lambda = NULL,
     Z_site, A, mean_phi, A_val, "fit_initial_density_ratio"
   )
   path_floor_applied <- FALSE
+  cv_grid_retry <- NULL
 
   # Handle lambda = NULL case: use CV selection
   if (is.null(lambda)) {
@@ -637,11 +691,13 @@ fit_initial_density_ratio <- function(Z_site, A, mean_phi, lambda = NULL,
     path_floor_applied <- isTRUE(attr(
       lambda_grid, "support_path_floor_applied"
     ))
-    cv_result <- .call_nuisance_cv_with_groups(
+    run_cv <- function(grid) .call_nuisance_cv_with_groups(
       select_lambda_cv_initial_density_ratio_cpp,
-      list(Z_site, A, mean_phi, lambda_grid, n_cv_folds, max_iter, tol, A_val, M_tau),
-      cv_group_id, A, A_val, n_cv_folds, "fit_initial_density_ratio"
-    )
+      list(Z_site, A, mean_phi, grid, n_cv_folds, max_iter, tol, A_val, M_tau,
+           use_kkt_certificate = .nuisance_cv_certificate_enabled()),
+      cv_group_id, A, A_val, n_cv_folds, "fit_initial_density_ratio")
+    cv_result <- .density_ratio_cv_with_retry(run_cv, lambda_grid, Z_site, A, mean_phi, A_val)
+    cv_grid_retry <- cv_result$grid_retry
     lambda <- .select_nuisance_cv_lambda(cv_result, lambda_rule, "fit_initial_density_ratio")
   } else {
     lambda <- .validate_lambda_scalar(lambda, "fit_initial_density_ratio")
@@ -668,11 +724,13 @@ fit_initial_density_ratio <- function(Z_site, A, mean_phi, lambda = NULL,
   )
   result <- cpp_result$gamma
   result <- .attach_nuisance_lambda_attrs(result, lambda)
-  .attach_nuisance_fit_attrs(
+  result <- .attach_nuisance_fit_attrs(
     result, cpp_result,
     cv_seconds = cv_seconds,
     final_fit_seconds = final_fit_seconds
   )
+  if (!is.null(cv_grid_retry)) attr(result, "cv_grid_retry") <- cv_grid_retry
+  result
 }
 
 #' Fit UNIFIED density ratio function (γ parameters)
@@ -719,8 +777,16 @@ fit_initial_density_ratio <- function(Z_site, A, mean_phi, lambda = NULL,
 #'   selects \code{lambda.min}; \code{"1se"} selects \code{lambda.1se}.
 #' @param nlambda Number of candidates in the CV lambda path.
 #' @return Vector of density ratio parameters
+#' @param truncate_initial_outcome Whether to truncate the initial outcome
+#'   predictor before evaluating its derivative in calibrated fitting.
+#' @details If the entire original CV grid fails, the same one-retry extension
+#'   used by \code{fit_initial_density_ratio} appends larger penalties on the
+#'   same CV folds. The \code{cv_grid_retry} coefficient attribute records the
+#'   extended grid. Successful original paths and convergence criteria are
+#'   unchanged.
 #' @export
 #' @inheritParams fit_initial_outcome
+#' @inheritParams run_crossfit
 fit_unified_density_ratio <- function(Z_site, A, mean_grad_psi, alpha_init,
                                       lambda = NULL, max_iter = MAX_ITER_DEFAULT, tol = TOL_DEFAULT,
                                       calibrated = FALSE, M_tau = M_TAU_DEFAULT,
@@ -728,7 +794,15 @@ fit_unified_density_ratio <- function(Z_site, A, mean_grad_psi, alpha_init,
                                       family_int = 1L, link_int = 1L,
                                       warm_start = NULL,
                                       nlambda = LAMBDA_GRID_SIZE_STANDARD,
-                                      lambda_rule = c("min", "1se"), cv_group_id = NULL) {
+                                      lambda_rule = c("min", "1se"), cv_group_id = NULL,
+                                      nuisance_solver = NULL,
+                                      truncate_initial_outcome = TRUE,
+                                      nuisance_cv_certificate = NULL) {
+  previous_solver <- .set_nuisance_solver(nuisance_solver)
+  on.exit(.restore_nuisance_solver(previous_solver), add = TRUE)
+  previous_certificate <- .set_nuisance_cv_certificate(nuisance_cv_certificate)
+  on.exit(.restore_nuisance_cv_certificate(previous_certificate), add = TRUE)
+  truncate_initial_outcome <- .validate_logical_control(truncate_initial_outcome, "truncate_initial_outcome")
   A_val <- .validate_A_val(A_val, "fit_unified_density_ratio")
   lambda_rule <- .match_nuisance_lambda_rule(lambda_rule, "fit_unified_density_ratio")
   cv_group_id <- .validate_nuisance_cv_group_id(
@@ -755,6 +829,7 @@ fit_unified_density_ratio <- function(Z_site, A, mean_grad_psi, alpha_init,
     Z_site, A, mean_grad_psi, A_val, "fit_unified_density_ratio"
   )
   path_floor_applied <- FALSE
+  cv_grid_retry <- NULL
   
   # Handle lambda = NULL case
   if (is.null(lambda)) {
@@ -763,7 +838,8 @@ fit_unified_density_ratio <- function(Z_site, A, mean_grad_psi, alpha_init,
                                            A_val = A_val,
                                            family_int = family_int, link_int = link_int,
                                            W_outcome = W_outcome,
-                                           calibrated = calibrated, M_tau = M_tau)
+                                           calibrated = calibrated, M_tau = M_tau,
+                                           truncate_initial_outcome = truncate_initial_outcome)
     lambda_min_ratio <- if (nrow(Z_site) > ncol(Z_site)) LAMBDA_MIN_RATIO_LOW_DIM else LAMBDA_MIN_RATIO_HIGH_DIM
     lambda_grid <- build_lambda_grid(lambda_max = lmax,
                                      lambda_min_ratio = lambda_min_ratio,
@@ -774,23 +850,28 @@ fit_unified_density_ratio <- function(Z_site, A, mean_grad_psi, alpha_init,
     ))
     if (calibrated) {
       # Forward W_outcome to CV so ψ' uses correct features
-      cv_result <- .call_nuisance_cv_with_groups(
+      run_cv <- function(grid) .call_nuisance_cv_with_groups(
         select_lambda_cv_calibrated_density_ratio_cpp,
-        list(Z_site, A, mean_grad_psi, alpha_init, lambda_grid, n_cv_folds, max_iter, tol, M_tau,
-             W_outcome_use, A_val, family_int, link_int),
+        list(Z_site, A, mean_grad_psi, alpha_init, grid, n_cv_folds, max_iter, tol, M_tau,
+             W_outcome_use, A_val, family_int, link_int,
+             truncate_initial_outcome = truncate_initial_outcome,
+             use_kkt_certificate = .nuisance_cv_certificate_enabled()),
         cv_group_id, A, A_val, n_cv_folds, "fit_unified_density_ratio"
       )
     } else {
       # Refined DR should use ψ'(W_outcome^T alpha_init) with no truncation.
       # Reuse the calibrated CV kernel with M_tau = Inf to keep feature usage
       # (Z_site for gamma, W_outcome for ψ') consistent with final fitting.
-      cv_result <- .call_nuisance_cv_with_groups(
+      run_cv <- function(grid) .call_nuisance_cv_with_groups(
         select_lambda_cv_calibrated_density_ratio_cpp,
-        list(Z_site, A, mean_grad_psi, alpha_init, lambda_grid, n_cv_folds, max_iter, tol, Inf,
-             W_outcome_use, A_val, family_int, link_int),
+        list(Z_site, A, mean_grad_psi, alpha_init, grid, n_cv_folds, max_iter, tol, Inf,
+             W_outcome_use, A_val, family_int, link_int,
+             use_kkt_certificate = .nuisance_cv_certificate_enabled()),
         cv_group_id, A, A_val, n_cv_folds, "fit_unified_density_ratio"
       )
     }
+    cv_result <- .density_ratio_cv_with_retry(run_cv, lambda_grid, Z_site, A, mean_grad_psi, A_val)
+    cv_grid_retry <- cv_result$grid_retry
     lambda <- .select_nuisance_cv_lambda(cv_result, lambda_rule, "fit_unified_density_ratio")
   } else {
     lambda <- .validate_lambda_scalar(lambda, "fit_unified_density_ratio")
@@ -813,18 +894,21 @@ fit_unified_density_ratio <- function(Z_site, A, mean_grad_psi, alpha_init,
   final_fit_started_at <- proc.time()[["elapsed"]]
   cpp_result <- fit_unified_density_ratio_cpp(
     Z_site, A, mean_grad_psi, alpha_init, lambda, max_iter, tol, 
-    calibrated, M_tau, W_outcome_use, A_val, family_int, link_int, ws
+    calibrated, M_tau, W_outcome_use, A_val, family_int, link_int, ws,
+    truncate_initial_outcome = truncate_initial_outcome
   )
   final_fit_seconds <- as.numeric(
     proc.time()[["elapsed"]] - final_fit_started_at
   )
   result <- cpp_result$gamma
   result <- .attach_nuisance_lambda_attrs(result, lambda)
-  .attach_nuisance_fit_attrs(
+  result <- .attach_nuisance_fit_attrs(
     result, cpp_result,
     cv_seconds = cv_seconds,
     final_fit_seconds = final_fit_seconds
   )
+  if (!is.null(cv_grid_retry)) attr(result, "cv_grid_retry") <- cv_grid_retry
+  result
 }
 
 #' Fit UNIFIED outcome model function (α parameters)
@@ -874,8 +958,13 @@ fit_unified_density_ratio <- function(Z_site, A, mean_grad_psi, alpha_init,
 #' @param warm_start Optional initial coefficient vector for the final
 #'   optimization.
 #' @return Vector of outcome model parameters
+#' @param use_weight_derivative If TRUE, use the nonnegative factor
+#'   \eqn{-d v_M/d\eta} from the clipped initial tilt as the outcome-loss weight.
+#'   Requires calibrated fitting with
+#'   a finite radius that precedes the numerical ratio guard.
 #' @export
 #' @inheritParams fit_initial_outcome
+#' @inheritParams run_crossfit
 fit_unified_outcome <- function(W_outcome, Y, A, A_val = 1, gamma_s, lambda = NULL,
                                 max_iter = MAX_ITER_DEFAULT, tol = TOL_DEFAULT,
                                 family = "binomial", link = NULL,
@@ -883,7 +972,16 @@ fit_unified_outcome <- function(W_outcome, Y, A, A_val = 1, gamma_s, lambda = NU
                                 calibrated = FALSE, M_tau = M_TAU_DEFAULT, Z_site = NULL,
                                 warm_start = NULL,
                                 nlambda = LAMBDA_GRID_SIZE_STANDARD,
-                                lambda_rule = c("min", "1se"), cv_group_id = NULL) {
+                                lambda_rule = c("min", "1se"), cv_group_id = NULL,
+                                nuisance_solver = NULL,
+                                use_weight_derivative = FALSE) {
+  previous_solver <- .set_nuisance_solver(nuisance_solver)
+  on.exit(.restore_nuisance_solver(previous_solver), add = TRUE)
+  use_weight_derivative <- .validate_logical_control(use_weight_derivative, "use_weight_derivative")
+  if (use_weight_derivative) {
+    if (!isTRUE(calibrated)) stop("use_weight_derivative requires calibrated=TRUE.", call. = FALSE)
+    .validate_score_calibration_radius(M_tau)
+  }
   A_val <- .validate_A_val(A_val, "fit_unified_outcome")
   lambda_rule <- .match_nuisance_lambda_rule(lambda_rule, "fit_unified_outcome")
   cv_group_id <- .validate_nuisance_cv_group_id(
@@ -922,7 +1020,8 @@ fit_unified_outcome <- function(W_outcome, Y, A, A_val = 1, gamma_s, lambda = NU
                                         A_val = A_val,
                                         family_int = family_int, link_int = link_int,
                                         Z_site = Z_site,
-                                        calibrated = calibrated, M_tau = M_tau)
+                                        calibrated = calibrated, M_tau = M_tau,
+                                        use_weight_derivative = use_weight_derivative)
     lambda_min_ratio <- if (nrow(W_outcome) > ncol(W_outcome)) LAMBDA_MIN_RATIO_LOW_DIM else LAMBDA_MIN_RATIO_HIGH_DIM
     lambda_grid <- build_lambda_grid(lambda_max = lmax,
                                      lambda_min_ratio = lambda_min_ratio,
@@ -936,7 +1035,7 @@ fit_unified_outcome <- function(W_outcome, Y, A, A_val = 1, gamma_s, lambda = NU
       cv_result <- .call_nuisance_cv_with_groups(
         select_lambda_cv_calibrated_outcome_cpp,
         list(W_outcome, Y, A, gamma_s, lambda_grid, n_cv_folds, max_iter, tol, A_val, M_tau, Z_site_mat,
-             family_int, link_int),
+             family_int, link_int, use_weight_derivative = use_weight_derivative),
         cv_group_id, A, A_val, n_cv_folds, "fit_unified_outcome"
       )
     } else {
@@ -965,7 +1064,8 @@ fit_unified_outcome <- function(W_outcome, Y, A, A_val = 1, gamma_s, lambda = NU
   final_fit_started_at <- proc.time()[["elapsed"]]
   cpp_result <- fit_unified_outcome_cpp(W_outcome, Y, A, gamma_s, family_int, link_int,
                                         lambda, max_iter, tol, A_val, 
-                                        calibrated, M_tau, Z_site_mat, ws)
+                                        calibrated, M_tau, Z_site_mat, ws,
+                                        use_weight_derivative = use_weight_derivative)
   final_fit_seconds <- as.numeric(
     proc.time()[["elapsed"]] - final_fit_started_at
   )
@@ -1105,18 +1205,18 @@ optimize_weights <- function(estimates, variances, C_ot, n_samples,
          call. = FALSE)
   }
 
-  # Input validation and clipping with more conservative variance bounds
-  estimates <- pmax(pmin(estimates, ESTIMATE_MAX), -ESTIMATE_MAX)
-  variances$V_t <- pmax(variances$V_t, VARIANCE_MIN)
-  variances$V_s <- pmax(variances$V_s, VARIANCE_MIN)
-  variances$V_ot <- max(variances$V_ot, VARIANCE_MIN)
-  C_ot <- pmax(pmin(C_ot, ESTIMATE_MAX), -ESTIMATE_MAX)
+  # Preserve empirical moments in the variance objective. Flooring each
+  # component separately changes the quadratic and makes it disagree with
+  # the weight derivative. Only the Wald discrepancy variance has a floor.
+  if (length(variances$V_ot) != 1L ||
+      any(c(variances$V_t, variances$V_s, variances$V_ot) < 0)) {
+    stop("optimize_weights: variance components must be nonnegative, with scalar V_ot.", call. = FALSE)
+  }
   lambda <- .validate_lambda_scalar(lambda, "optimize_weights", allow_zero = TRUE)
   if (lambda > LAMBDA_MAX) {
     stop(sprintf("optimize_weights: lambda must be <= %g.", LAMBDA_MAX),
          call. = FALSE)
   }
-  mu_ot <- max(min(mu_ot, ESTIMATE_MAX), -ESTIMATE_MAX)
   
   # Prepare cross-site covariance matrix
   cross_matrix <- prepare_cross_matrix(C_cross, length(estimates))
@@ -1156,6 +1256,8 @@ optimize_weights <- function(estimates, variances, C_ot, n_samples,
 
   attr(weights, "optimizer_iterations") <- as.integer(cpp_result$iterations)
   attr(weights, "psd_ridge") <- as.numeric(cpp_result$psd_ridge)
+  attr(weights, "kkt_residual") <- as.numeric(cpp_result$kkt_residual)
+  attr(weights, "kkt_threshold") <- as.numeric(cpp_result$kkt_threshold)
   
   return(weights)
 }

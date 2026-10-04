@@ -54,14 +54,16 @@ List select_lambda_cv_density_ratio_cpp(const MatrixXd& Z_site, const VectorXd& 
                                        int max_iter, double tol,
                                        int A_val,
                                        int family_int, int link_int,
-                                       Rcpp::Nullable<Rcpp::NumericVector> cv_fold_id);
+                                       Rcpp::Nullable<Rcpp::NumericVector> cv_fold_id,
+                                       bool use_kkt_certificate);
 
 List select_lambda_cv_initial_density_ratio_cpp(const MatrixXd& Z_site, const VectorXd& A_source,
                                                 const VectorXd& mean_phi,
                                                 const VectorXd& lambda_grid, int n_folds,
                                                 int max_iter, double tol,
                                                 int A_val, double M_tau,
-                                                Rcpp::Nullable<Rcpp::NumericVector> cv_fold_id);
+                                                Rcpp::Nullable<Rcpp::NumericVector> cv_fold_id,
+                                                bool use_kkt_certificate);
 
 List select_lambda_cv_general_refined_outcome_cpp(const MatrixXd& W_outcome, const VectorXd& Y_source,
                                                  const VectorXd& A_source, const VectorXd& gamma_s,
@@ -77,7 +79,9 @@ List select_lambda_cv_calibrated_density_ratio_cpp(const MatrixXd& Z_site, const
                                                    const MatrixXd& W_outcome,
                                                    int A_val,
                                                    int family_int, int link_int,
-                                                   Rcpp::Nullable<Rcpp::NumericVector> cv_fold_id);
+                                                   Rcpp::Nullable<Rcpp::NumericVector> cv_fold_id,
+                                                   bool truncate_initial_outcome,
+                                                   bool use_kkt_certificate);
 
 List select_lambda_cv_calibrated_outcome_cpp(const MatrixXd& W_outcome, const VectorXd& Y_source,
                                              const VectorXd& A_source, const VectorXd& gamma_init,

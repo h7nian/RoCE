@@ -354,13 +354,17 @@ compute_lambda_max_initial_dr <- function(Z_site, A, mean_phi, A_val = 1L) {
 #' @param W_outcome Outcome features (optional, defaults to Z_site).
 #' @param calibrated Whether truncation is used.
 #' @param M_tau Truncation parameter.
+#' @param truncate_initial_outcome Whether to truncate the initial outcome
+#'   predictor before evaluating its derivative. FALSE matches the derivative
+#'   of an untruncated outcome prediction in the evaluation score.
 #' @return Scalar \eqn{\lambda_{\max}}.
 compute_lambda_max_refined_dr <- function(Z_site, A, mean_grad_psi, alpha_init,
                                            A_val = 1L,
                                            family_int = 1L, link_int = 1L,
                                            W_outcome = NULL,
                                            calibrated = FALSE,
-                                           M_tau = M_TAU_DEFAULT) {
+                                           M_tau = M_TAU_DEFAULT,
+                                           truncate_initial_outcome = TRUE) {
   n_total <- nrow(Z_site)
   treated_idx <- which(A == A_val)
   n_treated <- length(treated_idx)
@@ -389,7 +393,7 @@ compute_lambda_max_refined_dr <- function(Z_site, A, mean_grad_psi, alpha_init,
 
   # Compute ψ'(ϕ^T α_init) for each treated unit
   eta_alpha <- as.numeric(W_tr %*% alpha_init)
-  if (calibrated) {
+  if (calibrated && truncate_initial_outcome) {
     eta_alpha <- pmin(pmax(eta_alpha, -M_tau), M_tau)
   }
   # ψ'(η): in density-ratio loss this corresponds to b''(θ) and must be non-negative.
@@ -444,12 +448,16 @@ compute_lambda_max_refined_dr <- function(Z_site, A, mean_grad_psi, alpha_init,
 #' @param Z_site Site features for gamma (if NULL, uses W_outcome).
 #' @param calibrated Whether truncation is used.
 #' @param M_tau Truncation parameter.
+#' @param use_weight_derivative Whether to use the nonnegative negative
+#'   derivative of the truncated exponential tilt as the outcome loss weight.
+#'   This weight is zero outside the truncation interval.
 #' @return Scalar \eqn{\lambda_{\max}}.
 compute_lambda_max_outcome <- function(W_outcome, Y, A, gamma_s,
                                         A_val = 1L,
                                         family_int = 1L, link_int = 1L,
                                         Z_site = NULL,
-                                        calibrated = FALSE, M_tau = M_TAU_DEFAULT) {
+                                        calibrated = FALSE, M_tau = M_TAU_DEFAULT,
+                                        use_weight_derivative = FALSE) {
   n_total <- nrow(W_outcome)
   treated_idx <- which(A == A_val)
   n_treated <- length(treated_idx)
@@ -467,18 +475,20 @@ compute_lambda_max_outcome <- function(W_outcome, Y, A, gamma_s,
   } else {
     Z_tr <- cbind(1, W_outcome[treated_idx, , drop = FALSE])
   }
-  if (length(gamma_s) < ncol(Z_tr)) {
-    stop("compute_lambda_max_outcome: gamma_s is shorter than the intercept-augmented density-ratio design.",
+  if (length(gamma_s) != ncol(Z_tr)) {
+    stop("compute_lambda_max_outcome: gamma_s must match the intercept-augmented density-ratio design.",
          call. = FALSE)
   }
 
   g_val <- as.numeric(Z_tr %*% gamma_s[1:ncol(Z_tr)])
+  original_predictor <- g_val
   if (calibrated) {
     g_val <- pmin(pmax(g_val, -M_tau), M_tau)
   }
   log_weight_bounds <- log(c(WEIGHT_MIN, WEIGHT_MAX))
   weights <- exp(pmin(pmax(-g_val, log_weight_bounds[[1L]]),
                       log_weight_bounds[[2L]]))
+  if (use_weight_derivative) weights[abs(original_predictor) >= M_tau] <- 0
 
   weight_sum <- sum(weights)
   if (!is.finite(weight_sum) || weight_sum <= 0) {

@@ -26,17 +26,33 @@ run_simulation_study(
   verbose_every = 10L,
   parallel_strategy = c("outer_priority", "balanced", "outer_only"),
   estimate_ate = FALSE,
-  dgp_type = "face",
+  dgp_type = "bounded",
   ate_deviation = 0,
   n_deviated_sites = 0L,
   deviation_mechanism = c("treated_arm", "both_arms"),
   n_target = NULL,
   n_source_sizes = NULL,
   nuisance_lambda_rule = c("min", "1se"),
-  n_weight_bootstrap = 0L
+  n_weight_bootstrap = 0L,
+  nuisance_solver = NULL,
+  target_nuisance_method = c("lasso", "hou_calibrated"),
+  source_validation_method = c("initial", "calibrated"),
+  calibration_layout = c("block", "compact"),
+  additional_aggregation_modes = character(0),
+  nuisance_tol = TOL_DEFAULT,
+  calibration_control = NULL,
+  nuisance_cache_dir = NULL,
+  dgp_control = NULL,
+  methods = NULL,
+  M_tau = M_TAU_DEFAULT,
+  M_tau_inference = M_TAU_INFERENCE_DEFAULT,
+  crossfit_layers = NULL,
+  nuisance_cv_certificate = NULL
 )
 }
 \arguments{
+\item{nuisance_cv_certificate}{Optional logical density-CV KKT certificate control. \code{NULL} inherits an enclosing call, otherwise defaults to \code{FALSE}. Certified failures may be skipped without changing the lambda grid, CV tolerance or final solver.}
+
 \item{n_sims}{Integer number of MC replicates per setting.}
 
 \item{n_total_vec}{Integer vector of sample sizes.}
@@ -72,9 +88,11 @@ deviation and effect-modification arguments.}
 
 \item{shift_strength}{Numeric covariate shift multiplier.}
 
-\item{n_folds}{Integer cross-fitting fold count.}
+\item{n_folds}{number of cross-fitting folds (default 10, K_f in main.tex).
+       The three-level method uses at least 4 folds (10 in the study).
+       Two-layer outer-fit reuse and legacy initial validation allow 3 folds.}
 
-\item{use_lambda_cache}{Logical. If TRUE, enable lambda caching
+\item{use_lambda_cache}{Logical. If TRUE, reuse identical nuisance fits
 within cross-fitting nuisance-model loops.}
 
 \item{aggregation_lambda}{Positive truncated-Wald penalty multiplier passed
@@ -89,7 +107,7 @@ logging every \code{verbose_every} simulations (default 10).}
 
 \item{estimate_ate}{Logical. Also estimate ATE via A_val=0?}
 
-\item{dgp_type}{"roce" or "face".}
+\item{dgp_type}{"roce", "face", or "bounded".}
 
 \item{ate_deviation}{Additive source treatment-shift deviation on the FACE
 outcome linear-predictor scale. The historical argument name is retained
@@ -115,6 +133,77 @@ passed to every simulation replicate: \code{"min"} or \code{"1se"}.}
 
 \item{n_weight_bootstrap}{Number of opt-in weight-relearning bootstrap draws
 per primary soft direct-TATE fit; 0 disables the diagnostic.}
+
+\item{nuisance_solver}{C++ nuisance optimizer: \code{"proximal_newton"} or
+\code{"coordinate_descent"}. NULL inherits the process configuration,
+whose unconfigured default is proximal Newton. The choice applies to
+CV and final fits and is restored on exit. Initial glmnet fits retain
+their own optimizer.}
+
+\item{target_nuisance_method}{\code{"lasso"} retains the ordinary target
+       AIPW anchor. \code{"hou_calibrated"} fits both target nuisance models
+       by fold-summed calibration. Three layers fit separate inner models;
+       two layers reuse the final outer models for weight-learning scores.}
+
+\item{source_validation_method}{\code{"initial"} retains initial-model
+       validation. \code{"complete"} evaluates the complete selected source
+       nuisance program, trained separately for every inner validation fold.
+       \code{"calibrated"} remains a compatible name for complete validation.
+       Complete validation requires at least four original folds.
+       \code{"outer_fit"} reuses final outer models for training-sample
+       scores, as selected by \code{crossfit_layers=2L}.}
+
+\item{crossfit_layers}{Optional \code{2L} or \code{3L}. Two layers reuse
+  final outer nuisance models to compute eta-training scores inside the
+  outer training sample. Three layers independently validate complete
+  calibrated fits there. Both keep fold-specific eta and exclude the outer
+  evaluation fold. NULL preserves the legacy validation controls. Requires
+  final calibration at the source or target; it does not change communication rounds.}
+
+\item{calibration_layout}{\code{"block"} uses explicit fold-specific
+design blocks; \code{"compact"} uses equivalent initial linear
+predictors. This option changes matrix storage, not the loss.}
+
+\item{additional_aggregation_modes}{Optional subset of
+\code{c("separate_arms", "joint_tate")}. Adds TATE comparison rows using
+the same fitted nuisances as the primary common-weight estimator.}
+
+\item{nuisance_tol}{Positive convergence tolerance for the C++ nuisance
+fits. Both solvers must meet the corresponding KKT tolerance.
+The internal CV kernels retain their documented tolerance floor;
+this controls final-refit accuracy without changing the lambda rule.}
+
+\item{calibration_control}{Optional named list. \code{recipe} is
+  \code{"legacy"} (default) or \code{"score_derivative"}. The latter uses
+  untruncated initial OR derivatives and the derivative of the clipped
+  initial tilt in the OR loss. \code{target_propensity_initialization} is
+  \code{"logistic"} (default) or \code{"calibrated"}. Optional
+  \code{target_radius} overrides both target fitting and target evaluation
+  radii; it does not change source radii. Nondefault target settings require
+  \code{target_nuisance_method="hou_calibrated"}. Score-derivative fitting
+  currently requires finite radii below the source numerical ratio guard.
+  \code{source_nuisance_method} is \code{"calibrated"} (default) or
+  \code{"standard"}. The standard ablation omits final source score
+  calibration, retaining initial merged-weight balancing and fitting an
+  ordinary source OR on the same allowed rows. It requires one-round
+  communication and complete-program weight learning, either separate inner
+  validation or outer-fit reuse. With legacy controls, an ordinary target
+  anchor uses two fold levels and target calibration uses three; explicit
+  \code{crossfit_layers} requires some final source or target calibration.}
+
+\item{nuisance_cache_dir}{Optional existing writable parent directory for a
+temporary cache shared by source workers across outer folds. NULL retains
+the in-memory cache. Requires \code{use_lambda_cache=TRUE}. Each run owns
+a new subdirectory and removes it on exit; inputs/models use SHA-256 checks.}
+
+\item{dgp_control}{Bounded-DGP controls; see \code{\link{generate_bounded_data}}.}
+
+\item{methods}{vector of methods to run}
+
+\item{M_tau}{Positive fitting-stage truncation radius.}
+
+\item{M_tau_inference}{Positive or infinite inference-stage truncation
+radius used in source corrections and influence-function variances.}
 }
 \value{
 Data frame of simulation results.

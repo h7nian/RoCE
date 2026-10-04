@@ -16,10 +16,14 @@ fit_initial_density_ratio(
   warm_start = NULL,
   nlambda = LAMBDA_GRID_SIZE_STANDARD,
   lambda_rule = c("min", "1se"),
-  cv_group_id = NULL
+  cv_group_id = NULL,
+  nuisance_solver = NULL,
+  nuisance_cv_certificate = NULL
 )
 }
 \arguments{
+\item{nuisance_cv_certificate}{Optional logical density-CV KKT certificate control. \code{NULL} inherits an enclosing call, otherwise defaults to \code{FALSE}. Certified failures may be skipped without changing the lambda grid, CV tolerance or final solver.}
+
 \item{Z_site}{Covariate matrix (n × p)}
 
 \item{A}{Treatment indicator vector (n × 1)}
@@ -51,6 +55,12 @@ selects \code{lambda.min}; \code{"1se"} selects \code{lambda.1se}.}
 \item{cv_group_id}{Optional positive integer observation-origin IDs aligned
 with all input rows. Repeated IDs stay in one nuisance CV fold; NULL or
 all-unique IDs preserve the ordinary CV path. Used for resampled data.}
+
+\item{nuisance_solver}{C++ nuisance optimizer: \code{"proximal_newton"} or
+\code{"coordinate_descent"}. NULL inherits the process configuration,
+whose unconfigured default is proximal Newton. The choice applies to
+CV and final fits and is restored on exit. Initial glmnet fits retain
+their own optimizer.}
 }
 \value{
 Vector of initial density ratio parameters
@@ -66,4 +76,11 @@ Following eq:gamma_init in main.tex:
 }
 \details{
 NOTE: This does NOT include ψ'(α_init) term - only uses mean_phi from target
+
+If no candidate converges in every CV fold, the initial-weight fitter retries
+once on the same folds with larger penalties appended to the original grid.
+The upper endpoint bounds the intercept-only slope gradients for every
+possible CV training subset. Successful original paths and fixed-lambda fits
+are unchanged. Retry grids are recorded in the coefficient attribute
+\code{cv_grid_retry}; the convergence criteria are unchanged.
 }

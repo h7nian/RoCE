@@ -29,7 +29,7 @@ of cross-fitting folds. With K_f folds, each fold should have at least
 MIN_FOLD_SIZE observations for reliable estimation.
 }
 \details{
-For two-level cross-fitting with K_f folds:
+For the shared K_f-fold partition (including three-level cross-fitting):
 - Each site needs at least K_f * min_fold_size observations
 - Target site needs at least K_f * min_fold_size treated units
 - Source sites need at least K_f * min_fold_size treated units

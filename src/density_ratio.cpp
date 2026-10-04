@@ -20,6 +20,22 @@ std::string nuisance_solver_cpp() {
     return CVUtils::nuisance_solver_name();
 }
 
+// Internal scoped setter used by R entry points. Return the previous override
+// so nested calls and errors can restore it without altering the environment.
+// [[Rcpp::export]]
+std::string set_nuisance_solver_cpp(std::string solver) {
+    int selection;
+    if (solver == "inherit") selection = -1;
+    else if (solver == "coordinate_descent") selection = 0;
+    else if (solver == "proximal_newton") selection = 1;
+    else throw std::runtime_error("set_nuisance_solver_cpp: unknown solver.");
+    const int previous = CVUtils::nuisance_solver_override().exchange(
+        selection, std::memory_order_relaxed
+    );
+    return previous < 0 ? "inherit" :
+        (previous == 0 ? "coordinate_descent" : "proximal_newton");
+}
+
 namespace {
 
 // Keep the final-iteration stopping diagnostics alongside every density-ratio
@@ -29,7 +45,9 @@ namespace {
 List density_ratio_fit_result(const VectorXd& gamma, bool converged,
                               int iterations, double max_update,
                               double convergence_threshold,
-                              int line_search_failures = 0) {
+                              int line_search_failures = 0,
+                              double kkt_residual = NA_REAL,
+                              double kkt_threshold = NA_REAL) {
     return List::create(
         Named("gamma") = gamma,
         Named("converged") = converged,
@@ -37,6 +55,9 @@ List density_ratio_fit_result(const VectorXd& gamma, bool converged,
         Named("max_update") = max_update,
         Named("convergence_threshold") = convergence_threshold,
         Named("line_search_failures") = line_search_failures,
+        Named("kkt_residual") = kkt_residual,
+        Named("kkt_threshold") = kkt_threshold,
+        Named("solver") = iterations > 0 ? CVUtils::nuisance_solver_name() : "not_run",
         Named("max_abs_coefficient") = gamma.lpNorm<Eigen::Infinity>()
     );
 }
@@ -75,7 +96,8 @@ List fit_unified_density_ratio_cpp(const MatrixXd& Z_site, const VectorXd& A_sou
                                    const MatrixXd& W_outcome,
                                    int A_val,
                                    int family_int, int link_int,
-                                   const VectorXd& warm_start) {
+                                   const VectorXd& warm_start,
+                                   bool truncate_initial_outcome = true) {
     
     if (A_val != 0 && A_val != 1) {
         throw std::runtime_error("fit_unified_density_ratio_cpp: A_val must be 0 or 1.");
@@ -138,7 +160,7 @@ List fit_unified_density_ratio_cpp(const MatrixXd& Z_site, const VectorXd& A_sou
     // non-canonical parameterizations (e.g., inverse link: h'(η) = -1/η²).
     for (int i = 0; i < n_treated; i++) {
         double eta_i = eta_outcome(i);
-        if (calibrated) {
+        if (calibrated && truncate_initial_outcome) {
             eta_i = truncation_function(eta_i, M_tau);
         }
         psi_prime_precomputed(i) = std::abs(GLMUtils::response_derivative(eta_i, link));
@@ -155,7 +177,7 @@ List fit_unified_density_ratio_cpp(const MatrixXd& Z_site, const VectorXd& A_sou
     );
     return density_ratio_fit_result(
         gamma, fit.converged, fit.iterations, fit.max_update,
-        fit.convergence_threshold, fit.line_search_failures
+        fit.convergence_threshold, fit.line_search_failures, fit.kkt_residual, fit.kkt_threshold
     );
 }
 
@@ -205,7 +227,7 @@ List fit_initial_density_ratio_cpp(const MatrixXd& Z_site, const VectorXd& A_sou
     );
     return density_ratio_fit_result(
         gamma, fit.converged, fit.iterations, fit.max_update,
-        fit.convergence_threshold, fit.line_search_failures
+        fit.convergence_threshold, fit.line_search_failures, fit.kkt_residual, fit.kkt_threshold
     );
 }
 
@@ -220,7 +242,8 @@ List select_lambda_cv_density_ratio_cpp(const MatrixXd& Z_site, const VectorXd& 
                                        int max_iter, double tol,
                                        int A_val,
                                        int family_int, int link_int,
-                                       Rcpp::Nullable<Rcpp::NumericVector> cv_fold_id = R_NilValue) {
+                                       Rcpp::Nullable<Rcpp::NumericVector> cv_fold_id = R_NilValue,
+                                       bool use_kkt_certificate = false) {
     
     int n = Z_site.rows();
     int n_lambda = lambda_grid.size();
@@ -262,6 +285,7 @@ List select_lambda_cv_density_ratio_cpp(const MatrixXd& Z_site, const VectorXd& 
     MatrixXd fold_scores(n_lambda, n_folds);
     fold_scores.fill(INFINITY);
     std::vector<int> path_tail_skipped(n_folds, 0);
+    std::vector<int> certified_failures(n_folds, 0);
 
     const int cv_threads = CVUtils::nuisance_cv_thread_count(n_folds);
     ROCE_PARALLELIZE_CV_FOLDS(cv_threads)
@@ -271,6 +295,7 @@ List select_lambda_cv_density_ratio_cpp(const MatrixXd& Z_site, const VectorXd& 
         VectorXd gamma = VectorXd::Zero(p);
         std::vector<bool> active(p, true);
         int consecutive_failures = 0;
+        double certified_bound = 0.0;
 
         for (int li = 0; li < n_lambda; li++) {
             int lambda_idx = lambda_order[li];
@@ -280,11 +305,12 @@ List select_lambda_cv_density_ratio_cpp(const MatrixXd& Z_site, const VectorXd& 
             VectorXd gamma_before = gamma;
 
             CVUtils::DensityRatioFitResult fit =
-                CVUtils::density_ratio_penalized_fit(
+                CVUtils::density_ratio_cv_fit(
                     gamma, active, X_train_folds[fold], pp_train[fold],
                     static_cast<double>(n_treated) / n, mean_grad_psi,
                     lambda, std::numeric_limits<double>::infinity(),
-                    cv_tol, cv_max_iter
+                    cv_tol, cv_max_iter, use_kkt_certificate,
+                    certified_bound, certified_failures[fold]
                 );
             if (fit.converged) {
                 consecutive_failures = 0;
@@ -308,11 +334,16 @@ List select_lambda_cv_density_ratio_cpp(const MatrixXd& Z_site, const VectorXd& 
     int skipped_fold_fits = std::accumulate(
         path_tail_skipped.begin(), path_tail_skipped.end(), 0
     );
-    return CVUtils::append_explicit_fold_audit(
+    List result = CVUtils::append_explicit_fold_audit(
         CVUtils::aggregate_cv_results(
             fold_scores, lambda_grid, n_lambda, n_folds, skipped_fold_fits
         ), folds, cv_fold_id
     );
+    if (use_kkt_certificate) {
+        result["certified_nonconvergent_fold_fits"] = std::accumulate(
+            certified_failures.begin(), certified_failures.end(), 0);
+    }
+    return result;
 }
 
 // ============================================================================
@@ -327,7 +358,8 @@ List select_lambda_cv_initial_density_ratio_cpp(const MatrixXd& Z_site, const Ve
                                                 const VectorXd& lambda_grid, int n_folds,
                                                 int max_iter, double tol,
                                                 int A_val, double M_tau,
-                                                Rcpp::Nullable<Rcpp::NumericVector> cv_fold_id = R_NilValue) {
+                                                Rcpp::Nullable<Rcpp::NumericVector> cv_fold_id = R_NilValue,
+                                       bool use_kkt_certificate = false) {
 
     int n = Z_site.rows();
     int n_lambda = lambda_grid.size();
@@ -364,6 +396,7 @@ List select_lambda_cv_initial_density_ratio_cpp(const MatrixXd& Z_site, const Ve
     MatrixXd fold_scores(n_lambda, n_folds);
     fold_scores.fill(INFINITY);
     std::vector<int> path_tail_skipped(n_folds, 0);
+    std::vector<int> certified_failures(n_folds, 0);
 
     const int cv_threads = CVUtils::nuisance_cv_thread_count(n_folds);
     ROCE_PARALLELIZE_CV_FOLDS(cv_threads)
@@ -373,6 +406,7 @@ List select_lambda_cv_initial_density_ratio_cpp(const MatrixXd& Z_site, const Ve
         VectorXd gamma = VectorXd::Zero(p);
         std::vector<bool> active(p, true);
         int consecutive_failures = 0;
+        double certified_bound = 0.0;
 
         for (int li = 0; li < n_lambda; li++) {
             int lambda_idx = lambda_order[li];
@@ -382,10 +416,11 @@ List select_lambda_cv_initial_density_ratio_cpp(const MatrixXd& Z_site, const Ve
             VectorXd gamma_before = gamma;
 
             CVUtils::DensityRatioFitResult fit =
-                CVUtils::density_ratio_penalized_fit(
+                CVUtils::density_ratio_cv_fit(
                     gamma, active, X_train_folds[fold], pp_train[fold],
                     static_cast<double>(n_treated) / n, mean_phi,
-                    lambda, M_tau, cv_tol, cv_max_iter
+                    lambda, M_tau, cv_tol, cv_max_iter, use_kkt_certificate,
+                    certified_bound, certified_failures[fold]
                 );
             if (fit.converged) {
                 consecutive_failures = 0;
@@ -406,11 +441,16 @@ List select_lambda_cv_initial_density_ratio_cpp(const MatrixXd& Z_site, const Ve
     int skipped_fold_fits = std::accumulate(
         path_tail_skipped.begin(), path_tail_skipped.end(), 0
     );
-    return CVUtils::append_explicit_fold_audit(
+    List result = CVUtils::append_explicit_fold_audit(
         CVUtils::aggregate_cv_results(
             fold_scores, lambda_grid, n_lambda, n_folds, skipped_fold_fits
         ), folds, cv_fold_id
     );
+    if (use_kkt_certificate) {
+        result["certified_nonconvergent_fold_fits"] = std::accumulate(
+            certified_failures.begin(), certified_failures.end(), 0);
+    }
+    return result;
 }
 
 // ============================================================================
@@ -425,7 +465,9 @@ List select_lambda_cv_calibrated_density_ratio_cpp(const MatrixXd& Z_site, const
                                                    const MatrixXd& W_outcome,
                                                    int A_val,
                                                    int family_int, int link_int,
-                                                   Rcpp::Nullable<Rcpp::NumericVector> cv_fold_id = R_NilValue) {
+                                                   Rcpp::Nullable<Rcpp::NumericVector> cv_fold_id = R_NilValue,
+                                                   bool truncate_initial_outcome = true,
+                                                   bool use_kkt_certificate = false) {
     
     int n = Z_site.rows();
     int n_lambda = lambda_grid.size();
@@ -455,8 +497,9 @@ List select_lambda_cv_calibrated_density_ratio_cpp(const MatrixXd& Z_site, const
     VectorXd eta_outcome = W_out_int * alpha_init;
     VectorXd psi_prime_all(n_treated);
     for (int i = 0; i < n_treated; i++) {
-        double eta_truncated = truncation_function(eta_outcome(i), M_tau);
-        psi_prime_all(i) = std::abs(GLMUtils::response_derivative(eta_truncated, link));
+        const double predictor = truncate_initial_outcome ?
+            truncation_function(eta_outcome(i), M_tau) : eta_outcome(i);
+        psi_prime_all(i) = std::abs(GLMUtils::response_derivative(predictor, link));
     }
 
     // Pre-allocate fold data
@@ -473,6 +516,7 @@ List select_lambda_cv_calibrated_density_ratio_cpp(const MatrixXd& Z_site, const
     MatrixXd fold_scores(n_lambda, n_folds);
     fold_scores.fill(INFINITY);
     std::vector<int> path_tail_skipped(n_folds, 0);
+    std::vector<int> certified_failures(n_folds, 0);
 
     const int cv_threads = CVUtils::nuisance_cv_thread_count(n_folds);
     ROCE_PARALLELIZE_CV_FOLDS(cv_threads)
@@ -482,6 +526,7 @@ List select_lambda_cv_calibrated_density_ratio_cpp(const MatrixXd& Z_site, const
         VectorXd gamma = VectorXd::Zero(p_site);
         std::vector<bool> active(p_site, true);
         int consecutive_failures = 0;
+        double certified_bound = 0.0;
 
         for (int li = 0; li < n_lambda; li++) {
             int lambda_idx = lambda_order[li];
@@ -491,10 +536,11 @@ List select_lambda_cv_calibrated_density_ratio_cpp(const MatrixXd& Z_site, const
             VectorXd gamma_before = gamma;
 
             CVUtils::DensityRatioFitResult fit =
-                CVUtils::density_ratio_penalized_fit(
+                CVUtils::density_ratio_cv_fit(
                     gamma, active, X_train_folds[fold], pp_train[fold],
                     static_cast<double>(n_treated) / n, mean_grad_psi,
-                    lambda, M_tau, cv_tol, cv_max_iter
+                    lambda, M_tau, cv_tol, cv_max_iter, use_kkt_certificate,
+                    certified_bound, certified_failures[fold]
                 );
             if (fit.converged) {
                 consecutive_failures = 0;
@@ -515,9 +561,14 @@ List select_lambda_cv_calibrated_density_ratio_cpp(const MatrixXd& Z_site, const
     int skipped_fold_fits = std::accumulate(
         path_tail_skipped.begin(), path_tail_skipped.end(), 0
     );
-    return CVUtils::append_explicit_fold_audit(
+    List result = CVUtils::append_explicit_fold_audit(
         CVUtils::aggregate_cv_results(
             fold_scores, lambda_grid, n_lambda, n_folds, skipped_fold_fits
         ), folds, cv_fold_id
     );
+    if (use_kkt_certificate) {
+        result["certified_nonconvergent_fold_fits"] = std::accumulate(
+            certified_failures.begin(), certified_failures.end(), 0);
+    }
+    return result;
 }

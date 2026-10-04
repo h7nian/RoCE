@@ -100,84 +100,20 @@ fit_logit_mle <- function(X, y) {
 #' @param y outcome vector
 #' @param a treatment vector
 #' @param x covariate matrix for outcome/propensity
-#' @param m_hat outcome model predictions
-#' @param pi_hat propensity scores P(A=1|X)
+#' @param m_hat Outcome predictions before evaluation clipping.
+#' @param pi_hat Propensity predictions P(A=1|X) before evaluation clipping.
 #' @param w optional density ratio weights (defaults to 1)
 #' @param A_val treatment value (1 or 0, default 1)
 #' @param family GLM family string for outcome clipping/variance ("binomial", "gaussian", etc.)
+#' @param outcome_model,propensity_model Optional retained nuisance metadata
+#'   from \code{fit_glmnet_cv(retain_model=TRUE)}. NULL assumes unpenalized MLE.
 #' @return list with estimate, influence function, variance, and intermediate terms
 calculate_aipw_influence <- function(y, a, x, m_hat, pi_hat, w = NULL, A_val = 1L,
-                                     family = "binomial") {
-  n <- length(y)
-  X_int <- cbind(1, x)
-  if (is.null(w)) {
-    w <- rep(1, n)
-  }
-  pi_hat <- clip_propensity(pi_hat)
-  m_hat <- clip_outcome_pred(m_hat, family)
-
-  # General AIPW for E[Y(a)]:
-  #   A_val=1: phi = m + A*(Y-m)/pi
-  #   A_val=0: phi = m + (1-A)*(Y-m)/(1-pi)
-  indicator <- as.numeric(a == A_val)
-  p_a <- if (A_val == 1) pi_hat else (1 - pi_hat)
-  p_a <- pmax(p_a, PROP_SCORE_LOWER)  # safety floor
-
-  phi <- m_hat + indicator * (y - m_hat) / p_a
-  d <- mean(w)
-  mu_hat <- mean(w * phi) / d
-
-  # Response derivative h'(eta) = d mu / d eta depends on GLM family/link.
-  # For canonical links, h'(eta) = V(mu) (GLM variance function).
-  # Used for outcome model adjustment (influence function correction).
-  m_prime <- switch(family,
-    "binomial" = m_hat * (1 - m_hat),      # V(mu) = mu(1-mu) for binomial
-    "gaussian" = rep(1, length(m_hat)),     # V(mu) = 1 for gaussian
-    m_hat * (1 - m_hat)                     # default: binomial
-  )
-
-  # Outcome model adjustment
-  s_beta <- X_int * (indicator * (y - m_hat))
-  A_beta <- colMeans(w * (1 - indicator / p_a) * m_prime * X_int) / d
-  M_beta <- t(X_int) %*% (X_int * (indicator * m_prime)) / n
-  adj_beta <- solve_with_ridge(M_beta) %*% A_beta
-  infl_beta <- as.numeric(s_beta %*% adj_beta)
-
-  # Propensity model adjustment
-  # NOTE: s_gamma_ps / adj_gamma_ps refer to the PROPENSITY SCORE model
-  # coefficients, NOT the density ratio gamma_{s_j,a} used in RoCE.
-  # This function is for standard AIPW (target-only / comparison methods).
-  # Score function for propensity: s_gamma_ps = X * (a - pi)
-  s_gamma_ps <- X_int * (as.numeric(a) - pi_hat)
-  # Sensitivity of phi to pi:
-  #   A_val=1: d(phi)/d(pi) = -A*(Y-m)/pi^2, times d(pi)/d(gamma) = pi*(1-pi)*X
-  #     => A * (Y-m) * (-(1-pi)/pi) * X
-  #   A_val=0: d(phi)/d(pi) = (1-A)*(Y-m)/(1-pi)^2, times pi*(1-pi)*X
-  #     => (1-A) * (Y-m) * (pi/(1-pi)) * X
-  if (A_val == 1) {
-    dphi_term <- -indicator * (y - m_hat) * (1 - pi_hat) / pi_hat
-  } else {
-    dphi_term <- indicator * (y - m_hat) * pi_hat / (1 - pi_hat)
-  }
-  A_gamma_ps <- colMeans(w * dphi_term * X_int) / d
-  M_gamma_ps <- t(X_int) %*% (X_int * (pi_hat * (1 - pi_hat))) / n
-  adj_gamma_ps <- solve_with_ridge(M_gamma_ps) %*% A_gamma_ps
-  infl_gamma_ps <- as.numeric(s_gamma_ps %*% adj_gamma_ps)
-
-  influence <- w * (phi - mu_hat) / d - infl_beta - infl_gamma_ps
-  # NOTE: Use mean(IF^2)/n instead of var(IF)/n to avoid n vs n-1 bias
-  variance <- mean(influence^2) / n
-
-  list(
-    estimate = mu_hat,
-    influence = influence,
-    variance = variance,
-    phi = phi,
-    X_int = X_int,
-    m_hat = m_hat,
-    pi_hat = pi_hat,
-    d = d
-  )
+                                     family = "binomial", outcome_model = NULL,
+                                     propensity_model = NULL) {
+  if (is.null(w)) w <- rep(1, length(y))
+  .baseline_aipw_influence(y, a, as.matrix(x), m_hat, pi_hat, w, A_val, family,
+                           outcome_model, propensity_model)
 }
 
 # =============================================================================
@@ -252,6 +188,8 @@ calculate_aipw_influence <- function(y, a, x, m_hat, pi_hat, w = NULL, A_val = 1
 #' @param cv_group_id Optional positive integer origin/group identifier aligned
 #'   with the training rows. Repeated IDs are kept intact within nuisance-CV
 #'   folds. \code{NULL}, or an all-unique vector, preserves the legacy path.
+#' @param retain_model Retain coefficients, selected lambda and untruncated
+#'   predictions in the \code{nuisance_model} attribute for conditional derivatives.
 #' @return Numeric vector of predictions (length \code{nrow(x_predict)}). The
 #'   integer attribute \code{outcome_degenerate} is set to 1 when the
 #'   constant-outcome fallback was used and is otherwise absent.
@@ -265,7 +203,8 @@ fit_glmnet_cv <- function(x_train, y_train, x_predict,
                           fold_id = NULL,
                           on_degenerate_response = c("error", "constant"),
                           lambda_rule = c("min", "1se"),
-                          cv_group_id = NULL) {
+                          cv_group_id = NULL, retain_model = FALSE) {
+  retain_model <- .validate_logical_control(retain_model, "retain_model")
   on_degenerate_response <- match.arg(on_degenerate_response)
   lambda_rule <- .match_nuisance_lambda_rule(
     lambda_rule, "fit_glmnet_cv"
@@ -289,11 +228,14 @@ fit_glmnet_cv <- function(x_train, y_train, x_predict,
       min(table(factor(y_train, levels = c(0, 1)))) < 8L) {
     .record_or_degenerate_fold()
     pred <- rep(mean(y_train), n_predict)
+    model <- list(type = "constant", family = family, raw_prediction = pred)
     if (!is.null(clip_fn)) pred <- clip_fn(pred)
     attr(pred, "outcome_degenerate") <- 1L
+    if (retain_model) attr(pred, "nuisance_model") <- model
     return(pred)
   }
 
+  model <- NULL
   pred <- tryCatch({
     n_cv_folds <- get_cv_fold_count(nrow(x_train), min_per_fold = min_per_fold)
     if (n_cv_folds < 4L) {
@@ -321,9 +263,13 @@ fit_glmnet_cv <- function(x_train, y_train, x_predict,
     } else {
       "lambda.min"
     }
-    as.numeric(predict(
+    prediction <- as.numeric(predict(
       cv_fit, newx = x_predict, s = selected_lambda, type = "response"
     ))
+    if (retain_model) model <- list(type = "glmnet", family = family,
+      coefficients = as.numeric(stats::coef(cv_fit, s = selected_lambda)),
+      lambda = as.numeric(cv_fit[[selected_lambda]]), raw_prediction = prediction)
+    prediction
   }, error = function(e) {
     msg <- conditionMessage(e)
     # A (sub-)fold can carry a single-class binomial response -- e.g. a saturated
@@ -332,7 +278,7 @@ fit_glmnet_cv <- function(x_train, y_train, x_predict,
     # model the correct degenerate nuisance is the constant empirical mean; the
     # propensity model keeps the default "error" (a positivity failure).
     if (on_degenerate_response == "constant" &&
-        grepl("1 or 0 observations|0 or 1 observations|non-conformable", msg)) {
+        grepl("1 or 0 observations|0 or 1 observations", msg)) {
       .record_or_degenerate_fold()
       fallback <- rep(mean(y_train), n_predict)
       attr(fallback, "outcome_degenerate") <- 1L
@@ -347,6 +293,9 @@ fit_glmnet_cv <- function(x_train, y_train, x_predict,
   used_degenerate_fallback <- identical(
     attr(pred, "outcome_degenerate"), 1L
   )
+  if (used_degenerate_fallback && retain_model) {
+    model <- list(type = "constant", family = family, raw_prediction = as.numeric(pred))
+  }
   if (!is.null(clip_fn)) pred <- clip_fn(pred)
   if (used_degenerate_fallback) {
     attr(pred, "outcome_degenerate") <- 1L
@@ -356,6 +305,7 @@ fit_glmnet_cv <- function(x_train, y_train, x_predict,
                  caller_name, model_name, n_predict, length(pred),
                  sum(!is.finite(pred))), call. = FALSE)
   }
+  if (retain_model) attr(pred, "nuisance_model") <- model
   pred
 }
 
@@ -380,6 +330,10 @@ fit_glmnet_cv <- function(x_train, y_train, x_predict,
 #'         prop_scores_range, n_treated. Throws an error on estimation failure.
 fit_site_aipw <- function(site_data, family = "binomial", use_rcal = FALSE,
                           use_crossfit = TRUE, n_folds = NULL, A_val = 1L) {
+  if (isTRUE(use_rcal) && isTRUE(use_crossfit)) {
+    stop("fit_site_aipw: use_rcal=TRUE is not supported with use_crossfit=TRUE.",
+         call. = FALSE)
+  }
   glm_spec <- resolve_glm_family(family)
   y <- site_data$Y
   tr <- site_data$A
@@ -758,10 +712,14 @@ calculate_dl_heterogeneity <- function(site_estimates, site_variances) {
 #' @param lambda_rule CV selection rule: \code{"min"} uses \code{lambda.min};
 #'   \code{"1se"} uses \code{lambda.1se}.
 #' @return Scalar: selected lambda value
+#' @inheritParams run_crossfit
 select_dr_lambda_cv <- function(Z_source, Z_target,
                                 lambda_grid = NULL,
                                 n_cv_folds = NULL,
-                                lambda_rule = c("min", "1se")) {
+                                lambda_rule = c("min", "1se"),
+                                nuisance_cv_certificate = NULL) {
+  previous_certificate <- .set_nuisance_cv_certificate(nuisance_cv_certificate)
+  on.exit(.restore_nuisance_cv_certificate(previous_certificate), add = TRUE)
   lambda_rule <- .match_nuisance_lambda_rule(lambda_rule, "select_dr_lambda_cv")
   Z_source <- as.matrix(Z_source)
   Z_target <- as.matrix(Z_target)
@@ -793,7 +751,8 @@ select_dr_lambda_cv <- function(Z_source, Z_target,
     select_lambda_cv_initial_density_ratio_cpp(
       Z_source, A_dummy, mean_phi_target,
       lambda_grid, n_cv_folds,
-      MAX_ITER_DEFAULT, TOL_DEFAULT, 1L, M_tau = Inf
+      MAX_ITER_DEFAULT, TOL_DEFAULT, 1L, M_tau = Inf,
+      use_kkt_certificate = .nuisance_cv_certificate_enabled()
     )
   }, error = function(e) {
     stop(sprintf("select_dr_lambda_cv: DR lambda CV failed: %s",
@@ -847,6 +806,9 @@ calculate_dr_weights <- function(Z_source, Z_target, lambda = NULL,
     stop(sprintf("calculate_dr_weights: density ratio fitting failed: %s",
                  conditionMessage(e)), call. = FALSE)
   })
+  if (!isTRUE(attr(alpha, "converged"))) {
+    stop("calculate_dr_weights: final density fit did not converge.", call. = FALSE)
+  }
   
   Z_int <- cbind(1, Z_source)
   eta <- as.numeric(Z_int %*% alpha)
@@ -865,6 +827,8 @@ calculate_dr_weights <- function(Z_source, Z_target, lambda = NULL,
   }
   attr(w, "lambda_used") <- attr(alpha, "lambda_used") %||% as.numeric(lambda)
   attr(w, "lambda_rule") <- attr(alpha, "lambda_rule") %||% "fixed"
+  attr(w, "density_model") <- list(coefficients = as.numeric(alpha),
+                                   lambda = attr(w, "lambda_used"))
   attr(w, "clipping_diagnostics") <- list(
     n = length(w),
     n_below = n_below,
@@ -912,12 +876,8 @@ calculate_weighted_site_aipw <- function(y, a, X, weights = NULL, family = "bino
     x_train = X, y_train = a, x_predict = X,
     family = "binomial",
     clip_fn = clip_propensity,
-    caller_name = "calculate_weighted_site_aipw", model_name = "PS"
+    caller_name = "calculate_weighted_site_aipw", model_name = "PS", retain_model = TRUE
   )
-  
-  # P(A = A_val | X)
-  p_a <- if (A_val == 1L) pi_hat else (1 - pi_hat)
-  p_a <- pmax(p_a, PROP_SCORE_LOWER)
   
   # Fit outcome model on A_val arm via shared helper
   X_treated <- X[treated_idx, , drop = FALSE]
@@ -928,11 +888,11 @@ calculate_weighted_site_aipw <- function(y, a, X, weights = NULL, family = "bino
     family = glm_spec$glmnet_family,
     clip_fn = function(pred) clip_outcome_pred(pred, family),
     caller_name = "calculate_weighted_site_aipw", model_name = "OR",
-    on_degenerate_response = "constant"
+    on_degenerate_response = "constant", retain_model = TRUE
   )
   
-  # Nuisance-adjusted IF-based weighted AIPW (theory-aligned with helpers used
-  # by other methods). This treats density-ratio weights as fixed inputs.
+  # Conditional derivative of the actual fitted lasso nuisances. Density-ratio
+  # weights are fixed here; their estimation is handled by the DR adapter.
   aipw_if <- calculate_aipw_influence(
     y = as.numeric(y),
     a = as.numeric(a),
@@ -941,7 +901,9 @@ calculate_weighted_site_aipw <- function(y, a, X, weights = NULL, family = "bino
     pi_hat = pi_hat,
     w = as.numeric(weights),
     A_val = A_val,
-    family = family
+    family = family,
+    outcome_model = attr(m_hat, "nuisance_model"),
+    propensity_model = attr(pi_hat, "nuisance_model")
   )
 
   return(list(
@@ -950,6 +912,9 @@ calculate_weighted_site_aipw <- function(y, a, X, weights = NULL, family = "bino
     psi = as.numeric(aipw_if$influence),
     varphi_ot = as.numeric(aipw_if$influence),
     phi = as.numeric(aipw_if$phi),
-    weights = as.numeric(weights)
+    weights = as.numeric(weights),
+    outcome_model = attr(m_hat, "nuisance_model"),
+    propensity_model = attr(pi_hat, "nuisance_model"),
+    inference_scope = aipw_if$inference_scope
   ))
 }

@@ -14,7 +14,8 @@ compute_lambda_max_outcome(
   link_int = 1L,
   Z_site = NULL,
   calibrated = FALSE,
-  M_tau = M_TAU_DEFAULT
+  M_tau = M_TAU_DEFAULT,
+  use_weight_derivative = FALSE
 )
 }
 \arguments{
@@ -37,6 +38,10 @@ compute_lambda_max_outcome(
 \item{calibrated}{Whether truncation is used.}
 
 \item{M_tau}{Truncation parameter.}
+
+\item{use_weight_derivative}{Whether to use the nonnegative negative
+derivative of the truncated exponential tilt as the outcome loss weight.
+This weight is zero outside the truncation interval.}
 }
 \value{
 Scalar \eqn{\lambda_{\max}}.

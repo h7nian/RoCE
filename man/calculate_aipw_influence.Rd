@@ -12,7 +12,9 @@ calculate_aipw_influence(
   pi_hat,
   w = NULL,
   A_val = 1L,
-  family = "binomial"
+  family = "binomial",
+  outcome_model = NULL,
+  propensity_model = NULL
 )
 }
 \arguments{
@@ -22,15 +24,18 @@ calculate_aipw_influence(
 
 \item{x}{covariate matrix for outcome/propensity}
 
-\item{m_hat}{outcome model predictions}
+\item{m_hat}{Outcome predictions before evaluation clipping.}
 
-\item{pi_hat}{propensity scores P(A=1|X)}
+\item{pi_hat}{Propensity predictions P(A=1|X) before evaluation clipping.}
 
 \item{w}{optional density ratio weights (defaults to 1)}
 
 \item{A_val}{treatment value (1 or 0, default 1)}
 
 \item{family}{GLM family string for outcome clipping/variance ("binomial", "gaussian", etc.)}
+
+\item{outcome_model, propensity_model}{Optional retained nuisance metadata
+from \code{fit_glmnet_cv(retain_model=TRUE)}. NULL assumes unpenalized MLE.}
 }
 \value{
 list with estimate, influence function, variance, and intermediate terms

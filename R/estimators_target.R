@@ -27,7 +27,8 @@
 #' @param family GLM family ("binomial", "gaussian", etc.). Default "binomial".
 #' @param use_rcal Logical. If TRUE, use RCAL. If FALSE (default), use glmnet.
 #' @param use_crossfit Logical. If TRUE (default), use cross-fitted nuisances
-#'   for variance-valid inference (use_rcal is ignored in this mode).
+#'   nuisance fitting. Combining it with \code{use_rcal = TRUE} is unsupported
+#'   and raises an error.
 #' @param n_folds Number of cross-fitting folds (default uses data-driven value).
 #' @param A_val Treatment arm, either 0 or 1.
 #' @return estimate with variance
@@ -118,6 +119,19 @@ estimate_target_only_crossfit <- function(target_data, n_folds = 3,
   for (k in 1:n_folds) {
     val_idx <- which(fold_ids == k)
     train_idx <- which(fold_ids != k)
+
+    training_preprocessor <- attr(target_data, "training_preprocessor", exact = TRUE)
+    if (!is.null(training_preprocessor)) {
+      if (!is.function(training_preprocessor)) stop("training_preprocessor must be a function.", call. = FALSE)
+      transformed <- training_preprocessor(train_idx)
+      if (!identical(dim(transformed$W_outcome), dim(x_or)) ||
+          !identical(dim(transformed$Z_site), dim(x_ps)) ||
+          any(!is.finite(transformed$W_outcome)) || any(!is.finite(transformed$Z_site))) {
+        stop("Training preprocessing must return finite aligned feature matrices.", call. = FALSE)
+      }
+      x_or <- transformed$W_outcome
+      x_ps <- transformed$Z_site
+    }
     
     if (length(val_idx) == 0 || length(train_idx) == 0) {
       stop(sprintf(
@@ -225,6 +239,8 @@ estimate_target_only_crossfit <- function(target_data, n_folds = 3,
 #' @param A_val Treatment value to estimate (default 1)
 #' @param propensity_cache Optional environment used to cache complement-fold
 #'   propensity predictions keyed by excluded/evaluation folds.
+#' @param return_training_scores If TRUE, retain predictions and AIPW scores
+#'   on the same training observations for two-layer aggregation-weight learning.
 #' @param nuisance_lambda_rule Cross-validation rule used for both target
 #'   propensity and outcome nuisance fits.
 #' @return List with estimate, V_ot, variance, varphi_ot (same interface as
@@ -234,7 +250,9 @@ estimate_target_only_from_complement <- function(target_folds, k1, n_folds,
                                                   k2 = NULL,
                                                   family = "binomial", A_val = 1L,
                                                   propensity_cache = NULL,
-                                                  nuisance_lambda_rule = c("min", "1se")) {
+                                                  nuisance_lambda_rule = c("min", "1se"),
+                                                  return_training_scores = FALSE) {
+  return_training_scores <- .validate_logical_control(return_training_scores, "return_training_scores")
   nuisance_lambda_rule <- .match_nuisance_lambda_rule(
     nuisance_lambda_rule, "estimate_target_only_from_complement",
     arg = "nuisance_lambda_rule"
@@ -269,6 +287,8 @@ estimate_target_only_from_complement <- function(target_folds, k1, n_folds,
   y_eval <- eval_data$Y
   tr_eval <- eval_data$A
   n_eval <- eval_data$n
+  x_or_predict <- if (return_training_scores) rbind(x_or_eval, x_or_train) else x_or_eval
+  x_ps_predict <- if (return_training_scores) rbind(x_ps_eval, x_ps_train) else x_ps_eval
 
   treated_train_idx <- which(tr_train == A_val)
   if (length(treated_train_idx) == 0) {
@@ -297,9 +317,15 @@ estimate_target_only_from_complement <- function(target_folds, k1, n_folds,
     )
   }
 
-  # --- Propensity score model: train on complement, predict on eval fold ---
-  if (!is.null(propensity_cache) && exists(cache_key, envir = propensity_cache, inherits = FALSE)) {
-    prop_scores_eval <- get(cache_key, envir = propensity_cache, inherits = FALSE)
+  # Cache keys locate candidates; exact fitting/prediction inputs decide reuse.
+  propensity_inputs <- list(
+    x_train = x_ps_train, treatment = tr_train, x_predict = x_ps_predict,
+    cv_group_id = train_cv_group_id, lambda_rule = nuisance_lambda_rule,
+    training_policy = NUISANCE_TRAINING_POLICY
+  )
+  cached_propensity <- if (is.null(propensity_cache)) NULL else propensity_cache[[cache_key]]
+  if (is.list(cached_propensity) && identical(cached_propensity$inputs, propensity_inputs)) {
+    propensity_predictions <- cached_propensity$predictions
   } else {
     if (length(unique(tr_train)) < 2) {
       stop(sprintf(
@@ -307,11 +333,11 @@ estimate_target_only_from_complement <- function(target_folds, k1, n_folds,
         paste(exclude_folds, collapse = ",")
       ), call. = FALSE)
     }
-    prop_scores_eval <- with_seed(
+    propensity_predictions <- with_seed(
       .target_only_cv_seed(k1, k2, "propensity"),
       fit_glmnet_cv(
         x_train = x_ps_train, y_train = as.numeric(tr_train),
-        x_predict = x_ps_eval,
+        x_predict = x_ps_predict,
         family = "binomial",
         clip_fn = clip_propensity,
         caller_name = "estimate_complement_fold_aipw", model_name = "PS",
@@ -320,10 +346,10 @@ estimate_target_only_from_complement <- function(target_folds, k1, n_folds,
       )
     )
     if (!is.null(propensity_cache)) {
-      assign(cache_key, prop_scores_eval, envir = propensity_cache)
+      propensity_cache[[cache_key]] <- list(inputs = propensity_inputs, predictions = propensity_predictions)
     }
   }
-  prop_scores_eval <- clip_propensity(prop_scores_eval)
+  propensity_predictions <- clip_propensity(propensity_predictions)
 
   # --- Outcome model: train on treated in complement, predict on fold k1 ---
   X_treated_train <- x_or_train[treated_train_idx, , drop = FALSE]
@@ -336,11 +362,11 @@ estimate_target_only_from_complement <- function(target_folds, k1, n_folds,
       MIN_TREATED_FOR_MODEL
     ), call. = FALSE)
   }
-  m_pred_eval <- with_seed(
+  outcome_predictions <- with_seed(
     .target_only_cv_seed(k1, k2, "outcome", A_val),
     fit_glmnet_cv(
       x_train = X_treated_train, y_train = y_treated_train,
-      x_predict = x_or_eval,
+      x_predict = x_or_predict,
       family = glm_spec$glmnet_family,
       clip_fn = function(pred) clip_outcome_pred(pred, family),
       caller_name = "estimate_complement_fold_aipw", model_name = "OR",
@@ -354,9 +380,25 @@ estimate_target_only_from_complement <- function(target_folds, k1, n_folds,
     )
   )
   outcome_degenerate <- as.integer(
-    attr(m_pred_eval, "outcome_degenerate") %||% 0L
+    attr(outcome_predictions, "outcome_degenerate") %||% 0L
   )
-  m_pred_eval <- clip_outcome_pred(m_pred_eval, family)
+  outcome_predictions <- clip_outcome_pred(outcome_predictions, family)
+
+  training_scores <- NULL
+  if (return_training_scores) {
+    rows <- n_eval + seq_len(train_data$n)
+    training_propensity <- propensity_predictions[rows]
+    training_outcome <- outcome_predictions[rows]
+    training_scores <- list(
+      training_folds = as.integer(training_folds),
+      original_idx = unlist(lapply(target_folds[training_folds], `[[`, "original_idx"), use.names = FALSE),
+      prop_scores = training_propensity, m_pred = training_outcome,
+      phi = calculate_aipw_pseudo_outcome(as.numeric(y_train), tr_train, training_outcome,
+        if (A_val == 1L) training_propensity else 1 - training_propensity, A_val = A_val))
+  }
+
+  prop_scores_eval <- if (return_training_scores) propensity_predictions[seq_len(n_eval)] else propensity_predictions
+  m_pred_eval <- if (return_training_scores) outcome_predictions[seq_len(n_eval)] else outcome_predictions
 
   # --- AIPW pseudo-outcomes on fold k1 ---
   p_a <- if (A_val == 1L) prop_scores_eval else (1 - prop_scores_eval)
@@ -373,7 +415,7 @@ estimate_target_only_from_complement <- function(target_folds, k1, n_folds,
   V_ot <- mean(varphi_ot^2)
   variance <- V_ot / max(1, n_eval)
 
-  return(list(
+  result <- list(
     estimate = as.numeric(mu_hat_ot),
     V_ot = as.numeric(V_ot),
     variance = as.numeric(variance),
@@ -383,5 +425,31 @@ estimate_target_only_from_complement <- function(target_folds, k1, n_folds,
     outcome_degenerate = outcome_degenerate,
     method = "complement",
     nuisance_lambda_rule = nuisance_lambda_rule
-  ))
+  )
+  if (return_training_scores) result$training_scores <- training_scores
+  result
+}
+
+# Fixed ordinary-AIPW reference for paired method comparisons. Selecting a
+# new RoCE target anchor must not change the benchmark used to assess it.
+.target_tate_reference <- function(target_folds, family, nuisance_lambda_rule) {
+  n_folds <- length(target_folds)
+  n <- sum(vapply(target_folds, `[[`, numeric(1L), "n"))
+  propensity_cache <- new.env(parent = emptyenv())
+  score <- matrix(0, n, 2L)
+  counts <- integer(n)
+  for (fold in seq_len(n_folds)) {
+    rows <- target_folds[[fold]]$original_idx
+    counts[rows] <- counts[rows] + 1L
+    for (arm in 0:1) {
+      fit <- .get_target_only_fold_fit(
+        target_folds, fold, n_folds, family, arm, propensity_cache,
+        nuisance_lambda_rule = nuisance_lambda_rule)
+      score[rows, arm + 1L] <- fit$varphi_ot + fit$estimate
+    }
+  }
+  if (any(counts != 1L)) stop("Target reference folds do not form a partition.", call. = FALSE)
+  contrast <- score[, 2L] - score[, 1L]
+  variance <- .multisite_pseudovalue_variance(contrast, as.integer(n))
+  list(estimate = mean(contrast), se = sqrt(variance), variance = variance)
 }

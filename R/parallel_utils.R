@@ -102,6 +102,10 @@ parallel_lapply <- function(x, fun, n_cores = 1, ...) {
     # mclapply doesn't work on Windows; use parLapply via socket cluster
     cl <- parallel::makeCluster(n_cores)
     on.exit(parallel::stopCluster(cl), add = TRUE)
+    parallel::clusterCall(cl, function(enabled) {
+      options(RoCE.nuisance_cv_certificate = enabled)
+      invisible(NULL)
+    }, .nuisance_cv_certificate_enabled())
     # Export only the functions transitively needed by 'fun' to workers.
     # Data variables are captured via fun's closure automatically.
     if (!requireNamespace("codetools", quietly = TRUE)) {

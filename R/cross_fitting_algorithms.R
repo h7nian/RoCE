@@ -1,5 +1,25 @@
-# cross_fitting_algorithms.R - Two-Layer Cross-fitting variants for FACE algorithm
-# Following docs/main.tex (Two-Level Cross-fitting appendix section)
+# Three-level cross-fitting: outer evaluation, inner validation, calibration.
+# The initial-validation option retains the legacy two-level comparison.
+# Communication depth (one/two round trips) is independent of fold depth.
+
+.crossfit_levels <- function(fold_results) {
+  reused_outer <- vapply(fold_results, function(fold)
+    identical(fold$source_validation_method, "outer_fit"), logical(1L))
+  if (any(reused_outer)) {
+    if (!all(reused_outer)) stop("Weight-learning schemes disagree across outer folds.", call. = FALSE)
+    return(2L)
+  }
+  nested <- vapply(fold_results, function(fold) {
+    !is.null(fold$target_only$calibration) ||
+      any(vapply(fold$source_results, function(source)
+        !is.null(.source_inner_fits(source)) &&
+          (source$source_nuisance_method %||% "calibrated") == "calibrated", logical(1L)))
+  }, logical(1L))
+  if (any(nested) && !all(nested)) {
+    stop("Cross-fitting levels disagree across outer folds.", call. = FALSE)
+  }
+  if (any(nested)) 3L else 2L
+}
 #
 # =============================================================================
 # TARGET ESTIMAND
@@ -102,7 +122,16 @@
 .summarize_source_nuisance_fit_diagnostics <- function(source_results) {
   diagnostics <- lapply(
     source_results,
-    function(site_result) site_result$nuisance_fit_diagnostics
+    function(site_result) {
+      diagnostic <- site_result$nuisance_fit_diagnostics
+      # Canonical final-fit fields also cover the standard ablation. Historical
+      # calibrated_* fields remain readable in frozen objects and summary CSVs.
+      for (name in names(diagnostic)[startsWith(names(diagnostic), "calibrated_")]) {
+        final <- sub("^calibrated_", "final_", name)
+        if (is.null(diagnostic[[final]])) diagnostic[[final]] <- diagnostic[[name]]
+      }
+      diagnostic
+    }
   )
   if (length(diagnostics) == 0L || any(vapply(diagnostics, is.null, logical(1L)))) {
     stop(
@@ -117,12 +146,12 @@
   ), use.names = FALSE)
   calibrated_dr_iterations <- vapply(
     diagnostics,
-    function(diagnostic) diagnostic$calibrated_density_ratio_iterations,
+    function(diagnostic) diagnostic$final_density_ratio_iterations,
     integer(1L)
   )
   calibrated_outcome_iterations <- vapply(
     diagnostics,
-    function(diagnostic) diagnostic$calibrated_outcome_iterations,
+    function(diagnostic) diagnostic$final_outcome_iterations,
     integer(1L)
   )
   initial_update_ratios <- unlist(lapply(
@@ -136,28 +165,28 @@
   calibrated_dr_update_ratios <- vapply(
     diagnostics,
     function(diagnostic) as.numeric(
-      diagnostic$calibrated_density_ratio_update_ratio %||% NA_real_
+      diagnostic$final_density_ratio_update_ratio %||% NA_real_
     ),
     numeric(1L)
   )
   calibrated_dr_abs_coefficients <- vapply(
     diagnostics,
     function(diagnostic) as.numeric(
-      diagnostic$calibrated_density_ratio_max_abs_coefficient %||% NA_real_
+      diagnostic$final_density_ratio_max_abs_coefficient %||% NA_real_
     ),
     numeric(1L)
   )
   calibrated_outcome_update_ratios <- vapply(
     diagnostics,
     function(diagnostic) as.numeric(
-      diagnostic$calibrated_outcome_update_ratio %||% NA_real_
+      diagnostic$final_outcome_update_ratio %||% NA_real_
     ),
     numeric(1L)
   )
   calibrated_outcome_abs_coefficients <- vapply(
     diagnostics,
     function(diagnostic) as.numeric(
-      diagnostic$calibrated_outcome_max_abs_coefficient %||% NA_real_
+      diagnostic$final_outcome_max_abs_coefficient %||% NA_real_
     ),
     numeric(1L)
   )
@@ -168,7 +197,7 @@
   calibrated_support_floors <- vapply(
     diagnostics,
     function(diagnostic) as.numeric(
-      diagnostic$calibrated_density_ratio_support_floor %||% NA_real_
+      diagnostic$final_density_ratio_support_floor %||% NA_real_
     ),
     numeric(1L)
   )
@@ -200,12 +229,12 @@
     )),
     calibrated_dr_nonconverged = sum(!vapply(
       diagnostics,
-      function(diagnostic) diagnostic$calibrated_density_ratio_converged,
+      function(diagnostic) diagnostic$final_density_ratio_converged,
       logical(1L)
     )),
     calibrated_outcome_nonconverged = sum(!vapply(
       diagnostics,
-      function(diagnostic) diagnostic$calibrated_outcome_converged,
+      function(diagnostic) diagnostic$final_outcome_converged,
       logical(1L)
     )),
     initial_dr_cv_invalid_fold_fits = sum_site_diagnostic(
@@ -218,22 +247,22 @@
       "initial_density_ratio_cv_path_tail_skipped_fold_fits"
     ),
     calibrated_dr_cv_invalid_fold_fits = sum_site_diagnostic(
-      "calibrated_density_ratio_cv_invalid_fold_fits"
+      "final_density_ratio_cv_invalid_fold_fits"
     ),
     calibrated_dr_cv_invalid_lambdas = sum_site_diagnostic(
-      "calibrated_density_ratio_cv_invalid_lambdas"
+      "final_density_ratio_cv_invalid_lambdas"
     ),
     calibrated_dr_cv_path_tail_skipped_fold_fits = sum_site_diagnostic(
-      "calibrated_density_ratio_cv_path_tail_skipped_fold_fits"
+      "final_density_ratio_cv_path_tail_skipped_fold_fits"
     ),
     calibrated_outcome_cv_invalid_fold_fits = sum_site_diagnostic(
-      "calibrated_outcome_cv_invalid_fold_fits"
+      "final_outcome_cv_invalid_fold_fits"
     ),
     calibrated_outcome_cv_invalid_lambdas = sum_site_diagnostic(
-      "calibrated_outcome_cv_invalid_lambdas"
+      "final_outcome_cv_invalid_lambdas"
     ),
     calibrated_outcome_cv_path_tail_skipped_fold_fits = sum_site_diagnostic(
-      "calibrated_outcome_cv_path_tail_skipped_fold_fits"
+      "final_outcome_cv_path_tail_skipped_fold_fits"
     ),
     initial_dr_line_search_failures = sum(vapply(
       diagnostics,
@@ -249,7 +278,7 @@
       diagnostics,
       function(diagnostic) {
         as.integer(
-          diagnostic$calibrated_density_ratio_line_search_failures %||% 0L
+          diagnostic$final_density_ratio_line_search_failures %||% 0L
         )
       },
       integer(1L)
@@ -258,7 +287,7 @@
       diagnostics,
       function(diagnostic) {
         as.integer(
-          diagnostic$calibrated_outcome_line_search_failures %||% 0L
+          diagnostic$final_outcome_line_search_failures %||% 0L
         )
       },
       integer(1L)
@@ -273,7 +302,7 @@
     calibrated_dr_support_floor_applied = sum(vapply(
       diagnostics,
       function(diagnostic) {
-        isTRUE(diagnostic$calibrated_density_ratio_support_floor_applied)
+        isTRUE(diagnostic$final_density_ratio_support_floor_applied)
       },
       logical(1L)
     )),
@@ -317,15 +346,22 @@
 #' @param M_tau Truncation parameter
 #' @param M_tau_inference Truncation radius used in inference-stage source
 #'   corrections and influence-function moments.
-#' @param data_split Original data split used for source metadata
+#' @param data_split Unused compatibility argument. Source metadata come from
+#'   \code{source_folds}.
 #' @param combine_cache Environment for caching combine_folds() results (or NULL)
 #' @param get_fold_inputs Function(s, k2) returning list(mean_phi, mean_grad_psi_init, alpha_init)
 #'   for the given source site and secondary fold. Encapsulates the algorithm-specific
 #'   data access pattern (two-round vs one-round).
 #' @param family_int Integer code for GLM family (0=gaussian, 1=binomial)
 #' @param link_int Integer code for link function (0=identity, 1=logit)
-#' @param use_lambda_cache Logical. If TRUE, reuse selected nuisance lambdas
-#'   within each source-site k2 loop to reduce repeated CV.
+#' @param use_lambda_cache Logical. If TRUE, reuse identical nuisance
+#'   fits, including their selected penalties. Different training subsets are
+#'   tuned independently.
+#' @param nuisance_fit_cache Optional per-run environment for exact nuisance-fit
+#'   reuse. Numerical inputs and tuning configuration are checked on every hit.
+#' @param calibration_layout Plug-in matrix representation: \code{"block"}
+#'   is the reference layout; \code{"compact"} stores each row's initial
+#'   linear predictor. Both solve the same calibration objectives.
 #' @param nuisance_lambda_rule CV selection rule for nuisance fits:
 #'   \code{"min"} (default) uses \code{lambda.min}; \code{"1se"} uses
 #'   \code{lambda.1se}.
@@ -335,6 +371,16 @@
 #'   nuisance fit. Cross-validation kernels retain their separate internal cap;
 #'   this argument primarily controls the final refit at the selected penalty.
 #' @return List with source site results (mu_ts, gamma_s, alpha_ts, delta_ts, mu_pred_ts, n_s)
+#' @param calibration_recipe \code{"legacy"} or \code{"score_derivative"};
+#'   the latter matches calibration to the derivative of the finite-radius score.
+#' @param source_nuisance_method \code{"calibrated"} applies final source
+#'   score calibration. \code{"standard"} fits an ordinary source outcome
+#'   model and the initial merged-weight balancing model on the allowed folds.
+#' @param source_training_message Target feature means and training-fold labels
+#'   required by the standard source program; unused for calibrated sources.
+#' @param source_lambda_rules Optional source-stage CV rules, as in
+#'   \code{calibration_control$source_lambda_rules} in \code{run_crossfit}.
+#' @inheritParams run_crossfit
 process_source_site <- function(s, source_folds, target_folds, k1, n_folds,
                                 A_val, M_tau, M_tau_inference = M_TAU_INFERENCE_DEFAULT,
                                 data_split,
@@ -343,7 +389,24 @@ process_source_site <- function(s, source_folds, target_folds, k1, n_folds,
                                 use_lambda_cache = TRUE,
                                 nuisance_nlambda = LAMBDA_GRID_SIZE_STANDARD,
                                 nuisance_max_iter = MAX_ITER_DEFAULT,
-                                nuisance_lambda_rule = c("min", "1se")) {
+                                nuisance_lambda_rule = c("min", "1se"),
+                                nuisance_fit_cache = NULL,
+                                calibration_layout = c("block", "compact"),
+                                nuisance_tol = TOL_DEFAULT,
+                                calibration_recipe = c("legacy", "score_derivative"),
+                                source_nuisance_method = c("calibrated", "standard"),
+                                source_training_message = NULL,
+                                source_lambda_rules = NULL) {
+  calibration_recipe <- match.arg(calibration_recipe)
+  source_nuisance_method <- match.arg(source_nuisance_method)
+  if (!is.null(source_lambda_rules) &&
+      (source_nuisance_method != "calibrated" || calibration_recipe != "score_derivative")) {
+    stop("source_lambda_rules requires score_derivative calibrated sources.", call. = FALSE)
+  }
+  use_lambda_cache <- .validate_nuisance_cache_flag(use_lambda_cache, "process_source_site")
+  if (use_lambda_cache && is.null(nuisance_fit_cache)) {
+    nuisance_fit_cache <- new.env(parent = emptyenv())
+  }
   nuisance_lambda_rule <- .match_nuisance_lambda_rule(nuisance_lambda_rule, "process_source_site")
   nuisance_max_iter <- suppressWarnings(as.integer(nuisance_max_iter))
   if (length(nuisance_max_iter) != 1L || is.na(nuisance_max_iter) ||
@@ -374,174 +437,27 @@ process_source_site <- function(s, source_folds, target_folds, k1, n_folds,
   secondary_folds <- setdiff(1:n_folds, k1)
   label <- "crossfit"
   
-  # Initialize fold-specific storage. The calibrated nuisance itself is obtained
-  # by one fold-summed optimization after all secondary-fold plug-ins are ready.
-  gamma_init_list <- list()
-  alpha_init_list <- list()
-  source_calib_list <- list()
-  mean_grad_psi_list <- list()
-  
-  # Lambda caching (optional): reuse selected lambda values within the same
-  # source site's k2 loop. This remains valid under parallel execution because
-  # it is local state (no cross-worker shared mutable cache).
-  cached_lambda_init_dr <- NULL
-  
-  # Warm-start: pass previous k2's solution to accelerate convergence.
-  # Across k2 iterations the training/calibration data changes by only 1 fold,
-  # so optimal parameters are similar. Warm-starting reduces iterations by 3-10x.
-  prev_gamma_init <- NULL
-  
-  # For each secondary fold k2, compute calibrated parameters
-  for (k2 in secondary_folds) {
-    source_calib <- materialize_fold(source_folds[[s]], k2)
-    
-    if (source_calib$n == 0) {
-      stop(sprintf("%s: source site '%s' fold k2=%d has 0 calibration observations.",
-                   label, s, k2))
-    }
-    
-    training_folds <- setdiff(1:n_folds, c(k1, k2))
-    if (length(training_folds) == 0) {
-      stop(sprintf("%s: source site '%s' fold k1=%d, k2=%d leaves 0 training folds.",
-                   label, s, k1, k2))
-    }
-    
-    # Use cache if available, otherwise compute directly
-    cache_key <- paste(s, paste(sort(training_folds), collapse = "_"), sep = ":")
-    if (!is.null(combine_cache) && !is.null(combine_cache[[cache_key]])) {
-      source_train <- combine_cache[[cache_key]]
-    } else {
-      source_train <- combine_folds(source_folds[[s]], training_folds)
-      if (!is.null(combine_cache)) combine_cache[[cache_key]] <- source_train
-    }
-    
-    if (source_train$n == 0) {
-      stop(sprintf("%s: source site '%s' training folds {%s} have 0 observations.",
-                   label, s, paste(training_folds, collapse = ",")))
-    }
-    
-    # Get algorithm-specific inputs via callback
-    inputs <- get_fold_inputs(s, k2)
-    mean_phi_k2 <- inputs$mean_phi
-    mean_grad_psi_init_k2 <- inputs$mean_grad_psi_init
-    alpha_init_k1_k2 <- inputs$alpha_init
-    
-    # Compute initial density ratio  — eq:gamma_init in main.tex
-    fit_started_at <- proc.time()[["elapsed"]]
-    gamma_init_k1_k2 <- fit_initial_density_ratio(
-      source_train$Z_site, source_train$A, mean_phi_k2,
-      lambda = if (isTRUE(use_lambda_cache)) cached_lambda_init_dr else NULL,
-      A_val = A_val, M_tau = M_tau, warm_start = prev_gamma_init,
-      nlambda = nuisance_nlambda,
-      max_iter = nuisance_max_iter,
-      lambda_rule = nuisance_lambda_rule,
-      cv_group_id = source_train$cv_group_id
-    )
-    timing[["initial_density_ratio"]] <-
-      timing[["initial_density_ratio"]] +
-      .elapsed_process_seconds(fit_started_at)
-    timing[["initial_density_ratio_cv"]] <-
-      timing[["initial_density_ratio_cv"]] +
-      as.numeric(attr(gamma_init_k1_k2, "cv_seconds"))
-    timing[["initial_density_ratio_final_fit"]] <-
-      timing[["initial_density_ratio_final_fit"]] +
-      as.numeric(attr(gamma_init_k1_k2, "final_fit_seconds"))
-    if (isTRUE(use_lambda_cache) && is.null(cached_lambda_init_dr)) {
-      cached_lambda_init_dr <- attr(gamma_init_k1_k2, "lambda_used")
-    }
-    # Never carry a failed/boundary density-ratio solution into the next
-    # secondary fold.  A warm start is only a computational device; resetting
-    # it preserves the fitted objective while preventing a sparse support cell
-    # in one fold from contaminating the next fold's optimization path.
-    prev_gamma_init <- .safe_density_ratio_warm_start(gamma_init_k1_k2)
-    
-    k2_key <- paste0("k2_", k2)
-    gamma_init_list[[k2_key]] <- gamma_init_k1_k2
-    alpha_init_list[[k2_key]] <- alpha_init_k1_k2
-    source_calib_list[[k2_key]] <- source_calib
-    mean_grad_psi_list[[k2_key]] <- mean_grad_psi_init_k2
-  }
-  
-  # Fold-summed SMMAL-style calibrated optimization over all secondary folds.
-  # The existing C++ optimizers accept one plug-in vector, so fold-specific
-  # plug-ins are represented through block designs. C++ prepends a global
-  # intercept; we set its coefficient to zero and carry fold-specific intercepts
-  # inside the block design.
-  if (length(source_calib_list) == 0 || length(gamma_init_list) == 0 || length(alpha_init_list) == 0) {
-    stop(sprintf("process_source_site: all calibration folds failed for source site '%s' (outer fold k1=%d). Cannot form method-aligned nuisance estimates.",
-                 s, k1))
-  } else {
-    Z_cal_stack <- .stack_fold_field(source_calib_list, "Z_site", "process_source_site")
-    W_cal_stack <- .stack_fold_field(source_calib_list, "W_outcome", "process_source_site")
-    A_cal_stack <- .stack_fold_field(source_calib_list, "A", "process_source_site")
-    Y_cal_stack <- .stack_fold_field(source_calib_list, "Y", "process_source_site")
-    cv_group_cal_stack <- if (is.null(source_calib_list[[1L]]$cv_group_id)) NULL else
-      .stack_fold_field(source_calib_list, "cv_group_id", "process_source_site")
+  trained <- if (source_nuisance_method == "standard") {
+    .fit_standard_source_nuisances(source_folds[[s]], s, setdiff(seq_len(n_folds), k1),
+      source_training_message, A_val, family_int, link_int, M_tau,
+      nuisance_nlambda, nuisance_max_iter, nuisance_lambda_rule,
+      if (use_lambda_cache) nuisance_fit_cache else NULL, nuisance_tol)
+  } else .fit_source_calibration(
+    site_folds = source_folds[[s]], site = s,
+    calibration_folds = secondary_folds, get_fold_inputs = get_fold_inputs,
+    A_val = A_val, family_int = family_int, link_int = link_int,
+    M_tau = M_tau, nlambda = nuisance_nlambda, max_iter = nuisance_max_iter,
+    lambda_rule = nuisance_lambda_rule,
+    fit_cache = if (use_lambda_cache) nuisance_fit_cache else NULL,
+    combine_cache = combine_cache, layout = calibration_layout, tol = nuisance_tol,
+    calibration_recipe = calibration_recipe, source_lambda_rules = source_lambda_rules
+  )
+  gamma_init_list <- trained$initial_weight
+  alpha_init_list <- trained$initial_outcome
+  gamma_final_k1 <- trained$weight
+  alpha_final_k1 <- trained$outcome
+  timing[names(trained$timing)] <- trained$timing
 
-    mean_grad_psi_avg <- .average_numeric_list(mean_grad_psi_list, "process_source_site")
-
-    W_plugin_block <- .make_plugin_block_design(
-      lapply(source_calib_list, `[[`, "W_outcome"),
-      caller = "process_source_site(gamma fold-summed calibration)"
-    )
-    alpha_plugin_block <- c(0, unlist(alpha_init_list, use.names = FALSE))
-    gamma_warm_start <- .average_numeric_list(
-      gamma_init_list,
-      "process_source_site(gamma final warm start)"
-    )
-
-    fit_started_at <- proc.time()[["elapsed"]]
-    gamma_final_k1 <- fit_unified_density_ratio(
-      Z_site = Z_cal_stack, A = A_cal_stack,
-      mean_grad_psi = mean_grad_psi_avg, alpha_init = alpha_plugin_block,
-      lambda = NULL,
-      calibrated = TRUE, M_tau = M_tau,
-      W_outcome = W_plugin_block, A_val = A_val,
-      family_int = family_int, link_int = link_int,
-      warm_start = gamma_warm_start,
-      nlambda = nuisance_nlambda,
-      max_iter = nuisance_max_iter,
-      lambda_rule = nuisance_lambda_rule,
-      cv_group_id = cv_group_cal_stack
-    )
-    timing[["calibrated_density_ratio"]] <-
-      .elapsed_process_seconds(fit_started_at)
-    timing[["calibrated_density_ratio_cv"]] <-
-      as.numeric(attr(gamma_final_k1, "cv_seconds"))
-    timing[["calibrated_density_ratio_final_fit"]] <-
-      as.numeric(attr(gamma_final_k1, "final_fit_seconds"))
-
-    Z_plugin_block <- .make_plugin_block_design(
-      lapply(source_calib_list, `[[`, "Z_site"),
-      caller = "process_source_site(alpha fold-summed calibration)"
-    )
-    gamma_plugin_block <- c(0, unlist(gamma_init_list, use.names = FALSE))
-    alpha_warm_start <- .average_numeric_list(
-      alpha_init_list,
-      "process_source_site(alpha final warm start)"
-    )
-
-    fit_started_at <- proc.time()[["elapsed"]]
-    alpha_final_k1 <- fit_unified_outcome(
-      W_outcome = W_cal_stack, Y = Y_cal_stack, A = A_cal_stack,
-      A_val = A_val, gamma_s = gamma_plugin_block,
-      lambda = NULL,
-      family_int = family_int, link_int = link_int,
-      calibrated = TRUE, M_tau = M_tau, Z_site = Z_plugin_block,
-      warm_start = alpha_warm_start,
-      nlambda = nuisance_nlambda,
-      max_iter = nuisance_max_iter,
-      lambda_rule = nuisance_lambda_rule,
-      cv_group_id = cv_group_cal_stack
-    )
-    timing[["calibrated_outcome"]] <-
-      .elapsed_process_seconds(fit_started_at)
-    timing[["calibrated_outcome_cv"]] <-
-      as.numeric(attr(alpha_final_k1, "cv_seconds"))
-    timing[["calibrated_outcome_final_fit"]] <-
-      as.numeric(attr(alpha_final_k1, "final_fit_seconds"))
-  }
-  
   # Compute correction term on main fold  — eq:site_membership in main.tex
   source_main_fold <- materialize_fold(source_folds[[s]], k1)
   
@@ -568,7 +484,7 @@ process_source_site <- function(s, source_folds, target_folds, k1, n_folds,
   # Final source estimate: μ̂_{t,s_j} = mu_pred_ts + δ_{t,s_j}
   mu_ts_k1 <- mu_pred_ts_k1 + delta_ts_k1
   
-  return(list(
+  result <- list(
     mu_ts = mu_ts_k1,
     gamma_s = gamma_final_k1,
     alpha_ts = alpha_final_k1,
@@ -578,13 +494,16 @@ process_source_site <- function(s, source_folds, target_folds, k1, n_folds,
     nuisance_nlambda = nuisance_nlambda,
     correction_components = correction_result$correction_components,
     correction_clip_diagnostics = correction_result$clip_diagnostics,
-    n_calibrated_folds = length(source_calib_list),
-    calibrated_fold_keys = names(source_calib_list),
-    # Per-k2 out-of-two-fold plug-ins for aggregation inner validation.
-    # These are trained without folds k1 and k2, so validation summaries on k2
-    # do not reuse the validation observations.
-    per_k2_gamma = gamma_init_list,
-    per_k2_alpha = alpha_init_list,
+    source_nuisance_method = source_nuisance_method,
+    training_folds = setdiff(seq_len(n_folds), k1),
+    n_calibrated_folds = length(trained$calibration_folds),
+    calibrated_fold_keys = if (source_nuisance_method == "calibrated") names(gamma_init_list) else character(),
+    calibration_layout = trained$layout,
+    # Initial out-of-two-fold plug-ins, retained for diagnostics and the
+    # legacy validation option. Complete fits use inner_fits or its historical
+    # name inner_calibrated, resolved by .source_inner_fits().
+    per_k2_gamma = if (source_nuisance_method == "calibrated") gamma_init_list else NULL,
+    per_k2_alpha = if (source_nuisance_method == "calibrated") alpha_init_list else NULL,
     nuisance_fit_diagnostics = list(
       initial_density_ratio_converged = vapply(
         gamma_init_list,
@@ -713,7 +632,15 @@ process_source_site <- function(s, source_folds, target_folds, k1, n_folds,
       timing,
       total = .elapsed_process_seconds(source_started_at)
     )
-  ))
+  )
+  # Retain serialized diagnostic names used by older result readers, while
+  # exposing accurate final-fit names for either nuisance program.
+  diagnostics <- result$nuisance_fit_diagnostics
+  for (name in names(diagnostics)[startsWith(names(diagnostics), "calibrated_")]) {
+    result$nuisance_fit_diagnostics[[sub("^calibrated_", "final_", name)]] <- diagnostics[[name]]
+  }
+  result$nuisance_fit_diagnostics$final_score_calibration_applied <- source_nuisance_method == "calibrated"
+  result
 }
 
 #' Partition data into K_f folds with stratified sampling
@@ -770,6 +697,17 @@ partition_into_folds <- function(data, n_folds, seed = NULL) {
   })
   attr(folds, ".data_ref") <- data
   folds
+}
+
+.outer_fold_views <- function(fold_list, k) {
+  views <- attr(fold_list, ".outer_preprocessed_views", exact = TRUE)
+  if (is.null(views)) return(fold_list)
+  if (length(views) != length(fold_list) || is.null(views[[k]]) ||
+      !identical(lapply(views[[k]], `[[`, "original_idx"),
+                 lapply(fold_list, `[[`, "original_idx"))) {
+    stop("Outer preprocessing must preserve every fold's observation indices.", call. = FALSE)
+  }
+  views[[k]]
 }
 
 #' Materialize a fold view into a concrete dataset
@@ -895,7 +833,9 @@ extract_source_estimates_matrix <- function(fold_results, source_sites, n_folds)
     source_estimates = source_estimates,
     source_estimates_matrix = source_estimates_matrix,
     crossfit_type = communication_mode,
-    algorithm_label = paste0(communication_mode, "_two_layer_crossfit"),
+    algorithm_label = paste0(communication_mode, "_",
+      if (.crossfit_levels(fold_results) == 3L) "three_level" else "two_level",
+      "_crossfit"),
     family_int = family_int,
     link_int = link_int,
     A_val = A_val
@@ -905,7 +845,8 @@ extract_source_estimates_matrix <- function(fold_results, source_sites, n_folds)
 .get_target_only_fold_fit <- function(
     target_folds, k1, n_folds, family, A_val, propensity_cache,
     fit_cache = NULL, k2 = NULL,
-    nuisance_lambda_rule = c("min", "1se")) {
+    nuisance_lambda_rule = c("min", "1se"), return_training_scores = FALSE) {
+  target_folds <- .outer_fold_views(target_folds, k1)
   nuisance_lambda_rule <- .match_nuisance_lambda_rule(
     nuisance_lambda_rule, ".get_target_only_fold_fit",
     arg = "nuisance_lambda_rule"
@@ -919,6 +860,7 @@ extract_source_estimates_matrix <- function(fold_results, source_sites, n_folds)
     if (is.null(k2)) "outer" else as.character(as.integer(k2)),
     nuisance_lambda_rule
   )
+  if (isTRUE(return_training_scores)) cache_key <- paste0(cache_key, "|training_scores=TRUE")
   cv_groups <- attr(target_folds, ".data_ref")$cv_group_id
   if (!is.null(cv_groups)) {
     cv_groups <- .validate_nuisance_cv_group_id(
@@ -926,9 +868,14 @@ extract_source_estimates_matrix <- function(fold_results, source_sites, n_folds)
     )
     cache_key <- paste0(cache_key, "|cv_groups=", paste(cv_groups, collapse = ","))
   }
-  if (!is.null(fit_cache) &&
-      exists(cache_key, envir = fit_cache, inherits = FALSE)) {
-    return(get(cache_key, envir = fit_cache, inherits = FALSE))
+  fit_inputs <- list(
+    target_data = attr(target_folds, ".data_ref"),
+    fold_rows = lapply(target_folds, `[[`, "original_idx"),
+    training_policy = NUISANCE_TRAINING_POLICY
+  )
+  cached_fit <- if (is.null(fit_cache)) NULL else fit_cache[[cache_key]]
+  if (is.list(cached_fit) && identical(cached_fit$inputs, fit_inputs)) {
+    return(cached_fit$fit)
   }
 
   fit <- estimate_target_only_from_complement(
@@ -939,10 +886,11 @@ extract_source_estimates_matrix <- function(fold_results, source_sites, n_folds)
     family = family,
     A_val = A_val,
     propensity_cache = propensity_cache,
-    nuisance_lambda_rule = nuisance_lambda_rule
+    nuisance_lambda_rule = nuisance_lambda_rule,
+    return_training_scores = return_training_scores
   )
   if (!is.null(fit_cache)) {
-    assign(cache_key, fit, envir = fit_cache)
+    fit_cache[[cache_key]] <- list(inputs = fit_inputs, fit = fit)
   }
   fit
 }
@@ -1036,7 +984,8 @@ build_crossfit_folds <- function(data_split, n_folds) {
 #'   origins crossing outer folds are rejected. This is resampling metadata,
 #'   not a change to the common TATE aggregation objective.
 #' @param n_folds number of cross-fitting folds (default 10, K_f in main.tex).
-#'        Minimum 3 required for proper two-level cross-fitting calibration.
+#'        The three-level method uses at least 4 folds (10 in the study).
+#'        Two-layer outer-fit reuse and legacy initial validation allow 3 folds.
 #' @param communication_mode character, "two_round" or "one_round"
 #' @param lambda_selection Aggregation Wald-penalty factor. The default
 #'   \code{AGG_WALD_LAMBDA = 1} corresponds to the pilot-selected
@@ -1073,8 +1022,75 @@ build_crossfit_folds <- function(data_split, n_folds) {
 #'        \code{lambda.1se}.
 #' @param family GLM family specification: "gaussian" or "binomial".
 #' @param A_val Integer (0 or 1). Treatment value for potential outcome estimation.
-#' @param use_lambda_cache Logical. If TRUE, reuse selected nuisance
-#'        lambdas within fold-specific loops to reduce repeated CV.
+#' @param use_lambda_cache Logical. If TRUE, reuse identical nuisance
+#'        fits and their selected penalties. The public name is retained for
+#'        compatibility; penalties are never shared between different inputs.
+#' @param nuisance_solver C++ nuisance optimizer: \code{"proximal_newton"} or
+#'        \code{"coordinate_descent"}. NULL inherits the process configuration,
+#'        whose unconfigured default is proximal Newton. The choice applies to
+#'        CV and final fits and is restored on exit. Initial glmnet fits retain
+#'        their own optimizer.
+#' @param nuisance_tol Positive convergence tolerance for the C++ nuisance
+#'        fits. Both solvers must meet the corresponding KKT tolerance.
+#'        The internal CV kernels retain their documented tolerance floor;
+#'        this controls final-refit accuracy without changing the lambda rule.
+#' @param nuisance_cache_dir Optional existing writable parent directory for a
+#'   temporary cache shared by source workers across outer folds. NULL retains
+#'   the in-memory cache. Requires \code{use_lambda_cache=TRUE}. Each run owns
+#'   a new subdirectory and removes it on exit; inputs/models use SHA-256 checks.
+#' @param checkpoint_dir Optional persistent directory for completed nuisance fits.
+#'   Requires an installed package and \code{use_lambda_cache=TRUE}; cannot be
+#'   combined with \code{nuisance_cache_dir}. Restarts reuse only fits whose
+#'   inputs and installed code match exactly. An interrupted fit is recomputed.
+#' @param target_nuisance_method \code{"lasso"} retains the ordinary target
+#'        AIPW anchor. \code{"hou_calibrated"} fits both target nuisance models
+#'        by fold-summed calibration. Three layers fit separate inner models;
+#'        two layers reuse the final outer models for weight-learning scores.
+#' @param source_validation_method \code{"initial"} retains initial-model
+#'        validation. \code{"complete"} evaluates the complete selected source
+#'        nuisance program, trained separately for every inner validation fold.
+#'        \code{"calibrated"} remains a compatible name for complete validation.
+#'        Complete validation requires at least four original folds.
+#'        \code{"outer_fit"} reuses final outer models for training-sample
+#'        scores, as selected by \code{crossfit_layers=2L}.
+#' @param crossfit_layers Optional \code{2L} or \code{3L}. Two layers reuse
+#'   final outer nuisance models to compute eta-training scores inside the
+#'   outer training sample. Three layers independently validate complete
+#'   calibrated fits there. Both keep fold-specific eta and exclude the outer
+#'   evaluation fold. NULL preserves the legacy validation controls. Requires
+#'   final calibration at the source or target; it does not change communication rounds.
+#' @param calibration_layout \code{"block"} uses explicit fold-specific
+#'        design blocks; \code{"compact"} uses equivalent initial linear
+#'        predictors. This option changes matrix storage, not the loss.
+#' @param nuisance_cv_certificate Optional logical control for the sufficient
+#'   density-CV KKT nonconvergence certificate. \code{NULL} inherits an enclosing
+#'   call, otherwise defaults to \code{FALSE}. Enabling it skips only certified
+#'   failures and preserves the lambda grid, CV tolerance and final solver.
+#' @param calibration_control Optional named list. \code{recipe} is
+#'   \code{"legacy"} (default) or \code{"score_derivative"}. The latter uses
+#'   untruncated initial OR derivatives and the derivative of the clipped
+#'   initial tilt in the OR loss. \code{target_propensity_initialization} is
+#'   \code{"logistic"} (default) or \code{"calibrated"}. Optional
+#'   \code{target_radius} overrides both target fitting and target evaluation
+#'   radii; it does not change source radii. Nondefault target settings require
+#'   \code{target_nuisance_method="hou_calibrated"}. Score-derivative fitting
+#'   currently requires finite radii below the source numerical ratio guard.
+#'   For score-derivative calibrated sources, optional \code{source_lambda_rules}
+#'   is a named list of \code{initial_weight}, \code{weight} and/or \code{outcome}
+#'   CV rules (\code{"min"} or \code{"1se"}). These select the initial source
+#'   merged weight, final calibrated weight and final calibrated OR, respectively.
+#'   Omitted stages inherit \code{nuisance_lambda_rule}. Target fits and initial
+#'   OR messages retain \code{nuisance_lambda_rule}. Changing an initial weight
+#'   also changes the later OR loss; final weight and OR losses use separate
+#'   initial fits and can be tuned independently.
+#'   \code{source_nuisance_method} is \code{"calibrated"} (default) or
+#'   \code{"standard"}. The standard ablation omits final source score
+#'   calibration, retaining initial merged-weight balancing and fitting an
+#'   ordinary source OR on the same allowed rows. It requires one-round
+#'   communication and complete-program weight learning, either separate inner
+#'   validation or outer-fit reuse. With legacy controls, an ordinary target
+#'   anchor uses two fold levels and target calibration uses three; explicit
+#'   \code{crossfit_layers} requires some final source or target calibration.
 #' @param precomputed_folds Optional list with \code{target_folds} and
 #'        \code{source_folds} created in advance for this \code{data_split}.
 #' @param target_only_ps_cache Optional environment used to cache target-only
@@ -1098,9 +1114,39 @@ run_crossfit <- function(data_split, n_folds = N_FOLDS_DEFAULT,
                          target_only_ps_cache = NULL,
                          target_only_fit_cache = NULL,
                          nuisance_lambda_rule = c("min", "1se"),
-                         aggregation_lambda_grid = NULL) {
+                         aggregation_lambda_grid = NULL,
+                         nuisance_solver = NULL,
+                         target_nuisance_method = c("lasso", "hou_calibrated"),
+                         source_validation_method = c("initial", "calibrated"),
+                         calibration_layout = c("block", "compact"),
+                         nuisance_tol = TOL_DEFAULT, calibration_control = NULL,
+                         nuisance_cache_dir = NULL, checkpoint_dir = NULL,
+                         crossfit_layers = NULL, nuisance_cv_certificate = NULL) {
+
+  previous_solver <- .set_nuisance_solver(nuisance_solver)
+  on.exit(.restore_nuisance_solver(previous_solver), add = TRUE)
+
+  previous_certificate <- .set_nuisance_cv_certificate(nuisance_cv_certificate)
+  on.exit(.restore_nuisance_cv_certificate(previous_certificate), add = TRUE)
 
   communication_mode <- match.arg(communication_mode)
+  target_nuisance_method <- match.arg(target_nuisance_method)
+  calibration_control <- .validate_calibration_control(calibration_control, target_nuisance_method)
+  if (calibration_control$recipe == "score_derivative") {
+    .validate_score_calibration_radius(M_tau)
+    if (target_nuisance_method == "hou_calibrated") {
+      .validate_score_calibration_radius(calibration_control$target_radius %||% M_tau)
+    }
+  }
+  source_validation_method <- .resolve_crossfit_validation(
+    source_validation_method, crossfit_layers, calibration_control, target_nuisance_method, communication_mode)
+  calibration_layout <- match.arg(calibration_layout)
+  nuisance_tol <- .validate_lambda_scalar(nuisance_tol, "cross-fitting", "nuisance_tol", allow_zero = FALSE)
+  if (source_validation_method != "outer_fit" && (target_nuisance_method == "hou_calibrated" ||
+       .complete_source_validation(source_validation_method)) && n_folds < 4L) {
+    stop("Calibrated inner validation requires at least four original folds.", call. = FALSE)
+  }
+  use_lambda_cache <- .validate_nuisance_cache_flag(use_lambda_cache, "run_crossfit")
   lambda_rule <- match.arg(lambda_rule)
   aggregation_lambda_grid <- .validate_aggregation_lambda_grid(
     lambda_selection, aggregation_lambda_grid, "run_crossfit"
@@ -1144,7 +1190,10 @@ run_crossfit <- function(data_split, n_folds = N_FOLDS_DEFAULT,
 
   if (verbose) {
     cat(paste0("\n", paste(rep("=", 70), collapse = ""), "\n"))
-    cat(sprintf("==> STARTING %s TWO-LAYER CROSS-FITTING ALGORITHM\n", mode_label))
+    level_label <- if (source_validation_method != "outer_fit" && (target_nuisance_method == "hou_calibrated" ||
+                       (.complete_source_validation(source_validation_method) &&
+                        calibration_control$source_nuisance_method == "calibrated"))) "THREE-LEVEL" else "TWO-LEVEL"
+    cat(sprintf("==> STARTING %s %s CROSS-FITTING ALGORITHM\n", mode_label, level_label))
     cat(paste0("  Total sites: ", K + 1, " (1 target + ", K, " source)\n"))
     cat(paste0("  Target site sample size: ", target_data$n, "\n"))
     cat(paste0("  GLM family: ", family, " (link: ", link, ")\n"))
@@ -1190,27 +1239,23 @@ run_crossfit <- function(data_split, n_folds = N_FOLDS_DEFAULT,
   fold_results <- list()
   fold_timing <- vector("list", n_folds)
   fold_fit_diagnostics <- vector("list", n_folds)
+  nuisance_fit_cache <- .new_nuisance_cache(use_lambda_cache, nuisance_cache_dir, checkpoint_dir)
+  on.exit(.release_nuisance_cache(nuisance_fit_cache), add = TRUE)
 
   # ---- MAIN LOOP ----
+  partition_data <- data_split
+  partition_target_folds <- target_folds
+  partition_source_folds <- source_folds
   for (k1 in 1:n_folds) {
+    target_folds <- .outer_fold_views(partition_target_folds, k1)
+    source_folds <- lapply(partition_source_folds, .outer_fold_views, k = k1)
+    if (!is.null(attr(partition_target_folds, ".outer_preprocessed_views", exact = TRUE))) {
+      data_split <- c(list(t = attr(target_folds, ".data_ref")),
+        lapply(source_folds, attr, which = ".data_ref"))
+    }
     fold_started_at <- proc.time()[["elapsed"]]
     if (verbose) {
       cat(paste0("\n--> PROCESSING MAIN FOLD k1 = ", k1, "/", n_folds, "\n"))
-    }
-
-    # Reset lambda caches PER k1 fold to avoid systematic bias.
-    # Each fold has a different train/test split, so the optimal lambda
-    # can differ. Caching across k1 folds introduces a non-vanishing bias
-    # because the first fold's lambda may be suboptimal for later folds,
-    # and this error doesn't average out (same direction of bias).
-    # Within a k1 fold, caching is restricted to local loops:
-    # - two_round: per-source-site across k2
-    # - one_round: target-side across k2
-    cached_lambda <- NULL
-    site_cached_lambdas <- if (isTRUE(use_lambda_cache) && communication_mode == "two_round") {
-      setNames(vector("list", length(source_sites)), source_sites)
-    } else {
-      NULL
     }
 
     secondary_folds <- setdiff(1:n_folds, k1)
@@ -1220,171 +1265,29 @@ run_crossfit <- function(data_split, n_folds = N_FOLDS_DEFAULT,
     # COMMUNICATION-MODE SPECIFIC: prepare initial models & summaries
     # ================================================================
     initial_nuisance_started_at <- proc.time()[["elapsed"]]
-    if (communication_mode == "two_round") {
-      # ROUND 1: Source sites compute initial outcome models
-      log_info(verbose, "   --> ROUND 1: INITIAL NUISANCE MODELS (SOURCE)")
-
-      source_initial_params <- list()
-      for (s in source_sites) {
-        source_initial_params[[s]] <- list()
-        cached_lambda_site <- if (isTRUE(use_lambda_cache)) site_cached_lambdas[[s]] else NULL
-        for (k2 in secondary_folds) {
-          training_folds <- setdiff(1:n_folds, c(k1, k2))
-          source_train <- combine_folds(source_folds[[s]], training_folds)
-
-          if (source_train$n == 0) {
-            stop(sprintf(
-              "Two-round: source site '%s' training folds {%s} have 0 observations for k2=%d; cannot fit the initial outcome nuisance required by main.tex eq:nuisance_initial_losses.",
-              s, paste(training_folds, collapse = ","), k2
-            ))
-          }
-
-          alpha_init_k1_k2 <- fit_initial_outcome(
-            source_train$W_outcome, source_train$Y, source_train$A, A_val,
-            lambda = if (isTRUE(use_lambda_cache)) cached_lambda_site else NULL,
-            nlambda = nlambda_init, family = family,
-            lambda_rule = nuisance_lambda_rule,
-            cv_group_id = source_train$cv_group_id
-          )
-          initial_outcome_degenerate <- initial_outcome_degenerate +
-            as.integer(identical(
-              attr(alpha_init_k1_k2, "lambda_rule"),
-              "degenerate_constant"
-            ))
-          if (isTRUE(use_lambda_cache) && is.null(cached_lambda_site)) {
-            lu <- attr(alpha_init_k1_k2, "lambda_used")
-            # Skip degenerate folds (non-finite lambda) so they do not poison the
-            # cache; a later non-degenerate fold supplies the cached value.
-            if (!is.null(lu) && is.finite(lu)) {
-              cached_lambda_site <- lu
-              if (verbose) {
-                cat(sprintf("      Cached lambda (site %s) = %.6f\n", s, cached_lambda_site))
-              }
-            }
-          }
-          source_initial_params[[s]][[paste0("k2_", k2)]] <- alpha_init_k1_k2
-        }
-        if (isTRUE(use_lambda_cache)) {
-          site_cached_lambdas[[s]] <- cached_lambda_site
-        }
-      }
-
-      # Target precomputes mean_phi (shared across sources) and
-      # mean_grad_psi_init (per source, depends on source alpha_init)
-      target_fold_cache <- list()
-      target_train_cache <- list()
-      mean_phi_cache <- list()
-      for (k2 in secondary_folds) {
-        k2_key <- paste0("k2_", k2)
-        training_folds <- setdiff(1:n_folds, c(k1, k2))
-        target_fold_cache[[k2_key]] <- materialize_fold(target_folds, k2)
-        target_train_cache[[k2_key]] <- combine_folds(target_folds, training_folds)
-        if (target_train_cache[[k2_key]]$n > 0) {
-          mean_phi_cache[[k2_key]] <- c(1, colMeans(target_train_cache[[k2_key]]$Z_site))
-        } else {
-          mean_phi_cache[[k2_key]] <- rep(0, ncol(target_fold_cache[[k2_key]]$Z_site) + 1)
-        }
-      }
-
-      target_summaries <- list()
-      for (s in source_sites) {
-        target_summaries[[s]] <- list()
-        for (k2 in secondary_folds) {
-          k2_key <- paste0("k2_", k2)
-          alpha_init_k1_k2 <- source_initial_params[[s]][[k2_key]]
-          target_fold_k2 <- target_fold_cache[[k2_key]]
-
-          if (target_fold_k2$n == 0) {
-            stop(sprintf("Two-round: target fold k2=%d has 0 observations for source site '%s'.",
-                         k2, s))
-          }
-
-          mean_grad_psi_init <- .mean_glm_gradient_site_basis(
-            target_fold_k2$W_outcome, target_fold_k2$Z_site,
-            alpha_init_k1_k2, family_int, link_int, M_tau = M_tau
-          )
-          target_summaries[[s]][[k2_key]] <- list(
-            mean_grad_psi_init = mean_grad_psi_init,
-            mean_phi = mean_phi_cache[[k2_key]]
-          )
-        }
-      }
-
-      get_fold_inputs <- function(site, k2) {
-        k2_key <- paste0("k2_", k2)
-        list(
-          mean_phi = target_summaries[[site]][[k2_key]]$mean_phi,
-          mean_grad_psi_init = target_summaries[[site]][[k2_key]]$mean_grad_psi_init,
-          alpha_init = source_initial_params[[site]][[k2_key]]
+    source_training_message <- NULL
+    if (calibration_control$source_nuisance_method == "calibrated") {
+      source_messages <- lapply(source_sites, function(site) {
+        .prepare_source_calibration_messages(
+          target_folds, source_folds[[site]], site, secondary_folds,
+          communication_mode, A_val, family, M_tau, nlambda_init,
+          nuisance_lambda_rule, nuisance_fit_cache, calibration_recipe = calibration_control$recipe
         )
-      }
-
-      log_info(verbose, "   --> ROUND 2: CALIBRATED NUISANCE MODELS")
-
+      })
+      names(source_messages) <- source_sites
+      # In one-round mode each source receives the same target OR fits. Count
+      # those target fits once; two-round initial OR fits are source-specific.
+      initial_message_sets <- if (communication_mode == "one_round")
+        source_messages[1L] else source_messages
+      initial_outcome_degenerate <- sum(vapply(initial_message_sets, function(messages) {
+        sum(vapply(messages, function(message)
+          identical(attr(message$alpha_init, "lambda_rule"), "degenerate_constant"), logical(1L)))
+      }, integer(1L)))
+      get_fold_inputs <- function(site, k2) source_messages[[site]][[paste0("k2_", k2)]]
     } else {
-      # SINGLE ROUND: Target computes initial models & summaries
-      log_info(verbose, "   --> SINGLE ROUND: TARGET COMPUTES AND SENDS ALL INFO")
-
-      target_initial_models <- list()
-      target_summaries <- list()
-
-      for (k2 in secondary_folds) {
-        k2_key <- paste0("k2_", k2)
-        training_folds <- setdiff(1:n_folds, c(k1, k2))
-        target_train <- combine_folds(target_folds, training_folds)
-        target_calib_k2 <- materialize_fold(target_folds, k2)
-
-        if (target_train$n == 0 || target_calib_k2$n == 0) {
-          stop(sprintf("One-round: target train (n=%d) or calibration fold k2=%d (n=%d) is empty.",
-                       target_train$n, k2, target_calib_k2$n))
-        }
-
-        alpha_init_k1_k2 <- fit_initial_outcome(
-          target_train$W_outcome, target_train$Y, target_train$A, A_val,
-          lambda = if (isTRUE(use_lambda_cache)) cached_lambda else NULL,
-          nlambda = nlambda_init, family = family,
-          lambda_rule = nuisance_lambda_rule,
-          cv_group_id = target_train$cv_group_id
-        )
-        initial_outcome_degenerate <- initial_outcome_degenerate +
-          as.integer(identical(
-            attr(alpha_init_k1_k2, "lambda_rule"),
-            "degenerate_constant"
-          ))
-        if (isTRUE(use_lambda_cache) && is.null(cached_lambda)) {
-          lu <- attr(alpha_init_k1_k2, "lambda_used")
-          # Skip degenerate folds (non-finite lambda) so they do not poison the
-          # cache; a later non-degenerate fold supplies the cached value.
-          if (!is.null(lu) && is.finite(lu)) {
-            cached_lambda <- lu
-            if (verbose) {
-              cat(sprintf("      Cached lambda = %.6f (reused for remaining calls)\n", cached_lambda))
-            }
-          }
-        }
-
-        target_initial_models[[k2_key]] <- alpha_init_k1_k2
-
-        mean_grad_psi_init <- .mean_glm_gradient_site_basis(
-          target_calib_k2$W_outcome, target_calib_k2$Z_site,
-          alpha_init_k1_k2, family_int, link_int, M_tau = M_tau
-        )
-        mean_phi <- c(1, colMeans(target_train$Z_site))
-
-        target_summaries[[k2_key]] <- list(
-          mean_grad_psi_init = mean_grad_psi_init,
-          mean_phi = mean_phi
-        )
-      }
-
-      get_fold_inputs <- function(site, k2) {
-        k2_key <- paste0("k2_", k2)
-        list(
-          mean_phi = target_summaries[[k2_key]]$mean_phi,
-          mean_grad_psi_init = target_summaries[[k2_key]]$mean_grad_psi_init,
-          alpha_init = target_initial_models[[k2_key]]
-        )
-      }
+      source_training_message <- .prepare_source_training_message(target_folds, secondary_folds)
+      get_fold_inputs <- NULL
+      initial_outcome_degenerate <- 0L
     }
     initial_nuisance_seconds <-
       .elapsed_process_seconds(initial_nuisance_started_at)
@@ -1429,8 +1332,14 @@ run_crossfit <- function(data_split, n_folds = N_FOLDS_DEFAULT,
             family_int = family_int,
             link_int = link_int,
             use_lambda_cache = use_lambda_cache,
+            nuisance_fit_cache = nuisance_fit_cache,
             nuisance_nlambda = nlambda_init,
-            nuisance_lambda_rule = nuisance_lambda_rule
+            nuisance_lambda_rule = nuisance_lambda_rule,
+            calibration_layout = calibration_layout, nuisance_tol = nuisance_tol,
+            calibration_recipe = calibration_control$recipe,
+            source_nuisance_method = calibration_control$source_nuisance_method,
+            source_training_message = source_training_message,
+            source_lambda_rules = calibration_control$source_lambda_rules
           )
         )
       },
@@ -1438,6 +1347,25 @@ run_crossfit <- function(data_split, n_folds = N_FOLDS_DEFAULT,
     )
 
     source_results_k1 <- setNames(source_results_list, source_sites)
+    if (.complete_source_validation(source_validation_method)) {
+      inner_results <- parallel_lapply(source_sites, function(site) {
+        fits <- setNames(vector("list", length(secondary_folds)), paste0("k2_", secondary_folds))
+        for (validation_fold in secondary_folds) {
+          training_folds <- setdiff(secondary_folds, validation_fold)
+          fits[[paste0("k2_", validation_fold)]] <- .fit_complete_source_program(
+            target_folds, source_folds[[site]], site, training_folds,
+            communication_mode, A_val, family, M_tau, nlambda_init, MAX_ITER_DEFAULT,
+            nuisance_lambda_rule, nuisance_fit_cache, layout = calibration_layout,
+            tol = nuisance_tol, calibration_control = calibration_control
+          )
+        }
+        fits
+      }, n_cores = actual_cores)
+      for (index in seq_along(source_sites)) {
+        field <- if (source_validation_method == "calibrated") "inner_calibrated" else "inner_fits"
+        source_results_k1[[source_sites[index]]][[field]] <- inner_results[[index]]
+      }
+    }
     observed_nlambda <- vapply(
       source_results_k1,
       function(result) as.integer(result$nuisance_nlambda),
@@ -1464,36 +1392,33 @@ run_crossfit <- function(data_split, n_folds = N_FOLDS_DEFAULT,
 
     # Target-only estimate (complement-fold training, avoids nested cross-fitting)
     target_only_started_at <- proc.time()[["elapsed"]]
-    target_only_k1 <- .get_target_only_fold_fit(
-      target_folds = target_folds,
-      k1 = k1,
-      n_folds = n_folds,
-      family = family,
-      A_val = A_val,
-      propensity_cache = target_only_ps_cache,
-      fit_cache = target_only_fit_cache,
-      nuisance_lambda_rule = nuisance_lambda_rule
-    )
-
-    # Inner-fold target-only estimates (Version A Step 2)
-    # For each k2 in secondary_folds, train target-only model on
-    # {folds}\{k1,k2} and evaluate on fold k2. These are used to compute
-    # varphi_ot on inner folds for variance component estimation.
-    log_info(verbose, "   --> Inner-fold target-only models for Version A Step 2")
-    target_only_inner <- list()
-    for (k2 in secondary_folds) {
-      target_only_inner[[paste0("k2_", k2)]] <- .get_target_only_fold_fit(
-        target_folds = target_folds,
-        k1 = k1,
-        n_folds = n_folds,
-        family = family,
-        A_val = A_val,
-        propensity_cache = target_only_ps_cache,
-        fit_cache = target_only_fit_cache,
-        k2 = k2,
-        nuisance_lambda_rule = nuisance_lambda_rule
+    get_target_fit <- function(k2 = NULL) {
+      if (target_nuisance_method == "lasso") {
+        return(.get_target_only_fold_fit(
+          target_folds, k1, n_folds, family, A_val,
+          propensity_cache = target_only_ps_cache, fit_cache = target_only_fit_cache,
+          k2 = k2, nuisance_lambda_rule = nuisance_lambda_rule,
+          return_training_scores = source_validation_method == "outer_fit" && is.null(k2)
+        ))
+      }
+      calibration_folds <- setdiff(seq_len(n_folds), c(k1, k2))
+      calibrated <- .fit_target_calibration(
+        target_folds, calibration_folds, A_val, family, M_tau, nlambda_init,
+        lambda_rule = nuisance_lambda_rule, fit_cache = nuisance_fit_cache,
+        layout = calibration_layout, tol = nuisance_tol, calibration_control = calibration_control
+      )
+      evaluation_fold <- if (is.null(k2)) k1 else k2
+      .evaluate_target_calibration(
+        calibrated, materialize_fold(target_folds, evaluation_fold),
+        A_val, family, calibration_control$target_radius %||% M_tau_inference
       )
     }
+    target_only_k1 <- get_target_fit()
+    target_only_inner <- if (source_validation_method == "outer_fit") {
+      setNames(lapply(secondary_folds, function(k2) .reuse_outer_target_scores(
+        target_only_k1, target_folds, k1, k2, A_val, family,
+        calibration_control$target_radius %||% M_tau_inference)), paste0("k2_", secondary_folds))
+    } else setNames(lapply(secondary_folds, get_target_fit), paste0("k2_", secondary_folds))
     target_only_outcome_degenerate <-
       as.integer(target_only_k1$outcome_degenerate %||% 0L) +
       sum(vapply(
@@ -1547,9 +1472,15 @@ run_crossfit <- function(data_split, n_folds = N_FOLDS_DEFAULT,
       source_results = source_results_k1,
       target_only_inner = target_only_inner
     )
+    if (source_validation_method == "outer_fit") {
+      fold_results[[k1]]$source_validation_method <- "outer_fit"
+    }
   }
 
   # ---- FINAL AGGREGATION ----
+  data_split <- partition_data
+  target_folds <- partition_target_folds
+  source_folds <- partition_source_folds
   aggregation_started_at <- proc.time()[["elapsed"]]
   if (verbose) {
     cat(sprintf("\n--> FINAL AGGREGATION (%s)\n", mode_label))
@@ -1573,6 +1504,17 @@ run_crossfit <- function(data_split, n_folds = N_FOLDS_DEFAULT,
     verbose = verbose
   )
   result$nuisance_lambda_rule <- nuisance_lambda_rule
+  result$use_lambda_cache <- use_lambda_cache
+  result["nuisance_cache_dir"] <- list(nuisance_cache_dir)
+  result$target_nuisance_method <- target_nuisance_method
+  result$source_validation_method <- source_validation_method
+  result$crossfit_levels <- .crossfit_levels(fold_results)
+  result$calibration_layout <- calibration_layout
+  result$nuisance_tol <- nuisance_tol
+  result$calibration_control <- calibration_control
+  result$nuisance_training_policy <- NUISANCE_TRAINING_POLICY
+  result$nuisance_solver <- nuisance_solver_cpp()
+  result$nuisance_cv_certificate <- .nuisance_cv_certificate_enabled()
   result$communication_mode <- communication_mode
   result$family <- family
   result$A_val <- A_val
@@ -1613,6 +1555,9 @@ run_crossfit <- function(data_split, n_folds = N_FOLDS_DEFAULT,
 #'   manuscript soft penalty; hard thresholding is a diagnostic and
 #'   \code{"quadratic_bias"} the pre-specified smooth sensitivity rule.
 #' @export
+#' @param aggregation_mode \code{"common_tate"} learns one common weight
+#'   vector; \code{"separate_arms"} optimizes each arm independently;
+#'   \code{"joint_tate"} jointly optimizes two arm-specific vectors for TATE.
 run_tate_crossfit <- function(
     data_split, n_folds = N_FOLDS_DEFAULT,
     communication_mode = c("two_round", "one_round"),
@@ -1631,9 +1576,37 @@ run_tate_crossfit <- function(
     nuisance_lambda_rule = c("min", "1se"),
     parallel_arms = FALSE,
     aggregation_lambda_grid = NULL,
-    screening_rule = c("soft_penalty", "hard_threshold", "quadratic_bias")) {
+    screening_rule = c("soft_penalty", "hard_threshold", "quadratic_bias"),
+    nuisance_solver = NULL,
+    target_nuisance_method = c("lasso", "hou_calibrated"),
+    source_validation_method = c("initial", "calibrated"),
+    calibration_layout = c("block", "compact"),
+    aggregation_mode = c("common_tate", "separate_arms", "joint_tate"),
+    nuisance_tol = TOL_DEFAULT, calibration_control = NULL, nuisance_cache_dir = NULL,
+    checkpoint_dir = NULL, crossfit_layers = NULL, nuisance_cv_certificate = NULL) {
+  aggregation_mode <- match.arg(aggregation_mode)
+  previous_solver <- .set_nuisance_solver(nuisance_solver)
+  on.exit(.restore_nuisance_solver(previous_solver), add = TRUE)
+  previous_certificate <- .set_nuisance_cv_certificate(nuisance_cv_certificate)
+  on.exit(.restore_nuisance_cv_certificate(previous_certificate), add = TRUE)
   tate_started_at <- proc.time()[["elapsed"]]
   communication_mode <- match.arg(communication_mode)
+  target_nuisance_method <- match.arg(target_nuisance_method)
+  calibration_control <- .validate_calibration_control(calibration_control, target_nuisance_method)
+  if (calibration_control$recipe == "score_derivative") {
+    .validate_score_calibration_radius(M_tau)
+    if (target_nuisance_method == "hou_calibrated") {
+      .validate_score_calibration_radius(calibration_control$target_radius %||% M_tau)
+    }
+  }
+  source_validation_method <- .resolve_crossfit_validation(
+    source_validation_method, crossfit_layers, calibration_control, target_nuisance_method, communication_mode)
+  calibration_layout <- match.arg(calibration_layout)
+  nuisance_tol <- .validate_lambda_scalar(nuisance_tol, "cross-fitting", "nuisance_tol", allow_zero = FALSE)
+  if (source_validation_method != "outer_fit" && (target_nuisance_method == "hou_calibrated" ||
+       .complete_source_validation(source_validation_method)) && n_folds < 4L) {
+    stop("Calibrated inner validation requires at least four original folds.", call. = FALSE)
+  }
   lambda_rule <- match.arg(lambda_rule)
   aggregation_lambda_grid <- .validate_aggregation_lambda_grid(
     lambda_selection, aggregation_lambda_grid, "run_tate_crossfit"
@@ -1684,7 +1657,12 @@ run_tate_crossfit <- function(
     precomputed_folds = precomputed_folds,
     target_only_ps_cache = target_only_ps_cache,
     target_only_fit_cache = target_only_fit_cache,
-    nuisance_lambda_rule = nuisance_lambda_rule
+    nuisance_lambda_rule = nuisance_lambda_rule,
+    target_nuisance_method = target_nuisance_method,
+    source_validation_method = source_validation_method,
+    calibration_layout = calibration_layout, nuisance_tol = nuisance_tol,
+    calibration_control = calibration_control, nuisance_cache_dir = nuisance_cache_dir,
+    checkpoint_dir = checkpoint_dir, crossfit_layers = crossfit_layers
   )
   arm_values <- c(mu1 = 1L, mu0 = 0L)
   arm_results <- parallel_lapply(
@@ -1708,10 +1686,22 @@ run_tate_crossfit <- function(
     lambda_rule = lambda_rule,
     aggregation_lambda_grid = aggregation_lambda_grid,
     screening_rule = screening_rule,
+    aggregation_mode = aggregation_mode,
     verbose = verbose
   )
   result$communication_mode <- communication_mode
   result$parallel_arms <- parallel_arms
+  result$use_lambda_cache <- use_lambda_cache
+  result["nuisance_cache_dir"] <- list(nuisance_cache_dir)
+  result$target_nuisance_method <- target_nuisance_method
+  result$source_validation_method <- source_validation_method
+  result$crossfit_levels <- max(mu1_result$crossfit_levels, mu0_result$crossfit_levels)
+  result$calibration_layout <- calibration_layout
+  result$nuisance_tol <- nuisance_tol
+  result$calibration_control <- calibration_control
+  result$nuisance_training_policy <- NUISANCE_TRAINING_POLICY
+  result$nuisance_solver <- nuisance_solver_cpp()
+  result$nuisance_cv_certificate <- .nuisance_cv_certificate_enabled()
   result$nuisance_lambda_rule <- nuisance_lambda_rule
   result$family <- family
   result$M_tau <- M_tau
@@ -1719,7 +1709,12 @@ run_tate_crossfit <- function(
   result$aggregation_lambda_selection <- lambda_selection
   result$aggregation_lambda_grid <- aggregation_lambda_grid
   result$aggregation_screening_rule <- screening_rule
-  result$method <- paste0(communication_mode, "_direct_tate_crossfit")
+  if (!is.null(attr(precomputed_folds, "preprocessing", exact = TRUE))) {
+    result$preprocessing <- attr(precomputed_folds, "preprocessing", exact = TRUE)
+  }
+  result$method <- paste0(communication_mode,
+    if (aggregation_mode == "common_tate") "_direct_tate_crossfit" else
+      paste0("_", aggregation_mode, "_crossfit"))
   result$timing <- list(
     total_seconds = .elapsed_process_seconds(tate_started_at),
     mu1 = mu1_result$timing,
@@ -1827,7 +1822,9 @@ run_tate_crossfit <- function(
   required <- c(
     "fold_results", "n_folds", "communication_mode", "family", "A_val",
     "M_tau", "M_tau_inference", "nuisance_lambda_rule",
-    "nuisance_fit_diagnostics"
+    "nuisance_fit_diagnostics", "use_lambda_cache", "nuisance_training_policy",
+    "nuisance_solver", "target_nuisance_method", "source_validation_method",
+    "calibration_layout", "nuisance_tol", "calibration_control"
   )
   missing <- required[!vapply(required, function(field) {
     !is.null(fitted_arm[[field]])
@@ -1836,10 +1833,20 @@ run_tate_crossfit <- function(
     stop(caller, ": fitted arm lacks field(s): ",
          paste(missing, collapse = ", "), ".", call. = FALSE)
   }
+  previous_solver <- .set_nuisance_solver(fitted_arm$nuisance_solver)
+  on.exit(.restore_nuisance_solver(previous_solver), add = TRUE)
+  previous_certificate <- .set_nuisance_cv_certificate(fitted_arm$nuisance_cv_certificate %||% FALSE)
+  on.exit(.restore_nuisance_cv_certificate(previous_certificate), add = TRUE)
   if (!identical(fitted_arm$communication_mode, "one_round")) {
     stop(caller, ": only one-round fits can be reused across FACE rho values.",
          call. = FALSE)
   }
+  if (!identical(fitted_arm$nuisance_training_policy, NUISANCE_TRAINING_POLICY)) {
+    stop(caller, ": fitted arm uses an incompatible nuisance training policy.", call. = FALSE)
+  }
+  use_lambda_cache <- .validate_nuisance_cache_flag(fitted_arm$use_lambda_cache, caller)
+  nuisance_fit_cache <- .new_nuisance_cache(use_lambda_cache, fitted_arm$nuisance_cache_dir)
+  on.exit(.release_nuisance_cache(nuisance_fit_cache), add = TRUE)
   A_val <- as.integer(fitted_arm$A_val)
   changed_sources <- .validate_one_round_rho_reuse_data(
     reference_data_split, data_split, changed_sources, A_val,
@@ -1866,6 +1873,7 @@ run_tate_crossfit <- function(
          call. = FALSE)
   }
   glm_spec <- resolve_glm_family(fitted_arm$family)
+  source_program <- fitted_arm$calibration_control$source_nuisance_method %||% "calibrated"
   fold_results <- fitted_arm$fold_results
   refit_wall_seconds <- numeric(n_folds)
 
@@ -1903,12 +1911,12 @@ run_tate_crossfit <- function(
               alpha_init,
               glm_spec$family_int,
               glm_spec$link_int,
-              M_tau = fitted_arm$M_tau
+              M_tau = if (fitted_arm$calibration_control$recipe == "legacy") fitted_arm$M_tau else Inf
             ),
             alpha_init = alpha_init
           )
         }
-        with_seed(
+        source_result <- with_seed(
           .crossfit_work_seed("one_round", A_val, k1, source_index),
           process_source_site(
             s = site,
@@ -1924,11 +1932,32 @@ run_tate_crossfit <- function(
             get_fold_inputs = get_fold_inputs,
             family_int = glm_spec$family_int,
             link_int = glm_spec$link_int,
-            use_lambda_cache = TRUE,
+            use_lambda_cache = use_lambda_cache,
+            nuisance_fit_cache = nuisance_fit_cache,
             nuisance_nlambda = nuisance_nlambda,
-            nuisance_lambda_rule = fitted_arm$nuisance_lambda_rule
+            nuisance_lambda_rule = fitted_arm$nuisance_lambda_rule,
+            calibration_layout = fitted_arm$calibration_layout, nuisance_tol = fitted_arm$nuisance_tol,
+            calibration_recipe = fitted_arm$calibration_control$recipe,
+            source_nuisance_method = source_program,
+            source_lambda_rules = fitted_arm$calibration_control$source_lambda_rules,
+            source_training_message = if (source_program == "standard")
+              .prepare_source_training_message(current_folds$target_folds, secondary_folds) else NULL
           )
         )
+        if (.complete_source_validation(fitted_arm$source_validation_method)) {
+          field <- if (fitted_arm$source_validation_method == "calibrated") "inner_calibrated" else "inner_fits"
+          source_result[[field]] <- setNames(lapply(secondary_folds, function(validation_fold) {
+            training_folds <- setdiff(secondary_folds, validation_fold)
+            .fit_complete_source_program(
+              current_folds$target_folds, current_folds$source_folds[[site]], site, training_folds,
+              "one_round", A_val, fitted_arm$family, fitted_arm$M_tau, nuisance_nlambda,
+              MAX_ITER_DEFAULT, fitted_arm$nuisance_lambda_rule, nuisance_fit_cache,
+              layout = fitted_arm$calibration_layout, tol = fitted_arm$nuisance_tol,
+              calibration_control = fitted_arm$calibration_control
+            )
+          }), paste0("k2_", secondary_folds))
+        }
+        source_result
       },
       n_cores = min(setup_parallel(n_cores), length(changed_sources))
     )
@@ -1957,6 +1986,17 @@ run_tate_crossfit <- function(
     verbose = verbose
   )
   result$nuisance_lambda_rule <- fitted_arm$nuisance_lambda_rule
+  result$use_lambda_cache <- use_lambda_cache
+  result["nuisance_cache_dir"] <- list(fitted_arm$nuisance_cache_dir)
+  result$target_nuisance_method <- fitted_arm$target_nuisance_method
+  result$source_validation_method <- fitted_arm$source_validation_method
+  result$crossfit_levels <- .crossfit_levels(fold_results)
+  result$calibration_layout <- fitted_arm$calibration_layout
+  result$nuisance_tol <- fitted_arm$nuisance_tol
+  result$calibration_control <- fitted_arm$calibration_control
+  result$nuisance_training_policy <- fitted_arm$nuisance_training_policy
+  result$nuisance_solver <- nuisance_solver_cpp()
+  result$nuisance_cv_certificate <- .nuisance_cv_certificate_enabled()
   result$communication_mode <- "one_round"
   result$family <- fitted_arm$family
   result$A_val <- A_val
@@ -2051,11 +2091,23 @@ run_tate_crossfit <- function(
     lambda_selection = lambda_selection,
     lambda_rule = fitted_tate$aggregation_lambda_rule %||% "min",
     aggregation_lambda_grid = aggregation_lambda_grid,
+    aggregation_mode = fitted_tate$aggregation_mode %||% "common_tate",
     screening_rule = fitted_tate$aggregation_screening_rule %||% "soft_penalty",
     verbose = verbose
   )
   result$communication_mode <- "one_round"
   result$parallel_arms <- FALSE
+  result$use_lambda_cache <- fitted_tate$use_lambda_cache
+  result["nuisance_cache_dir"] <- list(fitted_tate$nuisance_cache_dir)
+  result$target_nuisance_method <- fitted_tate$target_nuisance_method
+  result$source_validation_method <- fitted_tate$source_validation_method
+  result$crossfit_levels <- fitted_tate$crossfit_levels
+  result$calibration_layout <- fitted_tate$calibration_layout
+  result$nuisance_tol <- fitted_tate$nuisance_tol
+  result$calibration_control <- fitted_tate$calibration_control
+  result$nuisance_training_policy <- fitted_tate$nuisance_training_policy
+  result$nuisance_solver <- fitted_tate$nuisance_solver
+  result$nuisance_cv_certificate <- fitted_tate$nuisance_cv_certificate %||% FALSE
   result$nuisance_lambda_rule <- fitted_tate$nuisance_lambda_rule
   result$family <- fitted_tate$family
   result$M_tau <- fitted_tate$M_tau
@@ -2125,6 +2177,18 @@ run_tate_crossfit <- function(
 
   for (k in seq_len(fitted_arm$n_folds)) {
     target_fold <- materialize_fold(target_folds, k)
+    if (identical(fitted_arm$target_nuisance_method, "hou_calibrated")) {
+      fold_results[[k]]$target_only <- .evaluate_target_calibration(
+        fold_results[[k]]$target_only$calibration, target_fold,
+        A_val, fitted_arm$family, fitted_arm$calibration_control$target_radius %||% M_tau_inference)
+      for (validation_fold in setdiff(seq_len(fitted_arm$n_folds), k)) {
+        key <- paste0("k2_", validation_fold)
+        fold_results[[k]]$target_only_inner[[key]] <- .evaluate_target_calibration(
+          fold_results[[k]]$target_only_inner[[key]]$calibration,
+          materialize_fold(target_folds, validation_fold), A_val,
+          fitted_arm$family, fitted_arm$calibration_control$target_radius %||% M_tau_inference)
+      }
+    }
     for (source_name in source_sites) {
       source_fold <- materialize_fold(source_folds[[source_name]], k)
       source_fit <- fold_results[[k]]$source_results[[source_name]]
@@ -2175,6 +2239,10 @@ run_tate_crossfit <- function(
 .decorate_reaggregated_tate <- function(
     result, fitted_tate, refreshed_arms, M_tau_inference,
     lambda_selection, started_at, aggregation_lambda_grid = NULL) {
+  for (field in c("nuisance_solver", "nuisance_cv_certificate", "use_lambda_cache", "nuisance_training_policy",
+                  "target_nuisance_method", "source_validation_method", "calibration_layout", "crossfit_levels", "nuisance_tol", "calibration_control", "nuisance_cache_dir")) {
+    result[[field]] <- fitted_tate[[field]]
+  }
   result$communication_mode <- fitted_tate$communication_mode
   result$parallel_arms <- fitted_tate$parallel_arms %||% FALSE
   result$nuisance_lambda_rule <- fitted_tate$nuisance_lambda_rule
@@ -2183,9 +2251,9 @@ run_tate_crossfit <- function(
   result$M_tau_inference <- M_tau_inference
   result$aggregation_lambda_selection <- lambda_selection
   result$aggregation_lambda_grid <- aggregation_lambda_grid
-  result$method <- paste0(
-    fitted_tate$communication_mode, "_direct_tate_crossfit"
-  )
+  result$method <- paste0(fitted_tate$communication_mode,
+    if ((result$aggregation_mode %||% "common_tate") == "common_tate") "_direct_tate_crossfit" else
+      paste0("_", result$aggregation_mode, "_crossfit"))
   result$arm_results <- refreshed_arms
   result$nuisance_fit_diagnostics <- fitted_tate$nuisance_fit_diagnostics
   result$reused_nuisance_fits <- TRUE
@@ -2217,11 +2285,19 @@ run_tate_crossfit <- function(
 #'   multiplier.
 #' @return A TATE result with refreshed inference components and the same
 #'   fitted nuisance coefficients as \code{fitted_tate}.
+#' @param aggregation_mode Optional aggregation objective. NULL retains the
+#'   fitted object's mode. See \code{run_tate_crossfit()} for the three choices.
 #' @export
 reaggregate_tate_crossfit <- function(
     data_split, fitted_tate, M_tau_inference,
     lambda_selection = NULL, lambda_rule = NULL, verbose = FALSE,
-    aggregation_lambda_grid = NULL) {
+    aggregation_lambda_grid = NULL, aggregation_mode = NULL) {
+  if (!is.null(fitted_tate$preprocessing)) {
+    stop("Refit with the recorded outer preprocessing; reaggregation from one shared data matrix is not supported.",
+         call. = FALSE)
+  }
+  if (is.null(aggregation_mode)) aggregation_mode <- fitted_tate$aggregation_mode %||% "common_tate"
+  aggregation_mode <- match.arg(aggregation_mode, c("common_tate", "separate_arms", "joint_tate"))
   started_at <- proc.time()[["elapsed"]]
   caller <- "reaggregate_tate_crossfit"
   required <- c("arm_results", "n_folds", "communication_mode", "family",
@@ -2315,6 +2391,10 @@ reaggregate_tate_crossfit <- function(
       A_val = A_val,
       verbose = verbose
     )
+    for (field in c("nuisance_solver", "nuisance_cv_certificate", "use_lambda_cache", "nuisance_training_policy",
+                    "target_nuisance_method", "source_validation_method", "calibration_layout", "crossfit_levels", "nuisance_tol", "calibration_control", "nuisance_cache_dir")) {
+      refreshed[[field]] <- fitted_arm[[field]]
+    }
     refreshed$nuisance_fit_diagnostics <- fitted_arm$nuisance_fit_diagnostics
     refreshed$nuisance_lambda_rule <- fitted_arm$nuisance_lambda_rule
     refreshed$communication_mode <- communication_mode
@@ -2333,6 +2413,7 @@ reaggregate_tate_crossfit <- function(
     lambda_selection = lambda_selection,
     lambda_rule = lambda_rule,
     aggregation_lambda_grid = aggregation_lambda_grid,
+    aggregation_mode = aggregation_mode,
     screening_rule = fitted_tate$aggregation_screening_rule %||% "soft_penalty",
     verbose = verbose
   )

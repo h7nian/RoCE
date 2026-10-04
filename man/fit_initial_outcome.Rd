@@ -30,7 +30,8 @@ objective scale. Internally this is converted to glmnet's
 treatment-arm-only scale after filtering to \code{A == A_val}.}
 
 \item{nlambda}{Number of lambda values in glmnet path (default 100).
-Lower values (e.g., 20) speed up CV with minimal precision loss.}
+Changing this value changes the candidates and may change estimates;
+solver comparisons should retain the same prescribed grid.}
 
 \item{family}{GLM family: "gaussian" or "binomial".
 Default "binomial".}
@@ -46,7 +47,7 @@ all-unique IDs preserve the ordinary CV path. Used for resampled data.}
 Vector of outcome model parameters alpha (including intercept as first element)
 }
 \description{
-Implements the initial outcome model estimation for the two-level cross-fitting
+Implements initial outcome model estimation inside three-level cross-fitting
 algorithm. Following eq:nuisance_initial_losses in main.tex:
 }
 \details{

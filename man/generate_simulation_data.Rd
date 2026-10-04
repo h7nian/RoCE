@@ -15,7 +15,7 @@ generate_simulation_data(
   outcome_type = "binary",
   heterogeneity_type = "none",
   shift_strength = ROCE_SHIFT_STRENGTH_DEFAULT,
-  dgp_type = "face",
+  dgp_type = "bounded",
   ate_deviation = 0,
   n_deviated_sites = 0L,
   deviation_mechanism = "treated_arm",
@@ -23,7 +23,8 @@ generate_simulation_data(
   n_target = NULL,
   n_source_sizes = NULL,
   misspecification_strength = FACE_MISSPECIFICATION_STRENGTH,
-  warn_ignored = TRUE
+  warn_ignored = TRUE,
+  dgp_control = NULL
 )
 }
 \arguments{
@@ -73,7 +74,9 @@ confounding structure.}
 
 \item{shift_strength}{Positive multiplier controlling covariate shift.}
 
-\item{dgp_type}{Data-generating process: \code{"face"} or \code{"roce"}.}
+\item{dgp_type}{Data-generating process: \code{"face"}, \code{"roce"}, or
+\code{"bounded"}. The bounded DGP uses p direct working features and at
+most four active slopes, rather than the FACE quadratic expansion.}
 
 \item{ate_deviation}{Non-negative additive source treatment-shift deviation
 under the FACE DGP. It is a mean shift for Gaussian outcomes and a
@@ -90,17 +93,20 @@ FACE DGP.}
 \item{effect_mod_strength}{Source-only treatment-effect-modification strength
 under the FACE DGP; zero recovers the standard DGP.}
 
-\item{n_target}{Optional target-site size for explicit FACE-DGP allocation.}
+\item{n_target}{Optional target-site size for explicit FACE or bounded-DGP allocation.}
 
 \item{n_source_sizes}{Optional vector of source-site sizes for explicit
-FACE-DGP allocation.}
+FACE or bounded-DGP allocation.}
 
 \item{misspecification_strength}{Mixing weight of the transformed covariates
 in the misspecified FACE mechanisms of C2--C4 (see
-\code{generate_face_data()}); ignored by C1 and by the RoCE DGP.}
+\code{generate_face_data()}). In the bounded DGP it controls the omitted
+interaction in the first active feature. Ignored by C1 and by the RoCE DGP.}
 
 \item{warn_ignored}{Whether to warn when a valid argument is irrelevant to
 the selected DGP.}
+
+\item{dgp_control}{Bounded-DGP controls; see \code{\link{generate_bounded_data}}.}
 }
 \value{
 list with all generated data

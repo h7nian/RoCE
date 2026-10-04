@@ -272,6 +272,7 @@ N_CV_FOLDS_LAMBDA <- 5L
 #' Density ratio weight bounds (matches C++ WEIGHT_MIN/MAX)
 WEIGHT_MIN <- 1e-10
 WEIGHT_MAX <- 1e10
+INFERENCE_RATIO_MAX <- 1e6
 
 #' Parameter clipping bound (matches C++ PARAM_MAX)
 PARAM_MAX <- 100.0
@@ -404,7 +405,7 @@ VALID_HETEROGENEITY_TYPES <- c("none", "mild", "strong", "partial")
 #'                site-specific skew-normal covariates, linear + squared
 #'                outcome predictors, and site-specific constant treatment
 #'                shifts for either continuous or binary outcomes
-VALID_DGP_TYPES <- c("roce", "face")
+VALID_DGP_TYPES <- c("roce", "face", "bounded")
 
 # =============================================================================
 # FACE PAPER DGP CONSTANTS (Han et al., JASA 2023, Section 5.1)

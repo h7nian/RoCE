@@ -24,15 +24,10 @@ test_that("plugin block design reproduces fold-specific linear predictors", {
   expect_equal(pred, expected)
 })
 
-test_that("cross-fitting code uses fold-summed calibration, not parameter averaging", {
-  txt <- .read_source_for_static_test("cross_fitting_algorithms.R")
-
-  expect_true(grepl("Fold-summed SMMAL-style calibrated optimization", txt, fixed = TRUE))
-  expect_false(grepl("gamma_final_k1 <- colMeans(do.call(rbind, gamma_cal_list))", txt, fixed = TRUE))
-  expect_false(grepl("alpha_final_k1 <- colMeans(do.call(rbind, alpha_cal_list))", txt, fixed = TRUE))
-  expect_false(grepl("mean_phi <- c(1, colMeans(target_calib_k2$Z_site))", txt, fixed = TRUE))
-  expect_false(grepl("mean_phi_cache[[k2_key]] <- c(1, colMeans(target_fold_cache[[k2_key]]$Z_site))", txt, fixed = TRUE))
-})
+# Pooled-objective and exclusion tests in test-calibration-training.R and
+# test-nested-calibration.R verify calibration behavior independently. A source
+# comment's wording cannot establish that losses, rather than coefficients,
+# were combined.
 
 test_that("aggregation lambda cv evaluates held-out inner folds", {
   skip_if_not(exists("select_aggregation_lambda_inner_cv"), message = "inner CV selector not loaded")

@@ -8,10 +8,16 @@ build_rhc_cohort(
   raw = NULL,
   outcome = c("death30", "death180", "los"),
   site_var = .RHC_SITE_VAR,
-  site_recode = NULL
+  site_recode = NULL,
+  covariate_profile = c("historical", "log_missing", "grouped_log_missing"),
+  preprocessing_rows = NULL,
+  categorical_levels = NULL
 )
 }
 \arguments{
+\item{preprocessing_rows}{Optional training-row indices after cohort exclusions.
+NULL retains whole-cohort imputation.}
+\item{categorical_levels}{Optional named list of fixed category levels.}
 \item{raw}{Optional data frame from \code{\link{load_rhc_raw}}. If
 \code{NULL} (default), \code{load_rhc_raw()} is invoked.}
 
@@ -36,6 +42,14 @@ levels, values are the desired output levels; setting a value to
 \code{"No insurance"} when \code{site_var = "ninsclas"}, pass
 \code{c("Medicaid" = "Medicaid_any", "Medicare & Medicaid" =
 "Medicaid_any", "No insurance" = NA)}.}
+
+\item{covariate_profile}{\code{"historical"} preserves the original features.
+\code{"log_missing"} replaces urine output, creatinine, bilirubin and white
+cell count by \code{log1p} values and adds an observed urine-missingness
+indicator. \code{"grouped_log_missing"} additionally groups primary colon
+and lung cancer diagnoses and combines trauma/orthopedic diagnosis flags.
+These are named sensitivity specifications; no rows or outcomes select
+the coding. The grouped profile coarsens clinical information.}
 }
 \value{
 A data frame with columns: \code{A} (0/1 treatment, with 1 = RHC),

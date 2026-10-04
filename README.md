@@ -9,10 +9,45 @@
 ## Overview
 
 RoCE implements federated causal estimators for multi-site data. Its primary
-estimator fits arm-specific high-dimensional nuisance functions, contrasts the
-treated and control influence components, and then learns one common set of
-source weights for the target average treatment effect (TATE). The package
-provides communication-efficient protocols with two-level cross-fitting.
+estimator fits arm-specific high-dimensional nuisance functions and jointly
+optimizes two arm-specific source-weight vectors for the target average
+treatment effect (TATE). The current manuscript analysis selects **two-layer
+cross-fitting**: outer evaluation and fold-summed calibration. Three layers add
+independent inner validation for aggregation weights and remain available as
+an explicit comparison. Communication rounds are controlled separately.
+
+**Real-data collaborators:** start with [the general data guide](docs/REAL_DATA.md)
+for All of Us or your own data; [the RHC profile](docs/RHC.md) reproduces the
+published Private-target example. Both use one portable runner and explicit
+preprocessing, tuning, and output settings.
+
+### Default simulation
+
+The default DGP is `bounded_joint_v3`: bounded, population-standardized
+truncated-normal features, four active slopes, and a fixed population TATE.
+`p` counts working features directly; no quadratic expansion is added.
+Source covariate shift and treatment allocation have separate controls.
+See the [design and validation protocol](diagnosis/repair/bounded_dgp.md).
+
+The default launcher uses 1000 observations per site, three-level cross-fitting,
+and one independent Slurm job per repeat. Builds, results and logs stay under
+`/scratch.global/zhan9381/FACE-HD/`. After a checked installation is available:
+
+```bash
+bash main.sh --n-sims 200 --p '10 20 50' --max-in-flight 512 --checkpoint
+```
+
+The controller first checks one repeat in each cell, then allows up to 512
+pending/running repeat jobs (2 CPUs each). `--max-in-flight` accepts 1–2000;
+the scheduler determines actual running concurrency. The bounded launcher now
+uses `preempt,msismall,agsmall,amdsmall,amd512,ag2tb,msibigmem,saffo-2tb`, with requeue and persistent nuisance checkpoints.
+The listed order does not impose a Slurm scheduling priority. Each repeat requests 2 CPUs, 4 GB total memory and 30 minutes.
+The lightweight controller requests one hour and checkpoints its submission
+ledger before requeueing. For non-preempting runs, choose public partitions
+with `--partitions`; `--no-checkpoint` is available there.
+See [checkpoint recovery](diagnosis/repair/checkpoint_recovery.md).
+Explicit `face` and
+`roce` DGP selections remain available for historical comparisons.
 
 ### Target Estimand
 
@@ -21,18 +56,18 @@ The primary estimand is the **target average treatment effect**:
 $$\tau_t = E_t\{Y(1)-Y(0)\}=\mu^1_t-\mu^0_t.$$
 
 Use `run_tate_crossfit()` for the primary TATE procedure. It forms the
-treated-minus-control influence values before variance estimation and source
-aggregation, retaining the within-site cross-arm covariance. The lower-level
+treated and control influence components for joint TATE variance optimization,
+retaining the within-site cross-arm covariance. The lower-level
 `run_crossfit(A_val = a)` interface remains available for secondary potential-
 outcome means $\mu^a_t=E_t\{Y(a)\}$.
 
 ### Key Features
 
-- **Doubly Robust Estimators**: Calibrated loss functions for Neyman Orthogonality
+- **Calibrated Nuisance Fitting**: Source transport and target calibration with explicit training boundaries
 - **Two Communication Protocols**: Two-round and one-round algorithms
-- **Two-Level Cross-fitting**: Enhanced robustness through nested sample splitting
-- **TATE Aggregation**: One common source-weight vector selected from the TATE variance and Wald discrepancies; the smooth quadratic-bias rule (`screening_rule = "quadratic_bias"`) is computed alongside as a pre-specified sensitivity estimator
-- **C++ Acceleration**: High-performance coordinate descent with GLMNET-style optimizations
+- **Two- or Three-Layer Cross-fitting**: Optional independent inner validation of complete calibrated source and target procedures
+- **TATE Aggregation**: Common TATE weights, independently optimized arm weights, or jointly optimized arm weights; all retain the applicable within-site arm covariance
+- **C++ Acceleration**: Selectable proximal Newton and coordinate descent, with exact fitting-input caches and compact calibration matrices
 - **Comparison Methods**: Target-only, sample-size weighted, inverse-variance weighted, Federated-DR, and Pooled-DR estimators with paired-arm variance
 
 ### API Stability and Compatibility
@@ -42,6 +77,78 @@ outcome means $\mu^a_t=E_t\{Y(a)\}$.
 - **Reaggregation**: `reaggregate_tate_crossfit()` and its sensitivity grid preserve the fitted source-weight rule, including `quadratic_bias`; unchanged cutoff and inference radius reproduce the original fit.
 - **Internal C++ bindings**: functions ending with `_cpp` are internal implementation/testing interfaces and are **not** part of the package's stable public API contract.
 
+Select the current two-layer joint-TATE configuration explicitly:
+
+```r
+fit <- run_tate_crossfit(
+  data_split, n_folds = 10L, communication_mode = "one_round",
+  target_nuisance_method = "hou_calibrated",
+  source_validation_method = "outer_fit", crossfit_layers = 2L,
+  aggregation_mode = "joint_tate", lambda_selection = 0.5,
+  nuisance_solver = "proximal_newton", calibration_layout = "compact"
+)
+```
+
+`aggregation_mode` can also be `"common_tate"` or `"separate_arms"`, and can be
+changed with `reaggregate_tate_crossfit()` using the same nuisance fits.
+
+The development argument `nuisance_cv_certificate = TRUE` enables sufficient
+KKT nonconvergence checks in density-ratio CV. It retains the prescribed grid,
+CV tolerance and final optimizer. The effective default is `FALSE`; `NULL`
+inherits an enclosing call. The control is available in the cross-fitting and
+simulation APIs, and as optional argument21 of `main.R`. Cache provenance and
+result metadata record it. See the [validation record](diagnosis/repair/density_cv_certificate.md)
+before enabling it in a new campaign; existing frozen campaigns are unchanged.
+The repeat launcher accepts `--nuisance-cv-certificate` for a library with the
+corresponding checked capability marker, including baseline-only workers.
+
+For the two-versus-three-layer comparison, set `crossfit_layers = 2L` or `3L`
+in `run_tate_crossfit()`, `run_crossfit()`, `run_single_simulation()`, or
+`run_simulation_study()`. Both choices retain an untouched outer evaluation
+fold and fold-specific aggregation weights. Two layers reuse the final outer
+models to compute weight-learning scores on the outer training sample; three
+layers independently validate fully calibrated inner models there. These
+training-score definitions differ from the legacy `"initial"` validation
+ablation. Layers and communication rounds are separate controls.
+
+The repeat launcher accepts `--crossfit-layers 2` or `3`; it requires a library
+that passed the layer checks and records both arm means, their covariance,
+TATE variance and fold-specific weights. Keep the DGP, outer folds, calibration,
+cutoff, and nuisance grid fixed when comparing layers. Two layers require at
+least three original folds, three layers require four, and this comparison
+uses the same ten original folds. Fixed-weight and eta-sensitivity variance
+outputs must be checked against empirical variance across paired repeats.
+
+The existing `"lasso"`/`"initial"` package defaults remain available for
+controlled legacy comparisons. Results record `crossfit_levels` separately
+from `communication_mode`. The three-level candidate and its coverage are
+still under validation; see [implementation status](diagnosis/repair/README.md).
+
+An experimental score-matched calibration is separately selected with
+`calibration_control = list(recipe = "score_derivative",
+target_propensity_initialization = "calibrated", target_radius = 12)`.
+This radius belongs to the selected bounded-DGP validation profile, which also
+uses `M_tau = M_tau_inference = 12`; it is not a universal setting. This option changes the calibration method and still
+requires finite-sample and inference validation.
+
+The direct calibration ablation adds
+`source_nuisance_method = "standard"` to `calibration_control` and uses
+`source_validation_method = "complete"`. It fits an ordinary source OR and
+initial merged-weight model on each allowed training subset, omitting final
+source score calibration. `"calibrated"` remains the default source program
+and a compatible name for complete validation. The standard ablation supports
+one-round communication and either target anchor; see the
+[factorial comparison design](diagnosis/repair/calibration_ablation_design.md).
+
+For source workers that are recreated between outer folds, optional
+`nuisance_cache_dir` reuses fits through a private per-run directory on scratch.
+The supplied parent directory must exist and be writable; `use_lambda_cache`
+must remain `TRUE`. The default `NULL` uses memory caching. Exact fitting
+inputs and model integrity are checked, and the run cleans up its cache.
+Disk caching adds overhead on small problems; the full p100 comparison is
+still running. Grid reduction is evaluated separately because it can change
+the selected penalty and estimator.
+
 ## Installation
 
 ### Prerequisites
@@ -49,20 +156,21 @@ outcome means $\mu^a_t=E_t\{Y(a)\}$.
 Ensure you have the following R packages installed:
 
 ```r
-install.packages(c("Rcpp", "RcppEigen", "glmnet", "doParallel"))
+install.packages(c("Rcpp", "RcppEigen", "glmnet", "digest", "doParallel"))
 
 # For comparison methods (optional)
 install.packages("RCAL")
 
 # For testing (optional)
-install.packages("testthat")
+install.packages(c("testthat", "withr"))
 ```
 
 ### From Source
 
 ```bash
-git clone https://github.com/sinianzhang/RoCE.git
-cd RoCE
+git clone https://github.com/h7nian/FACE-HD.git
+cd FACE-HD
+R CMD INSTALL .
 ```
 
 In R:
@@ -91,12 +199,15 @@ data <- generate_simulation_data(
 data_split <- split_data_by_site(data)
 
 # Run the primary TATE estimator. Both treatment arms use the same fold
-# partition and are contrasted before learning one source-weight vector.
+# partition, retaining their covariance and learning joint arm-specific weights.
 result_tate <- run_tate_crossfit(
   data_split,
   communication_mode = "one_round",
   n_folds = 5,
-  lambda_selection = RoCE:::AGG_WALD_LAMBDA, # selected cutoff c = 1
+  aggregation_mode = "joint_tate", crossfit_layers = 2L,
+  target_nuisance_method = "hou_calibrated",
+  source_validation_method = "outer_fit",
+  lambda_selection = 0.5, # cutoff c = 2
   verbose = TRUE,
   M_tau = 5,
   M_tau_inference = 5,
@@ -106,13 +217,13 @@ result_tate <- run_tate_crossfit(
 cat("TATE estimate:", result_tate$estimate, "\n")
 cat("SE:", result_tate$se, "\n")
 cat("95% CI:", result_tate$ci_lower, result_tate$ci_upper, "\n")
-cat("Common source weights:", result_tate$weights, "\n")
+print(result_tate$weights_by_arm)
 cat("True TATE:", data$mu1_true - data$mu0_true, "\n")
 ```
 
-The manuscript analysis uses aggregation multiplier `1` (Wald activation
-cutoff `c = 1`), selected by the documented coverage-blind rule on disjoint
-pilot seeds. For a pre-specified sensitivity analysis, callers
+The current manuscript analysis uses aggregation multiplier `0.5` (Wald
+activation cutoff `c = 2`). Historical package defaults remain available;
+use explicit arguments or the RHC runner to reproduce the selected analysis. For a pre-specified sensitivity analysis, callers
 can instead set `lambda_selection = "cv"` and pass a positive
 `aggregation_lambda_grid`; candidate weights and the validation criterion are
 then computed entirely within each outer-training sample. The grid must not be
@@ -167,17 +278,23 @@ each source returns calibrated nuisance and influence summaries in one exchange.
 
 ### Two-Round Communication Protocol
 
-The optional two-round variant lets each source initialize its own outcome
-model before target calibration. It relaxes the one-round alignment condition
-at the cost of an additional communication exchange.
+The two-round variant uses each source's initial outcome model. The target
+then computes derivative moments for those source-specific models before
+source calibration. This introduces the additional communication dependency.
 
-### Two-Level Cross-fitting
+### Optional Three-Layer Cross-fitting
 
-Both protocols use nested sample splitting to provide:
-- Neyman Orthogonality through calibrated loss functions
-- Cross-calibrated plug-in order where calibrated α uses γ_init as the weight plug-in
-- Outer-fold separation between weight learning and evaluation
-- A TATE variance computed from within-site centered, treated-minus-control pseudo-values, which automatically includes cross-arm covariance, plus the delta-method contribution of the learned source weights (`se`; the fixed-weight version is returned as `se_fixed_weights`)
+For each outer evaluation fold `k1`, each inner validation fold `k2` evaluates
+models calibrated using the remaining folds `k3`. Each calibration block's
+initial models exclude `k1`, `k2`, and that block's `k3`. All `k3` losses are
+combined into one final model per site, arm, and nuisance type. All `k2`
+validation moments are pooled before learning the weights for `k1`.
+
+The final outer model uses calibration on all folds except `k1`, with its own
+fold-specific initial models. The three fold roles can use the same ten-fold
+partition and do not add communication round trips. See the
+[algorithm description](diagnosis/repair/algorithm.md) for sample sizes and
+the current inference limitations.
 
 ## Grouped nuisance CV for resampling
 
@@ -190,13 +307,17 @@ references must contain the same group metadata; stale views or cross-fold
 origins fail explicitly. For copied data, supply group-consistent
 `precomputed_folds` rather than repartitioning copied rows.
 
-This option changes nuisance-validation bookkeeping, not the common TATE
+This option changes nuisance-validation bookkeeping, not the selected TATE
 aggregation objective or its variance formula. It is not a cluster-robust
 variance estimator and does not by itself validate bootstrap confidence
 intervals. Grouped source CV retains the existing equal-fold score criterion;
 groups are balanced by origin count, so row counts per fold can differ.
 
-## Simulation Configurations
+## Historical FACE Simulation Configurations
+
+The following describes explicit `dgp_type="face"` historical runs. The current
+bounded default is described [above](#default-simulation) and in the linked
+design protocol.
 
 Both nuisance models use the same working basis $\phi(X)=[X-\kappa, X^2]$ in
 every configuration. Misspecification is placed in the true mechanism: the
@@ -208,10 +329,15 @@ $\omega=$ `FACE_MISSPECIFICATION_STRENGTH` $=0.75$ (pre-registered, see
 
 | Config | True outcome mechanism | True treatment mechanism | Description |
 |--------|------------------------|--------------------------|-------------|
-| C1 | $\eta(X)$ | $\eta(X)$ | Both models correctly specified |
+| C1 | $\eta(X)$ | $\eta(X)$ | Neither mechanism uses the transformed predictor |
 | C2 | $\eta_\omega(X)$ | $\eta(X)$ | Outcome model misspecified |
 | C3 | $\eta(X)$ | $\eta_\omega(X)$ | Site/treatment model misspecified |
 | C4 | $\eta_\omega(X)$ | $\eta_\omega(X)$ | Both misspecified |
+
+These labels describe the outcome and treatment mechanisms. The actual
+propensity also uses the DGP's truncation, and the skew-normal transport ratio
+need not belong to the working log-quadratic family. C1 therefore does not
+assert that every fitted nuisance is exactly specified.
 
 Two deviation mechanisms make source $s_1$ non-transportable by $\rho$ on
 the log-odds scale (`deviation_mechanism` in `generate_face_data()` and
@@ -226,9 +352,12 @@ Every replicate reports the frozen production row set
 `RoCE:::.tate_production_method_rows()`; the quadratic-bias sensitivity row is
 gated by `include_quadratic_bias_rule = TRUE`.
 
-## Running Simulations on HPC (SLURM)
+## Historical HPC Campaign (SLURM)
 
-The manuscript rerun is restricted to `p=100`. See
+This section preserves the earlier FACE campaign. Use `main.sh` and the
+current bounded-DGP protocol for current campaigns.
+
+The historical rerun was restricted to `p=100`. See
 [`scripts/slurm/README.md`](scripts/slurm/README.md) for the isolated package
 gates, exact same-seed rho-reuse audit, bounded grouped submissions,
 aggregation, and per-setting coverage/RMSE diagnostics. The 27,000 canonical

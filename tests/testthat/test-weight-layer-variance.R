@@ -3,11 +3,14 @@
 # supplemental.tex supp:weight_layer).
 
 .weight_layer_fixture <- function(K, seed, screening_rule = "soft_penalty") {
+  # Test the weight functional on study-sized sites. The old 120/site fixture
+  # had only 11 observations in one nuisance-CV training fold and a provably
+  # unbounded density loss; test-nuisance-kkt.R covers that failure separately.
   set.seed(seed)
   data <- generate_simulation_data(
-    n_total = 120 * (K + 1), K = K, p = 3, config = "C1",
+    n_total = 1000 * (K + 1), K = K, p = 4, config = "C1",
     dgp_type = "face", outcome_type = "continuous",
-    n_target = 120, n_source_sizes = rep(120, K),
+    n_target = 1000, n_source_sizes = rep(1000, K),
     warn_ignored = FALSE
   )
   data_split <- split_data_by_site(data)
@@ -182,9 +185,9 @@ test_that("weight layer is reported for the arm-specific and hard-threshold path
   skip_on_cran()
   set.seed(7104)
   data <- generate_simulation_data(
-    n_total = 360, K = 2, p = 3, config = "C1", dgp_type = "face",
+    n_total = 3000, K = 2, p = 4, config = "C1", dgp_type = "face",
     outcome_type = "continuous",
-    n_target = 120, n_source_sizes = c(120, 120), warn_ignored = FALSE
+    n_target = 1000, n_source_sizes = c(1000, 1000), warn_ignored = FALSE
   )
   data_split <- split_data_by_site(data)
   arm <- run_crossfit(

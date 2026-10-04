@@ -69,5 +69,7 @@ Named list of per-method results. The five comparison baselines additionally
 \description{
 Returns both:
 - Naive methods (sample_size, inverse_variance): may have bias due to covariate shift
-- DR-corrected methods (federated_dr, pooled_dr): theoretically correct
+- DR-corrected methods (federated_dr, pooled_dr): require transport and
+  nuisance assumptions; their conditional derivative calculations alone do
+  not establish validity after tuning and model selection.
 }

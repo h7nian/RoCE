@@ -22,10 +22,22 @@ run_crossfit(
   target_only_ps_cache = NULL,
   target_only_fit_cache = NULL,
   nuisance_lambda_rule = c("min", "1se"),
-  aggregation_lambda_grid = NULL
+  aggregation_lambda_grid = NULL,
+  nuisance_solver = NULL,
+  target_nuisance_method = c("lasso", "hou_calibrated"),
+  source_validation_method = c("initial", "calibrated"),
+  calibration_layout = c("block", "compact"),
+  nuisance_tol = TOL_DEFAULT,
+  calibration_control = NULL,
+  nuisance_cache_dir = NULL,
+  checkpoint_dir = NULL,
+  crossfit_layers = NULL,
+  nuisance_cv_certificate = NULL
 )
 }
 \arguments{
+\item{nuisance_cv_certificate}{Optional logical density-CV KKT certificate control. \code{NULL} inherits an enclosing call, otherwise defaults to \code{FALSE}. Certified failures may be skipped without changing the lambda grid, CV tolerance or final solver.}
+
 \item{data_split}{Split data by site (from split_data_by_site). A site may
 optionally include positive integer cv_group_id values aligned with its
 rows. Repeated observation origins are kept together in nuisance CV.
@@ -35,7 +47,8 @@ origins crossing outer folds are rejected. This is resampling metadata,
 not a change to the common TATE aggregation objective.}
 
 \item{n_folds}{number of cross-fitting folds (default 10, K_f in main.tex).
-Minimum 3 required for proper two-level cross-fitting calibration.}
+       The three-level method uses at least 4 folds (10 in the study).
+       Two-layer outer-fit reuse and legacy initial validation allow 3 folds.}
 
 \item{communication_mode}{character, "two_round" or "one_round"}
 
@@ -75,8 +88,9 @@ initial outcome model (fit_initial_outcome). Default 100.}
 
 \item{A_val}{Integer (0 or 1). Treatment value for potential outcome estimation.}
 
-\item{use_lambda_cache}{Logical. If TRUE, reuse selected nuisance
-lambdas within fold-specific loops to reduce repeated CV.}
+\item{use_lambda_cache}{Logical. If TRUE, reuse identical nuisance
+fits and their selected penalties. The public name is retained for
+compatibility; penalties are never shared between different inputs.}
 
 \item{precomputed_folds}{Optional list with \code{target_folds} and
 \code{source_folds} created in advance for this \code{data_split}.}
@@ -97,6 +111,77 @@ truncated-Wald multipliers used when \code{lambda_selection = "cv"}.
 Selection is performed using inner folds contained entirely in each
 outer-training sample. It must be \code{NULL} for a fixed numeric
 \code{lambda_selection}.}
+
+\item{nuisance_solver}{C++ nuisance optimizer: \code{"proximal_newton"} or
+\code{"coordinate_descent"}. NULL inherits the process configuration,
+whose unconfigured default is proximal Newton. The choice applies to
+CV and final fits and is restored on exit. Initial glmnet fits retain
+their own optimizer.}
+
+\item{target_nuisance_method}{\code{"lasso"} retains the ordinary target
+       AIPW anchor. \code{"hou_calibrated"} fits both target nuisance models
+       by fold-summed calibration. Three layers fit separate inner models;
+       two layers reuse the final outer models for weight-learning scores.}
+
+\item{source_validation_method}{\code{"initial"} retains initial-model
+       validation. \code{"complete"} evaluates the complete selected source
+       nuisance program, trained separately for every inner validation fold.
+       \code{"calibrated"} remains a compatible name for complete validation.
+       Complete validation requires at least four original folds.
+       \code{"outer_fit"} reuses final outer models for training-sample
+       scores, as selected by \code{crossfit_layers=2L}.}
+
+\item{crossfit_layers}{Optional \code{2L} or \code{3L}. Two layers reuse
+  final outer nuisance models to compute eta-training scores inside the
+  outer training sample. Three layers independently validate complete
+  calibrated fits there. Both keep fold-specific eta and exclude the outer
+  evaluation fold. NULL preserves the legacy validation controls. Requires
+  final calibration at the source or target; it does not change communication rounds.}
+
+\item{calibration_layout}{\code{"block"} uses explicit fold-specific
+design blocks; \code{"compact"} uses equivalent initial linear
+predictors. This option changes matrix storage, not the loss.}
+
+\item{nuisance_tol}{Positive convergence tolerance for the C++ nuisance
+fits. Both solvers must meet the corresponding KKT tolerance.
+The internal CV kernels retain their documented tolerance floor;
+this controls final-refit accuracy without changing the lambda rule.}
+
+\item{calibration_control}{Optional named list. \code{recipe} is
+  \code{"legacy"} (default) or \code{"score_derivative"}. The latter uses
+  untruncated initial OR derivatives and the derivative of the clipped
+  initial tilt in the OR loss. \code{target_propensity_initialization} is
+  \code{"logistic"} (default) or \code{"calibrated"}. Optional
+  \code{target_radius} overrides both target fitting and target evaluation
+  radii; it does not change source radii. Nondefault target settings require
+  \code{target_nuisance_method="hou_calibrated"}. Score-derivative fitting
+currently requires finite radii below the source numerical ratio guard.
+For score-derivative calibrated sources, optional \code{source_lambda_rules}
+is a named list of \code{initial_weight}, \code{weight} and/or \code{outcome}
+CV rules (\code{"min"} or \code{"1se"}). These select the initial source
+merged weight, final calibrated weight and final calibrated OR, respectively.
+Omitted stages inherit \code{nuisance_lambda_rule}. Target fits and initial
+OR messages retain \code{nuisance_lambda_rule}. Changing an initial weight
+also changes the later OR loss; final weight and OR losses use separate
+initial fits and can be tuned independently.
+  \code{source_nuisance_method} is \code{"calibrated"} (default) or
+  \code{"standard"}. The standard ablation omits final source score
+  calibration, retaining initial merged-weight balancing and fitting an
+  ordinary source OR on the same allowed rows. It requires one-round
+  communication and complete-program weight learning, either separate inner
+  validation or outer-fit reuse. With legacy controls, an ordinary target
+  anchor uses two fold levels and target calibration uses three; explicit
+  \code{crossfit_layers} requires some final source or target calibration.}
+
+\item{nuisance_cache_dir}{Optional existing writable parent directory for a
+temporary cache shared by source workers across outer folds. NULL retains
+the in-memory cache. Requires \code{use_lambda_cache=TRUE}. Each run owns
+a new subdirectory and removes it on exit; inputs/models use SHA-256 checks.}
+
+\item{checkpoint_dir}{Optional persistent directory for completed nuisance fits.
+Requires an installed package and \code{use_lambda_cache=TRUE}; cannot be
+combined with \code{nuisance_cache_dir}. Restarts reuse only fits whose
+inputs and installed code match exactly. An interrupted fit is recomputed.}
 }
 \value{
 list with estimates and variance components

@@ -9,10 +9,13 @@ select_dr_lambda_cv(
   Z_target,
   lambda_grid = NULL,
   n_cv_folds = NULL,
-  lambda_rule = c("min", "1se")
+  lambda_rule = c("min", "1se"),
+  nuisance_cv_certificate = NULL
 )
 }
 \arguments{
+\item{nuisance_cv_certificate}{Optional logical density-CV KKT certificate control. \code{NULL} inherits an enclosing call, otherwise defaults to \code{FALSE}. Certified failures may be skipped without changing the lambda grid, CV tolerance or final solver.}
+
 \item{Z_source}{Site assignment covariates for source site (n_source x p)}
 
 \item{Z_target}{Site assignment covariates for target site (n_target x p)}

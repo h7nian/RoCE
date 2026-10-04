@@ -71,6 +71,10 @@
 .validate_weight_bootstrap_result <- function(tate_result) {
   caller <- "estimate_tate_weight_bootstrap"
   fail <- function(...) stop(caller, ": ", ..., call. = FALSE)
+  if ((tate_result$aggregation_mode %||% "common_tate") != "common_tate") {
+    fail("this multiplier-bootstrap implementation requires common_tate weights; ",
+         "two-arm weight coordinates require their own bootstrap reconstruction.")
+  }
   integer_scalar <- function(x, label, minimum = 1L) {
     if (!is.numeric(x) || length(x) != 1L || is.na(x) || !is.finite(x) ||
         x < minimum || x != floor(x) || x > .Machine$integer.max) {

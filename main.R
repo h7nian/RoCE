@@ -3,11 +3,10 @@
 # =============================================================================
 # TARGET ESTIMAND
 # =============================================================================
-# Primary estimand: POTENTIAL OUTCOME MEAN at the target site:
-#   μ¹_t = E_t[Y(1)]  (expected outcome under treatment)
-#
-# When estimate_ate=TRUE, the code also computes ATE = E_t[Y(1)] - E_t[Y(0)]
-# by rerunning each method with A_val=0 for the mu0 arm.
+# Primary estimand for the bounded default: target average treatment effect,
+#   tau_t = E_t[Y(1)] - E_t[Y(0)].
+# Both arms share the same data and folds; TATE inference retains their covariance.
+# Potential-outcome means remain available as secondary outputs.
 # =============================================================================
 
 args <- commandArgs(TRUE)
@@ -30,21 +29,16 @@ print(args)
 # arg10: heterogeneity_type ("none", "mild", "strong", "partial", default "none")
 # arg11: shift_strength (numeric, default 0.5)
 # arg12: n_folds (integer, cross-fitting folds, default 10)
-#        NOTE: diagnosis/bias/ found that n_folds=10 leaves the calibration
-#        fold too small for the calibrated-DR step, producing fold-to-fold
-#        nuisance instability that under-covers one/two-round when
-#        p / (n_site_arm / K_f) > ~0.2.
-#        Verified at n=5000, K=3, p=10, C1: switching to n_folds=3 raised
-#        one_round / two_round coverage from 0.886 / 0.878 to 0.945 / 0.955.
-#        Prefer n_folds=3 (or 5) when (n_total / (K+1) / 2 / n_folds) / p < ~5.
+#        The bounded default uses three fold roles on these ten original folds.
 # arg13: n_sims (integer, number of Monte Carlo sims, default 500)
-# arg14: dgp_type ("roce" or "face", default "face")
+# arg14: dgp_type ("bounded", "roce", or "face"; default "bounded")
 # arg15: ate_deviation (numeric ATE deviation for FACE paper non-informative sites, default 0.0)
 # arg16: n_deviated_sites (integer, deviated source sites for FACE paper DGP, default 0)
 # arg17: use_lambda_cache (TRUE/FALSE, default TRUE)
 # arg18: verbose_every (integer, sequential logging interval, default 10)
 # arg19: parallel_strategy (outer_priority|balanced|outer_only, default outer_priority)
-# arg20: estimate_ate (TRUE/FALSE, default FALSE)
+# arg20: estimate_ate (TRUE/FALSE, default TRUE for bounded, otherwise FALSE)
+# arg21: nuisance_cv_certificate (TRUE/FALSE, default FALSE)
 # ============================================================================
 
 .arg_display <- function(value) {
@@ -146,8 +140,8 @@ n_folds_arg <- .parse_numeric_arg(args, 12, "n_folds", default = 10L,
 n_sims_arg <- .parse_numeric_arg(args, 13, "n_sims", default = 500L,
                                  integer = TRUE, min_value = 1L)
 dgp_type_arg <- .parse_choice_arg(args, 14, "dgp_type",
-                                  choices = c("roce", "face"),
-                                  default = "face")
+                                  choices = c("bounded", "roce", "face"),
+                                  default = "bounded")
 ate_deviation_arg <- .parse_numeric_arg(args, 15, "ate_deviation", default = 0.0)
 n_deviated_sites_arg <- .parse_numeric_arg(args, 16, "n_deviated_sites",
                                            default = 0L, integer = TRUE)
@@ -159,7 +153,8 @@ parallel_strategy_arg <- .parse_choice_arg(
   choices = c("outer_priority", "balanced", "outer_only"),
   default = "outer_priority"
 )
-estimate_ate_arg <- .parse_bool_arg(args, 20, "estimate_ate", default = FALSE)
+estimate_ate_arg <- .parse_bool_arg(args, 20, "estimate_ate", default = dgp_type_arg == "bounded")
+nuisance_cv_certificate_arg <- .parse_bool_arg(args, 21, "nuisance_cv_certificate", default = FALSE)
 
 # ============================================================================
 # Performance Configuration
@@ -189,9 +184,21 @@ if (NESTED_PARALLEL) {
 # - Legacy non-crossfitting algorithm labels (one_round, two_round) are not used
 #   in this script; cross-fitting variants are the supported workflow.
 
+# Prefer an explicitly selected checked library, or the installed project default.
+project_library <- Sys.getenv("ROCE_PROJECT_LIB", "")
+if (!nzchar(project_library)) {
+  candidate_library <- file.path("/scratch.global", Sys.getenv("USER"), "FACE-HD", "Rlib_default")
+  if (dir.exists(file.path(candidate_library, "RoCE"))) project_library <- candidate_library
+}
+if (nzchar(project_library)) {
+  if (!dir.exists(file.path(project_library, "RoCE"))) stop("ROCE_PROJECT_LIB does not contain RoCE.")
+  .libPaths(c(project_library, .libPaths()))
+  Sys.setenv(R_LIBS = paste(.libPaths(), collapse = .Platform$path.sep))
+}
+
 # Load the RoCE package (all R/ code + compiled C++)
-# FACE core Slurm runs default to the source tree so diagnostics/fixes in this
-# checkout are used without requiring R CMD INSTALL or touching 00LOCK dirs.
+# Use the checked installed library by default. Source-tree loading is an
+# explicit development option and can compile native code in the checkout.
 use_source_tree <- .parse_bool_value(Sys.getenv("ROCE_MAIN_USE_SOURCE", "FALSE"),
                                      "ROCE_MAIN_USE_SOURCE")
 if (use_source_tree) {
@@ -237,11 +244,11 @@ validate_simulation_params(
 # Format (face):  n<N>_K<K>_p<P>_<config>_<estimand>_<outcome>_face_dev<dev>_nd<nd>_kf<folds>_ate<flag>
 # Must match main.sh::build_setting_id() and main.cmd
 estimate_ate_label <- if (estimate_ate_arg) "TRUE" else "FALSE"
-if (dgp_type_arg == "face") {
+if (dgp_type_arg %in% c("face", "bounded")) {
   setting_id <- sprintf(
-    "n%d_K%d_p%d_%s_%s_%s_face_dev%.1f_nd%d_kf%d_ate%s",
+    "n%d_K%d_p%d_%s_%s_%s_%s_dev%.1f_nd%d_kf%d_ate%s",
     n_total_vec, K_vec, p_vec, config_arg, estimand_type_arg,
-    outcome_type_arg, ate_deviation_arg, n_deviated_sites_arg, n_folds_arg,
+    outcome_type_arg, dgp_type_arg, ate_deviation_arg, n_deviated_sites_arg, n_folds_arg,
     estimate_ate_label
   )
 } else {
@@ -262,7 +269,7 @@ cat(sprintf("  p: %d\n", p_vec))
 cat(sprintf("  config: %s\n", config_arg))
 cat(sprintf("  estimand_type: %s\n", estimand_type_arg))
 cat(sprintf("  dgp_type: %s\n", dgp_type_arg))
-if (dgp_type_arg == "face") {
+if (dgp_type_arg %in% c("face", "bounded")) {
   cat(sprintf("  outcome_type: %s\n", outcome_type_arg))
   cat(sprintf("  ate_deviation: %.1f\n", ate_deviation_arg))
   cat(sprintf("  n_deviated_sites: %d\n", n_deviated_sites_arg))
@@ -288,7 +295,8 @@ cat(sprintf("============================================\n\n"))
 # checkpoint functions (init_checkpoint_config, save_checkpoint, load_checkpoint,
 # check_preempt_signal, signal_checkpoint_saved, cleanup_checkpoint) are
 # provided by the RoCE package (R/checkpoint.R).
-CHECKPOINT_DIR <- Sys.getenv("CHECKPOINT_DIR", "checkpoints")
+run_root <- Sys.getenv("ROCE_RUN_ROOT", file.path("/scratch.global", Sys.getenv("USER"), "FACE-HD", "runs"))
+CHECKPOINT_DIR <- Sys.getenv("CHECKPOINT_DIR", file.path(run_root, "checkpoints"))
 ckpt_config <- init_checkpoint_config(CHECKPOINT_DIR, setting_id, job_id)
 
 # Set up parallel processing (already imported by RoCE, but needed for main.R scope)
@@ -307,7 +315,7 @@ library(doParallel)
 # ============================================================================
 
 # Output directory with date stamp
-OUTPUT_DIR <- Sys.getenv("RESULTS_DIR", "results")
+OUTPUT_DIR <- Sys.getenv("RESULTS_DIR", file.path(run_root, "results"))
 if (!dir.exists(OUTPUT_DIR)) {
   dir.create(OUTPUT_DIR, showWarnings = FALSE, recursive = TRUE)
 }
@@ -364,6 +372,23 @@ sim_args <- list(
   n_deviated_sites = n_deviated_sites_arg
 )
 
+if (dgp_type_arg == "bounded") {
+  sim_args$methods <- c("one_round_crossfit", "target_only")
+  sim_args$target_nuisance_method <- "hou_calibrated"
+  sim_args$source_validation_method <- "calibrated"
+  sim_args$calibration_layout <- "compact"
+  sim_args$nuisance_solver <- "proximal_newton"
+  sim_args$nuisance_tol <- 1e-10
+  sim_args$M_tau <- sim_args$M_tau_inference <- 12
+  sim_args$calibration_control <- list(recipe = "score_derivative",
+    target_propensity_initialization = "calibrated", target_radius = 12)
+  if (estimate_ate_arg) sim_args$additional_aggregation_modes <- c("separate_arms", "joint_tate")
+}
+if ("nuisance_cv_certificate" %in% names(formals(run_simulation_study))) {
+  sim_args$nuisance_cv_certificate <- nuisance_cv_certificate_arg
+} else if (nuisance_cv_certificate_arg) {
+  stop("The selected RoCE library does not support nuisance_cv_certificate; select a checked updated library.")
+}
 results <- do.call(run_simulation_study, sim_args)
 
 # Summarize results

@@ -4,6 +4,7 @@
 #include "utils.h"
 #include "numerical_constants.h"
 #include <algorithm>
+#include <atomic>
 #include <cerrno>
 #include <climits>
 #include <cmath>
@@ -45,7 +46,7 @@
 //   the paper notation (ψ for density ratio loss, h for GLM).
 // ============================================================================
 
-// Truncation function for numerical stability in two-layer cross-fitting
+// Truncation used by the fold-specific calibration and evaluation scores.
 // Following eq:gamma_calibrated_loss in main.tex (truncation function): τ(x) = sign(x)min{|x|, M_τ}
 inline double truncation_function(double x, double M_tau = NumericalConstants::M_TAU_DEFAULT) {
     if (x > M_tau) return M_tau;
@@ -69,9 +70,19 @@ inline double truncation_function(double x, double M_tau = NumericalConstants::M
 // ============================================================================
 inline VectorXd compute_density_ratio_weights(
         const MatrixXd& Z_site_int, const VectorXd& gamma_s,
-        bool calibrated = false, double M_tau = NumericalConstants::M_TAU_DEFAULT) {
+        bool calibrated = false, double M_tau = NumericalConstants::M_TAU_DEFAULT,
+        bool use_weight_derivative = false) {
+    if (Z_site_int.cols() != gamma_s.size() || !Z_site_int.allFinite() || !gamma_s.allFinite()) {
+        throw std::invalid_argument("compute_density_ratio_weights: finite conformable design and coefficients are required.");
+    }
+    if (use_weight_derivative && (!calibrated || !std::isfinite(M_tau) || M_tau <= 0.0 ||
+            M_tau > std::log(NumericalConstants::RATIO_CLIP_MAX))) {
+        throw std::invalid_argument("Weight derivatives require a matching finite calibrated truncation radius.");
+    }
     int n = Z_site_int.rows();
     VectorXd g_vals = Z_site_int * gamma_s;
+    VectorXd original_predictors;
+    if (use_weight_derivative) original_predictors = g_vals;
 
     if (calibrated) {
         // Truncation: τ(g) = sign(g)·min(|g|, M_τ)
@@ -94,8 +105,14 @@ inline VectorXd compute_density_ratio_weights(
     }
 
     // Clip to [WEIGHT_MIN, WEIGHT_MAX]
-    return weights.cwiseMax(NumericalConstants::WEIGHT_MIN)
-                  .cwiseMin(NumericalConstants::WEIGHT_MAX);
+    weights = weights.cwiseMax(NumericalConstants::WEIGHT_MIN)
+                     .cwiseMin(NumericalConstants::WEIGHT_MAX);
+    if (use_weight_derivative) {
+        for (int i = 0; i < n; ++i) {
+            if (std::abs(original_predictors(i)) >= M_tau) weights(i) = 0.0;
+        }
+    }
+    return weights;
 }
 
 // ============================================================================
@@ -394,11 +411,62 @@ inline int cv_path_tail_after_failure(
 
 // ---- Penalized nuisance fits: coordinate descent and proximal Newton ----
 
+// A small parameter step alone does not establish stationarity, particularly
+// at a numerical coefficient bound. The intercept remains unpenalized.
+inline double l1_score_residual(const VectorXd& coefficient,
+                                const VectorXd& gradient, double lambda) {
+    if (!coefficient.allFinite() || !gradient.allFinite()) return INFINITY;
+    double residual = std::abs(gradient(0));
+    for (int j = 1; j < coefficient.size(); ++j) {
+        const double violation = coefficient(j) == 0.0 ?
+            std::max(std::abs(gradient(j)) - lambda, 0.0) :
+            std::abs(gradient(j) + std::copysign(lambda, coefficient(j)));
+        residual = std::max(residual, violation);
+    }
+    return residual;
+}
+
+inline double composite_linear_change(const VectorXd& coefficient,
+        const VectorXd& delta, const VectorXd& gradient, double lambda) {
+    StableAccumulator change;
+    change.add(gradient(0) * delta(0));
+    for (int j = 1; j < coefficient.size(); ++j) {
+        const double next = coefficient(j) + delta(j);
+        if (coefficient(j) * next >= 0.0) {
+            // Combine cancelling smooth and L1 slopes before multiplying by
+            // a tiny Newton step. Subtracting two full L1 norms can erase the
+            // model decrease near a high-precision stationary solution.
+            const double sign_point = coefficient(j) == 0.0 ? next : coefficient(j);
+            const double penalty_slope = sign_point == 0.0 ? 0.0 : std::copysign(lambda, sign_point);
+            change.add((gradient(j) + penalty_slope) * delta(j));
+        } else {
+            change.add(gradient(j) * delta(j) +
+                lambda * (std::abs(next) - std::abs(coefficient(j))));
+        }
+    }
+    return change.value();
+}
+
+inline double glm_score_residual(const VectorXd& beta, const MatrixXd& X,
+        const VectorXd& y, const VectorXd& weights, double lambda, LinkFunction link) {
+    const VectorXd predictor = X * beta;
+    VectorXd residual(y.size());
+    for (int i = 0; i < y.size(); ++i) {
+        residual(i) = weights(i) * GLMUtils::nll_gradient_residual(
+            y(i), GLMUtils::response_function(predictor(i), link), link);
+    }
+    const VectorXd gradient = X.transpose() * residual / X.rows();
+    return l1_score_residual(beta, gradient, lambda);
+}
+
 struct GLMFitResult {
     bool converged = false;
     int iterations = 0;
     double max_update = NA_REAL;
     double convergence_threshold = NA_REAL;
+    int line_search_failures = 0;
+    double kkt_residual = NA_REAL;
+    double kkt_threshold = NA_REAL;
 };
 
 // Solver for every L1-penalized nuisance fit (outcome GLM and density ratio;
@@ -406,7 +474,17 @@ struct GLMFitResult {
 // ROCE_NUISANCE_SOLVER=coordinate_descent selects the original coordinate
 // descent, which minimizes the same objectives and is kept for paired
 // equivalence audits against earlier production runs.
+// R fitting calls install a scoped override before starting CV workers. All
+// OpenMP workers read the same selection; process workers inherit it on fork.
+// An atomic protects the shared setting without changing solver arithmetic.
+inline std::atomic<int>& nuisance_solver_override() {
+    static std::atomic<int> selection{-1};  // -1: environment, 0: CD, 1: Newton
+    return selection;
+}
+
 inline bool nuisance_use_proximal_newton() {
+    const int selection = nuisance_solver_override().load(std::memory_order_relaxed);
+    if (selection >= 0) return selection == 1;
     static const bool use_newton = [] {
         const char* value = std::getenv("ROCE_NUISANCE_SOLVER");
         return value == nullptr || std::string(value) != "coordinate_descent";
@@ -591,7 +669,10 @@ inline GLMFitResult glm_coordinate_descent(
         result.iterations = iter + 1;
         result.max_update = (beta - beta_old).lpNorm<Eigen::Infinity>();
         result.convergence_threshold = convergence_threshold_cpp(beta, cv_tol);
-        if (full_scan && check_convergence_cpp(beta_old, beta, cv_tol)) {
+        if (beta.lpNorm<Eigen::Infinity>() >=
+                NumericalConstants::PARAM_MAX * ProximalNewton::bound_fraction) break;
+        if (full_scan && check_convergence_cpp(beta_old, beta, cv_tol) &&
+                glm_score_residual(beta, X_train, Y_train, weights_train, lambda, link) <= cv_tol) {
             result.converged = true;
             break;
         }
@@ -664,8 +745,7 @@ inline GLMFitResult glm_proximal_newton(
                 delta, z_vec, beta, gradient, hessian_diag, X_train, curvature_X,
                 damping * hessian_scale, lambda, inner_tol
             );
-            const double model_decrease = gradient.dot(delta) +
-                (l1_penalty(beta + delta, lambda) - l1_penalty(beta, lambda));
+            const double model_decrease = composite_linear_change(beta, delta, gradient, lambda);
             if (delta.lpNorm<Eigen::Infinity>() == 0.0 || model_decrease >= 0.0) {
                 stationary = true;
                 break;
@@ -705,15 +785,22 @@ inline GLMFitResult glm_proximal_newton(
         result.max_update = (beta - beta_old).lpNorm<Eigen::Infinity>();
         result.convergence_threshold = convergence_threshold_cpp(beta, cv_tol);
         if (stationary) {
-            result.converged = true;
+            result.converged = glm_score_residual(
+                beta, X_train, Y_train, weights_train, lambda, link) <= cv_tol;
+            if (result.converged || inner_tol <= inner_tol_final) break;
+            inner_tol = inner_tol_final;
+            continue;
+        }
+        if (!accepted) {
+            result.line_search_failures++;
             break;
         }
-        if (!accepted) break;
         // Reaching the coefficient bound is final (see below); stop iterating.
         if (beta.lpNorm<Eigen::Infinity>() >= NumericalConstants::PARAM_MAX * bound_fraction) {
             break;
         }
-        if (check_convergence_cpp(beta_old, beta, cv_tol)) {
+        if (check_convergence_cpp(beta_old, beta, cv_tol) &&
+                glm_score_residual(beta, X_train, Y_train, weights_train, lambda, link) <= cv_tol) {
             result.converged = true;
             break;
         }
@@ -738,16 +825,21 @@ inline GLMFitResult glm_penalized_fit(
         const VectorXd& weights_train, int n_train,
         double lambda, LinkFunction link, GLMFamily family,
         double cv_tol, int cv_max_iter) {
+    GLMFitResult result;
     if (nuisance_use_proximal_newton()) {
-        return glm_proximal_newton(
+        result = glm_proximal_newton(
             beta, active, X_train, Y_train, weights_train, n_train,
             lambda, link, family, cv_tol, cv_max_iter
         );
+    } else {
+        result = glm_coordinate_descent(
+            beta, active, X_train, Y_train, weights_train, n_train,
+            lambda, link, family, cv_tol, cv_max_iter);
     }
-    return glm_coordinate_descent(
-        beta, active, X_train, Y_train, weights_train, n_train,
-        lambda, link, family, cv_tol, cv_max_iter
-    );
+    result.kkt_residual = glm_score_residual(beta, X_train, Y_train, weights_train, lambda, link);
+    result.kkt_threshold = cv_tol;
+    result.converged = result.converged && result.kkt_residual <= result.kkt_threshold;
+    return result;
 }
 
 struct DensityRatioFitResult {
@@ -756,7 +848,40 @@ struct DensityRatioFitResult {
     double max_update = NA_REAL;
     double convergence_threshold = NA_REAL;
     int line_search_failures = 0;
+    double kkt_residual = NA_REAL;
+    double kkt_threshold = NA_REAL;
 };
+
+// A sufficient penalty bound below which no point can satisfy the existing
+// absolute KKT tolerance. X contains an unpenalized intercept and the source
+// score has form moment - X' w with nonnegative w. A previous iterate supplies
+// a direction; this does not alter either the loss or the optimization start.
+inline double density_cv_kkt_bound(const VectorXd& gamma, const MatrixXd& X,
+                                  const VectorXd& moment, double tolerance) {
+    if (X.rows() == 0 || X.cols() < 2 || gamma.size() != X.cols() ||
+            moment.size() != X.cols() || !gamma.allFinite() || !X.allFinite() ||
+            !moment.allFinite() || moment(0) <= 0 ||
+            !std::isfinite(tolerance) || tolerance <= 0 ||
+            (X.col(0).array() != 1.0).any()) return 0.0;
+    const int slopes_count = X.cols() - 1;
+    const double coefficient_scale = gamma.tail(slopes_count).cwiseAbs().maxCoeff();
+    if (coefficient_scale == 0) return 0.0;
+    VectorXd direction = gamma.tail(slopes_count) / coefficient_scale;
+    direction /= direction.cwiseAbs().sum();
+    const double slope_norm = direction.cwiseAbs().sum();
+    const double scale = std::max(1.0, std::max(X.cwiseAbs().maxCoeff(),
+                                             moment.cwiseAbs().maxCoeff()));
+    const double padding = 64.0 * std::numeric_limits<double>::epsilon() *
+        (static_cast<double>(X.rows()) + X.cols() + 1.0) * scale;
+    const VectorXd projection = X.rightCols(slopes_count) * direction;
+    if (!projection.allFinite() || !std::isfinite(padding)) return 0.0;
+    const double intercept = -projection.minCoeff() + padding;
+    const double roundoff = padding * (1.0 + moment.cwiseAbs().sum());
+    const double bound = (-moment(0) * intercept -
+        moment.tail(slopes_count).dot(direction) -
+        tolerance * (std::abs(intercept) + slope_norm) - roundoff) / slope_norm;
+    return std::isfinite(bound) ? std::max(0.0, bound) : 0.0;
+}
 
 // Tilting weight exp{-T_M(phi'gamma)} shared by every density-ratio loss, its
 // score, and the influence function (main.tex, truncation paragraph in
@@ -780,6 +905,18 @@ inline double tilt_weight(double linear_predictor, double M_tau) {
 inline double tilt_loss(double linear_predictor, double M_tau) {
     double truncated = truncation_function(linear_predictor, M_tau);
     return tilt_weight(truncated, M_tau) * (1.0 - (linear_predictor - truncated));
+}
+
+inline double density_ratio_score_residual(const VectorXd& gamma,
+        const MatrixXd& X, const VectorXd& psi_prime, double source_scale,
+        const VectorXd& moment, double lambda, double radius) {
+    const VectorXd predictor = X * gamma;
+    VectorXd weight(X.rows());
+    for (int i = 0; i < X.rows(); ++i) {
+        weight(i) = source_scale * psi_prime(i) * tilt_weight(predictor(i), radius);
+    }
+    const VectorXd gradient = moment - X.transpose() * weight / X.rows();
+    return l1_score_residual(gamma, gradient, lambda);
 }
 
 // L1-penalized density-ratio coordinate descent shared by CV and final refits.
@@ -937,8 +1074,12 @@ inline DensityRatioFitResult density_ratio_coordinate_descent(
         result.convergence_threshold = convergence_threshold_cpp(
             gamma, convergence_tol
         );
+        if (gamma.lpNorm<Eigen::Infinity>() >=
+                NumericalConstants::PARAM_MAX * ProximalNewton::bound_fraction) break;
         if (!sweep_line_search_failed && full_scan &&
-                check_convergence_cpp(gamma_old, gamma, convergence_tol)) {
+                check_convergence_cpp(gamma_old, gamma, convergence_tol) &&
+                density_ratio_score_residual(gamma, X_train, psi_prime_train,
+                    source_scale, mean_grad_psi, lambda, M_tau) <= convergence_tol) {
             result.converged = true;
             break;
         }
@@ -1032,8 +1173,7 @@ inline DensityRatioFitResult density_ratio_proximal_newton(
                 delta, z_vec, gamma, gradient, hessian_diag, X_train, curvature_X,
                 damping * hessian_scale, lambda, inner_tol
             );
-            const double model_decrease = gradient.dot(delta) +
-                (l1_penalty(gamma + delta, lambda) - l1_penalty(gamma, lambda));
+            const double model_decrease = composite_linear_change(gamma, delta, gradient, lambda);
             if (delta.lpNorm<Eigen::Infinity>() == 0.0 || model_decrease >= 0.0) {
                 stationary = true;
                 break;
@@ -1073,8 +1213,11 @@ inline DensityRatioFitResult density_ratio_proximal_newton(
         result.max_update = (gamma - gamma_old).lpNorm<Eigen::Infinity>();
         result.convergence_threshold = convergence_threshold_cpp(gamma, convergence_tol);
         if (stationary) {
-            result.converged = true;
-            break;
+            result.converged = density_ratio_score_residual(gamma, X_train, psi_prime_train,
+                source_scale, mean_grad_psi, lambda, M_tau) <= convergence_tol;
+            if (result.converged || inner_tol <= inner_tol_final) break;
+            inner_tol = inner_tol_final;
+            continue;
         }
         if (!accepted) {
             result.line_search_failures++;
@@ -1084,7 +1227,9 @@ inline DensityRatioFitResult density_ratio_proximal_newton(
         if (gamma.lpNorm<Eigen::Infinity>() >= NumericalConstants::PARAM_MAX * bound_fraction) {
             break;
         }
-        if (check_convergence_cpp(gamma_old, gamma, convergence_tol)) {
+        if (check_convergence_cpp(gamma_old, gamma, convergence_tol) &&
+                density_ratio_score_residual(gamma, X_train, psi_prime_train,
+                    source_scale, mean_grad_psi, lambda, M_tau) <= convergence_tol) {
             result.converged = true;
             break;
         }
@@ -1115,16 +1260,45 @@ inline DensityRatioFitResult density_ratio_penalized_fit(
         double source_scale, const VectorXd& mean_grad_psi, double lambda,
         double M_tau, double convergence_tol, int max_iter,
         bool use_active_set = true) {
+    DensityRatioFitResult result;
     if (nuisance_use_proximal_newton()) {
-        return density_ratio_proximal_newton(
+        result = density_ratio_proximal_newton(
             gamma, active, X_train, psi_prime_train, source_scale, mean_grad_psi,
             lambda, M_tau, convergence_tol, max_iter, use_active_set
         );
+    } else {
+        result = density_ratio_coordinate_descent(
+            gamma, active, X_train, psi_prime_train, source_scale, mean_grad_psi,
+            lambda, M_tau, convergence_tol, max_iter, use_active_set);
     }
-    return density_ratio_coordinate_descent(
-        gamma, active, X_train, psi_prime_train, source_scale, mean_grad_psi,
-        lambda, M_tau, convergence_tol, max_iter, use_active_set
-    );
+    result.kkt_residual = density_ratio_score_residual(gamma, X_train, psi_prime_train,
+        source_scale, mean_grad_psi, lambda, M_tau);
+    result.kkt_threshold = convergence_tol;
+    result.converged = result.converged && result.kkt_residual <= result.kkt_threshold;
+    return result;
+}
+
+// CV-only acceleration. Certified candidates follow the caller's ordinary
+// failure path, including warm-start restoration and failure-patience counting.
+// A failed fit can supply a certificate without becoming an optimization start.
+inline DensityRatioFitResult density_ratio_cv_fit(
+        VectorXd& gamma, std::vector<bool>& active,
+        const MatrixXd& X_train, const VectorXd& psi_prime_train,
+        double source_scale, const VectorXd& moment, double lambda,
+        double radius, double tolerance, int max_iter,
+        bool use_certificate, double& certified_bound, int& certified_failures) {
+    if (use_certificate && lambda < certified_bound) {
+        ++certified_failures;
+        return DensityRatioFitResult();
+    }
+    DensityRatioFitResult result = density_ratio_penalized_fit(
+        gamma, active, X_train, psi_prime_train, source_scale, moment,
+        lambda, radius, tolerance, max_iter);
+    if (use_certificate) {
+        certified_bound = std::max(certified_bound,
+            density_cv_kkt_bound(gamma, X_train, moment, tolerance));
+    }
+    return result;
 }
 
 // Density ratio validation loss: grad^T γ + source_scale * Ẽ_val[exp(-φ^T γ) ψ']

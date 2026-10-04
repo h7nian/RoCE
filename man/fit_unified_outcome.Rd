@@ -23,7 +23,9 @@ fit_unified_outcome(
   warm_start = NULL,
   nlambda = LAMBDA_GRID_SIZE_STANDARD,
   lambda_rule = c("min", "1se"),
-  cv_group_id = NULL
+  cv_group_id = NULL,
+  nuisance_solver = NULL,
+  use_weight_derivative = FALSE
 )
 }
 \arguments{
@@ -75,6 +77,17 @@ selects \code{lambda.min}; \code{"1se"} selects \code{lambda.1se}.}
 \item{cv_group_id}{Optional positive integer observation-origin IDs aligned
 with all input rows. Repeated IDs stay in one nuisance CV fold; NULL or
 all-unique IDs preserve the ordinary CV path. Used for resampled data.}
+
+\item{nuisance_solver}{C++ nuisance optimizer: \code{"proximal_newton"} or
+\code{"coordinate_descent"}. NULL inherits the process configuration,
+whose unconfigured default is proximal Newton. The choice applies to
+CV and final fits and is restored on exit. Initial glmnet fits retain
+their own optimizer.}
+
+\item{use_weight_derivative}{If TRUE, use the nonnegative factor
+\eqn{-d v_M/d\eta} from the clipped initial tilt as the outcome-loss weight.
+Requires calibrated fitting with
+a finite radius that precedes the numerical ratio guard.}
 }
 \value{
 Vector of outcome model parameters

@@ -22,16 +22,18 @@ namespace {
 List outcome_fit_result(const VectorXd& alpha, bool converged,
                         int iterations, double max_update,
                         double convergence_threshold,
-                        int family_int, int link_int) {
+                        int family_int, int link_int, int line_search_failures,
+                        double kkt_residual, double kkt_threshold) {
     return List::create(
         Named("alpha") = alpha,
         Named("converged") = converged,
         Named("iterations") = iterations,
         Named("max_update") = max_update,
         Named("convergence_threshold") = convergence_threshold,
-        // The current GLM coordinate update has no backtracking stage, so a
-        // line-search failure is structurally impossible rather than missing.
-        Named("line_search_failures") = 0,
+        Named("line_search_failures") = line_search_failures,
+        Named("kkt_residual") = kkt_residual,
+        Named("kkt_threshold") = kkt_threshold,
+        Named("solver") = CVUtils::nuisance_solver_name(),
         Named("max_abs_coefficient") = alpha.lpNorm<Eigen::Infinity>(),
         Named("family") = family_int,
         Named("link") = link_int
@@ -59,7 +61,8 @@ List fit_unified_outcome_cpp(const MatrixXd& W_outcome, const VectorXd& Y_source
                              int max_iter, double tol, int A_val,
                              bool calibrated, double M_tau,
                              const MatrixXd& Z_site,
-                             const VectorXd& warm_start) {
+                             const VectorXd& warm_start,
+                             bool use_weight_derivative = false) {
     
     if (A_val != 0 && A_val != 1) {
         throw std::runtime_error("fit_unified_outcome_cpp: A_val must be 0 or 1.");
@@ -98,7 +101,7 @@ List fit_unified_outcome_cpp(const MatrixXd& W_outcome, const VectorXd& Y_source
     // Following main.tex: w_a(X_i; γ̂) = I(A=a)/exp(g(Z_i; γ̂))
     // CRITICAL: Use Z_site (not W_outcome) for density ratio calculation!
     MatrixXd Z_arm_for_dr = prepend_intercept(subset_rows(Z_site, arm_idx));
-    VectorXd weights = compute_density_ratio_weights(Z_arm_for_dr, gamma_s, calibrated, M_tau);
+    VectorXd weights = compute_density_ratio_weights(Z_arm_for_dr, gamma_s, calibrated, M_tau, use_weight_derivative);
     
     // fit_general_glm_cpp averages over the arm-only matrix passed below.
     // Scale weights by n_arm / n_source so the data-fit term equals the
@@ -124,99 +127,39 @@ List fit_unified_outcome_cpp(const MatrixXd& W_outcome, const VectorXd& Y_source
 // Follows the untruncated refined counterpart of eq:alpha_calibrated_loss in main.tex
 // [[Rcpp::export]]
 List fit_general_glm_cpp(const MatrixXd& X, const VectorXd& Y, const VectorXd& weights,
-                        int family_int, int link_int, double lambda, 
+                        int family_int, int link_int, double lambda,
                         int max_iter, double tol,
                         const VectorXd& warm_start) {
-    
-    GLMFamily family = static_cast<GLMFamily>(family_int);
-    LinkFunction link = static_cast<LinkFunction>(link_int);
-    
-    int n = X.rows();
-    MatrixXd X_int = prepend_intercept(X);
-    int p = X_int.cols();
-    
-    // Initialize beta: warm-start from previous solution if provided
-    VectorXd beta = (warm_start.size() == p) ? warm_start : VectorXd::Zero(p);
-    
-    bool converged = false;
-    int iterations = 0;
-    double max_update = NA_REAL;
-    double convergence_threshold = NA_REAL;
-
-    // Coordinate descent for the refined (untruncated) weighted GLM objective
-    for (int iter = 0; iter < max_iter; iter++) {
-        VectorXd beta_old = beta;
-        
-        // Compute eta = X_int * beta once per outer iteration (O(np)),
-        // then update incrementally after each coordinate change (O(n) per coordinate).
-        // This reduces total complexity from O(np²) to O(np) per iteration.
-        VectorXd eta = X_int * beta;
-        
-        for (int j = 0; j < p; j++) {
-            // Calculate weighted gradient and Hessian for coordinate j
-            StableAccumulator grad_acc;
-            StableAccumulator hess_acc;
-            
-            for (int i = 0; i < n; i++) {
-                double x_ij = X_int(i, j);
-                double w_i = weights(i);
-                double eta_i = eta(i);
-                double y_i = Y(i);
-                
-                // Refined weighted GLM objective: ℓ(β) = Ẽ_s[w(X;α̂) NLL(Y, h(φ^T β))] + λ||β||_1
-                // Gradient w.r.t. β_j: Ẽ_s[w(X;α̂) · r_i · φ_j] where r_i = ∂NLL/∂η = -(y-μ)h'(η)/V(μ)
-                double mu_i = GLMUtils::response_function(eta_i, link);
-                
-                // NLL gradient residual: (μ-y) for canonical links, (y-μ) for inverse link
-                double r_i = GLMUtils::nll_gradient_residual(y_i, mu_i, link);
-                grad_acc.add(w_i * r_i * x_ij);
-                
-                // Weighted Hessian diagonal: IRLS working weight h'(η)² / V(μ)
-                // For canonical links this equals h'(η); for non-canonical (inverse)
-                // this ensures positive-definiteness.
-                double ww_i = GLMUtils::irls_working_weight(eta_i, link, family);
-                hess_acc.add(w_i * ww_i * x_ij * x_ij);
-            }
-            
-            // Average over sample size
-            double grad_j = grad_acc.value() / n;
-            double hess_j = hess_acc.value() / n;
-            
-            // Ensure positive definite Hessian
-            hess_j = std::max(hess_j, NumericalConstants::HESSIAN_FLOOR);
-            
-            // Newton-Raphson step size from Hessian diagonal
-            double step_size = 1.0 / hess_j;
-            
-            // Save old value for incremental eta update
-            double old_beta_j = beta(j);
-            
-            // Proximal gradient update with soft-thresholding (no penalty on intercept)
-            beta(j) = sanitize_param(proximal_update(beta(j), grad_j, step_size, lambda, j));
-            
-            // Incremental eta update: O(n) instead of recomputing O(np)
-            double delta_j = beta(j) - old_beta_j;
-            if (delta_j != 0.0) {
-                eta += delta_j * X_int.col(j);
-            }
-        }
-        
-        iterations = iter + 1;
-        max_update = (beta - beta_old).lpNorm<Eigen::Infinity>();
-        convergence_threshold = convergence_threshold_cpp(beta, tol);
-
-        // Check convergence
-        if (check_convergence_cpp(beta_old, beta, tol)) {
-            converged = true;
-            break;
-        }
+    const int n = X.rows();
+    if (n <= 0 || Y.size() != n || weights.size() != n ||
+        !X.allFinite() || !Y.allFinite() || !weights.allFinite() ||
+        (weights.array() < 0).any() || weights.sum() <= 0 ||
+        !std::isfinite(lambda) || lambda < 0 || max_iter < 1 ||
+        !std::isfinite(tol) || tol <= 0) {
+        throw std::runtime_error(
+            "fit_general_glm_cpp: require matching finite data, nonnegative weights "
+            "with positive sum, nonnegative lambda, and positive iteration/tolerance settings."
+        );
     }
-
+    const MatrixXd X_int = prepend_intercept(X);
+    const int p = X_int.cols();
+    VectorXd beta = warm_start.size() == p ? warm_start : VectorXd::Zero(p);
+    if (!beta.allFinite()) {
+        throw std::runtime_error("fit_general_glm_cpp: warm_start must be finite.");
+    }
+    std::vector<bool> active(p, true);
+    const CVUtils::GLMFitResult fit = CVUtils::glm_penalized_fit(
+        beta, active, X_int, Y, weights, n, lambda,
+        static_cast<LinkFunction>(link_int), static_cast<GLMFamily>(family_int),
+        tol, max_iter
+    );
     return outcome_fit_result(
-        beta, converged, iterations, max_update, convergence_threshold,
-        family_int, link_int
+        beta, fit.converged, fit.iterations, fit.max_update,
+        fit.convergence_threshold, family_int, link_int, fit.line_search_failures,
+        fit.kkt_residual, fit.kkt_threshold
     );
 }
+
 
 // ============================================================================
 // GLMNET-STYLE CV: General Refined Outcome Model (GLM)
@@ -343,7 +286,8 @@ List select_lambda_cv_calibrated_outcome_cpp(const MatrixXd& W_outcome, const Ve
                                              int max_iter, double tol, int A_val, double M_tau,
                                              const MatrixXd& Z_site,
                                              int family_int, int link_int,
-                                             Rcpp::Nullable<Rcpp::NumericVector> cv_fold_id = R_NilValue) {
+                                             Rcpp::Nullable<Rcpp::NumericVector> cv_fold_id = R_NilValue,
+                                             bool use_weight_derivative = false) {
     
     int n = W_outcome.rows();
     int n_lambda = lambda_grid.size();
@@ -370,7 +314,7 @@ List select_lambda_cv_calibrated_outcome_cpp(const MatrixXd& W_outcome, const Ve
 
     // Pre-compute truncated weights (calibrated = true)
     MatrixXd Z_arm_for_dr = prepend_intercept(subset_rows(Z_site, arm_idx));
-    VectorXd weights_all = compute_density_ratio_weights(Z_arm_for_dr, gamma_init, true, M_tau);
+    VectorXd weights_all = compute_density_ratio_weights(Z_arm_for_dr, gamma_init, true, M_tau, use_weight_derivative);
 
     // Pre-allocate fold data
     std::vector<MatrixXd> X_train_folds(n_folds), X_val_folds(n_folds);

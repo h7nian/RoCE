@@ -8,10 +8,10 @@
 # checkpoint/restart for preemption-resilient execution.
 #
 # Usage:
-#   ./main.sh                          # Submit core experiments (roce DGP)
+#   ./main.sh                          # Submit bounded C1-C3 low-dimensional checks
 #   ./main.sh --subset minimal         # Single test job (roce)
 #   ./main.sh --subset full            # Full factorial (many jobs!)
-#   ./main.sh --subset face            # FACE DGP (Han et al. JASA 2023)
+#   ./main.sh --subset face            # Historical FACE DGP
 #   ./main.sh --dry-run                # Preview without submitting
 #   ./main.sh --dry-run --subset full  # Count full factorial jobs
 #
@@ -25,7 +25,8 @@
 #   --verbose-every 10                 # Sequential-mode detailed log interval
 #   --parallel-strategy outer_priority  # nested parallel policy
 #   --estimate-ate false               # Also estimate target ATE via A=0 arm
-#   --array-concurrency 16             # max concurrent array tasks
+#   --max-in-flight 512                # bounded: pending + running repeat jobs
+#   --array-concurrency 16             # legacy arrays; alias for bounded jobs
 #
 # Subsets:                           jobs   formula
 #   minimal              1           1×1×1×1  (single roce setting)
@@ -35,10 +36,9 @@
 #   full               648           core × 2ot × 3ss (4p variant)
 #   face               144           1n × 1K × 4p × 3cfg × 4dev × 3nd
 #
-# Directory layout:
-#   log/            SLURM stdout/stderr per job
-#   checkpoints/    per-config checkpoint .rds files
-#   results/        final simulation result .csv files
+# Output layout under /scratch.global/$USER/FACE-HD/:
+#   validation/     frozen bounded-DGP campaigns, repeat jobs and reviews
+#   runs/           explicit legacy runs, checkpoints and results
 #
 # ============================================================================
 
@@ -49,7 +49,9 @@ set -euo pipefail
 # ============================================================================
 
 DRY_RUN=false
-SUBSET="core"
+SUBSET="bounded"
+BOUNDED_PARTITIONS="preempt,msismall,agsmall,amdsmall,amd512,ag2tb,msibigmem,saffo-2tb"
+BOUNDED_CHECKPOINT=true
 
 # CLI overrides (applied after subset defaults)
 OVERRIDE_N_SIMS=""
@@ -69,7 +71,7 @@ usage() {
     echo ""
     echo "Options:"
     echo "  --dry-run                  Count jobs without submitting"
-    echo "  --subset SUBSET            One of: minimal, core, continuous, shift, full, face"
+    echo "  --subset SUBSET            One of: bounded (default), minimal, core, continuous, shift, full, face"
     echo "  --n-sims N                 Override number of MC simulations (e.g. 100)"
     echo "  --outcome-type TYPE        Override outcome type: binary, continuous, or 'binary continuous'"
     echo "  --n-total 'N1 N2 ...'      Override sample sizes (space-separated, quoted)"
@@ -79,10 +81,11 @@ usage() {
     echo "  --verbose-every N          Override sequential verbose interval (integer >=1)"
     echo "  --parallel-strategy STR    one of: outer_priority, balanced, outer_only"
     echo "  --estimate-ate BOOL        Also estimate ATE via A=0 arm (true/false)"
-    echo "  --array-concurrency N      Max concurrent SLURM array tasks (integer >=1)"
+    echo "  --partitions LIST          Bounded CPU partition list (default: preempt + public partitions + saffo-2tb)"
+    echo "  --no-checkpoint            Disable persistent fits; requires non-preempt partitions"
+    echo "  --max-in-flight N          Bounded repeat jobs pending/running (1-2000; default 512)"
+    echo "  --array-concurrency N      Legacy array limit; alias for bounded --max-in-flight"
     echo "  --n-folds N                Cross-fitting folds K_f (integer >=3, default 10)"
-    echo "                             diagnosis/bias/ recommends 3 when"
-    echo "                             n_site_arm / (K_f * p) < ~5"
     echo ""
     echo "Examples:"
     echo "  $0 --subset face --outcome-type binary --n-sims 100 --dry-run"
@@ -93,6 +96,9 @@ usage() {
 while [[ $# -gt 0 ]]; do
     case $1 in
         --dry-run)         DRY_RUN=true; shift ;;
+        --partitions)      BOUNDED_PARTITIONS="${2:?Missing partitions}"; shift 2 ;;
+        --checkpoint)      BOUNDED_CHECKPOINT=true; shift ;;
+        --no-checkpoint)   BOUNDED_CHECKPOINT=false; shift ;;
         --subset)          SUBSET="${2:?Missing subset name}"; shift 2 ;;
         --n-sims)          OVERRIDE_N_SIMS="${2:?Missing n-sims value}"; shift 2 ;;
         --outcome-type)    OVERRIDE_OUTCOME_TYPE="${2:?Missing outcome-type}"; shift 2 ;;
@@ -103,7 +109,7 @@ while [[ $# -gt 0 ]]; do
         --verbose-every)   OVERRIDE_VERBOSE_EVERY="${2:?Missing verbose-every value}"; shift 2 ;;
         --parallel-strategy) OVERRIDE_PARALLEL_STRATEGY="${2:?Missing parallel-strategy value}"; shift 2 ;;
         --estimate-ate)     OVERRIDE_ESTIMATE_ATE="${2:?Missing estimate-ate value}"; shift 2 ;;
-        --array-concurrency) OVERRIDE_ARRAY_CONCURRENCY="${2:?Missing array-concurrency value}"; shift 2 ;;
+        --array-concurrency|--max-in-flight) OVERRIDE_ARRAY_CONCURRENCY="${2:?Missing concurrency value}"; shift 2 ;;
         --n-folds)         OVERRIDE_N_FOLDS="${2:?Missing n-folds value}"; shift 2 ;;
         -h|--help)         usage ;;
         *)                 echo "Error: unknown option '$1'"; usage ;;
@@ -130,12 +136,22 @@ ESTIMATE_ATE="FALSE"
 ARRAY_CONCURRENCY="16"
 N_FOLDS=10  # diagnosis/bias/ recommends 3; override via --n-folds
 
-# DGP selection: "roce" (default) or "face" (FACE JASA 2023 Section 5.1)
+# Legacy presets start from "roce"; the bounded preset below sets the default DGP.
 DGP_TYPE="roce"
 ATE_DEVIATION_VALUES=(0.0)
 N_DEVIATED_SITES_VALUES=(0)
 
 case $SUBSET in
+    bounded)
+        DGP_TYPE="bounded"
+        N_TOTAL_VALUES=(3000)
+        K_VALUES=(2)
+        P_VALUES=(10)
+        CONFIG_VALUES=("C1" "C2" "C3")
+        N_SIMS=1
+        ARRAY_CONCURRENCY=512
+        ESTIMATE_ATE="TRUE"
+        ;;
     minimal)
         N_TOTAL_VALUES=(1000)
         K_VALUES=(3)
@@ -170,7 +186,7 @@ case $SUBSET in
         ;;
     *)
         echo "Error: unknown subset '${SUBSET}'"
-        echo "Available: minimal, core, continuous, shift, full, face"
+        echo "Available: bounded, minimal, core, continuous, shift, full, face"
         exit 1
         ;;
 esac
@@ -285,6 +301,59 @@ validate_numeric_values "shift_strength" "${SHIFT_STRENGTH_VALUES[@]}"
 validate_numeric_values "ate_deviation" "${ATE_DEVIATION_VALUES[@]}"
 validate_nonnegative_int_values "n_deviated_sites" "${N_DEVIATED_SITES_VALUES[@]}"
 
+
+# The default validation uses one independent Slurm job per repeat. Explicit
+# legacy subsets continue through the older array workflow below.
+if [[ "$SUBSET" == "bounded" ]]; then
+    if [[ ",${BOUNDED_PARTITIONS}," == *,preempt,* && "$BOUNDED_CHECKPOINT" != true ]]; then
+        echo "Error: preempt requires checkpoint/requeue support."
+        exit 1
+    fi
+    checkpoint_args=(--no-checkpoint)
+    if [[ "$BOUNDED_CHECKPOINT" == true ]]; then checkpoint_args=(--checkpoint); fi
+    if [[ "${OUTCOME_TYPE_VALUES[*]}" != "binary" || "$ESTIMATE_ATE" != "TRUE" ||
+          "$USE_LAMBDA_CACHE" != "TRUE" || "$N_FOLDS" != 10 || "${NLAMBDA_INIT:-100}" != 100 ]]; then
+        echo "Error: bounded validation uses binary TATE, ten folds, 100 lambdas and exact caching."
+        exit 1
+    fi
+    if [[ "$N_SIMS" -gt 2000 || "$ARRAY_CONCURRENCY" -gt 2000 ]]; then
+        echo "Error: bounded validation supports up to 2000 repeats and 2000 in-flight jobs."
+        exit 1
+    fi
+    validate_choice_values "--K" "^(2|4|8)$" "${K_VALUES[@]}"
+    validate_choice_values "--p" "^(4|10|20|50|100|200)$" "${P_VALUES[@]}"
+    if [[ -n "$OVERRIDE_N_TOTAL" ]] &&
+       { [[ ${#N_TOTAL_VALUES[@]} != 1 || ${#K_VALUES[@]} != 1 ]] ||
+         [[ ${N_TOTAL_VALUES[0]} != $((1000 * (K_VALUES[0] + 1))) ]]; }; then
+        echo "Error: the bounded default keeps 1000 observations per site."
+        exit 1
+    fi
+    repeat_jobs=$((${#K_VALUES[@]} * ${#P_VALUES[@]} * ${#CONFIG_VALUES[@]} * N_SIMS))
+    echo "DGP: bounded; 1000/site; dimensions: ${P_VALUES[*]}; configs: ${CONFIG_VALUES[*]}"
+    echo "Repeats per cell: ${N_SIMS}; independent repeat jobs: ${repeat_jobs}"
+    echo "Maximum pending + running repeat jobs: ${ARRAY_CONCURRENCY}; CPUs per job: 2"
+    echo "Partitions: ${BOUNDED_PARTITIONS}; checkpoint/requeue: ${BOUNDED_CHECKPOINT}"
+    if [[ "$DRY_RUN" == true ]]; then exit 0; fi
+    script_root=$(cd "$(dirname "$0")" && pwd)
+    checked_root="${ROCE_CHECK_ROOT:-}"
+    if [[ -z "$checked_root" ]]; then
+        default_library=$(readlink -f "/scratch.global/${USER}/FACE-HD/Rlib_default")
+        checked_root=$(dirname "$default_library")
+    fi
+    if [[ ! -f "${checked_root}/TESTS_PASSED" ]]; then
+        echo "Error: set ROCE_CHECK_ROOT to a completed checked installation."
+        exit 1
+    fi
+    campaign_root="${ROCE_VALIDATION_ROOT:-/scratch.global/${USER}/FACE-HD/validation/bounded_$(date +%Y%m%d_%H%M%S)_$$}"
+    python3 -B "${script_root}/diagnosis/repair/submit_repeat_pilot.py" prepare "$campaign_root" \
+      --check-root "$checked_root" --dgp-type bounded --dimensions "${P_VALUES[@]}" \
+      --configs "${CONFIG_VALUES[@]}" --sources "${K_VALUES[@]}" --n-repeats "$N_SIMS" \
+      --partitions "$BOUNDED_PARTITIONS" "${checkpoint_args[@]}"
+    python3 -B "${campaign_root}/workflow/submit_repeat_pilot.py" supervise "$campaign_root" \
+      --max-in-flight "$ARRAY_CONCURRENCY" --controller-partitions "$BOUNDED_PARTITIONS" --controller-hours 1
+    exit 0
+fi
+
 # ============================================================================
 # 3. Helper: Build Setting ID
 # ============================================================================
@@ -306,8 +375,8 @@ build_setting_id() {
     local n_deviated_sites=${14:-0}
     local estimate_ate=${15:-FALSE}
 
-    if [[ "$dgp_type" == "face" ]]; then
-        echo "n${n_total}_K${K}_p${p}_${config}_${estimand_type}_${outcome_type}_face_dev${ate_deviation}_nd${n_deviated_sites}_kf${n_folds}_ate${estimate_ate}"
+    if [[ "$dgp_type" == "face" || "$dgp_type" == "bounded" ]]; then
+        echo "n${n_total}_K${K}_p${p}_${config}_${estimand_type}_${outcome_type}_${dgp_type}_dev${ate_deviation}_nd${n_deviated_sites}_kf${n_folds}_ate${estimate_ate}"
     else
         echo "n${n_total}_K${K}_p${p}_${config}_${estimand_type}_${outcome_type}_${site_allocation}_tf${transform_type}_ht${heterogeneity_type}_ss${shift_strength}_kf${n_folds}_ate${estimate_ate}"
     fi
@@ -321,6 +390,7 @@ build_setting_id() {
 COMBOS=()
 for n in "${N_TOTAL_VALUES[@]}"; do
 for K in "${K_VALUES[@]}"; do
+if [[ "$DGP_TYPE" == "bounded" && -z "$OVERRIDE_N_TOTAL" ]]; then n=$((1000 * (K + 1))); fi
 for p in "${P_VALUES[@]}"; do
 for cfg in "${CONFIG_VALUES[@]}"; do
 for ot in "${OUTCOME_TYPE_VALUES[@]}"; do
@@ -336,7 +406,9 @@ TOTAL=${#COMBOS[@]}
 # 5. Print Summary and Confirm
 # ============================================================================
 
-mkdir -p log checkpoints results
+RUN_ROOT="${ROCE_RUN_ROOT:-/scratch.global/${USER}/FACE-HD/runs}"
+LOG_DIR="${RUN_ROOT}/log"
+mkdir -p "$LOG_DIR" "${RUN_ROOT}/checkpoints" "${RUN_ROOT}/results"
 
 echo "======================================================"
 echo " RoCE Simulation Job Submission"
@@ -355,12 +427,12 @@ echo ""
 echo " Design parameters:"
 echo "   outcome_type:      ${OUTCOME_TYPE_VALUES[*]}"
 echo "   shift_strength:    ${SHIFT_STRENGTH_VALUES[*]}"
-echo "   n_folds:           ${N_FOLDS} (diagnosis/bias/ recommends 3 when n_site_arm/(K_f*p) < ~5)"
+echo "   n_folds:           ${N_FOLDS}"
 echo "   n_sims:            ${N_SIMS}"
 echo ""
 echo " DGP:"
 echo "   dgp_type:          ${DGP_TYPE}"
-if [[ "$DGP_TYPE" == "face" ]]; then
+if [[ "$DGP_TYPE" == "face" || "$DGP_TYPE" == "bounded" ]]; then
 echo "   ate_deviation:     ${ATE_DEVIATION_VALUES[*]}"
 echo "   n_deviated_sites:  ${N_DEVIATED_SITES_VALUES[*]}"
 else
@@ -404,8 +476,8 @@ if [[ "$DRY_RUN" == true ]]; then
         printf "  [%3d/%d] %s\n" "$job_count" "$TOTAL" "$setting_id"
     done
 else
-    mkdir -p log/job_arrays
-    combo_file="log/job_arrays/${SUBSET}_$(date +%Y%m%d_%H%M%S)_$$.tsv"
+    mkdir -p "${LOG_DIR}/job_arrays"
+    combo_file="${LOG_DIR}/job_arrays/${SUBSET}_$(date +%Y%m%d_%H%M%S)_$$.tsv"
 
     for combo in "${COMBOS[@]}"; do
         read -r n_total K p config outcome_type shift_strength ate_deviation n_deviated_sites <<< "$combo"
@@ -421,8 +493,9 @@ else
 
     submit_output=$(sbatch \
         --array="1-${TOTAL}%${ARRAY_CONCURRENCY}" \
-        --export="COMBO_FILE=${combo_file},arg6=superpopulation,arg7=model,arg8=mild,arg10=none,arg12=${N_FOLDS},arg13=${N_SIMS},arg14=${DGP_TYPE},arg17=${USE_LAMBDA_CACHE},arg18=${VERBOSE_EVERY},arg19=${PARALLEL_STRATEGY},arg20=${ESTIMATE_ATE}" \
-        --job-name="FACE_${SUBSET}" \
+        --export="ALL,ROCE_RUN_ROOT=${RUN_ROOT},COMBO_FILE=${combo_file},arg6=superpopulation,arg7=model,arg8=mild,arg10=none,arg12=${N_FOLDS},arg13=${N_SIMS},arg14=${DGP_TYPE},arg17=${USE_LAMBDA_CACHE},arg18=${VERBOSE_EVERY},arg19=${PARALLEL_STRATEGY},arg20=${ESTIMATE_ATE}" \
+        --output="${LOG_DIR}/%A_%a.out" --error="${LOG_DIR}/%A_%a.err" \
+        --job-name="RoCE_${SUBSET}" \
         main.cmd)
 
     echo "Submitted job array: ${submit_output}"
@@ -444,9 +517,9 @@ fi
 echo "======================================================"
 echo ""
 echo " Output directories:"
-echo "   Logs:        log/<array_job_id>_<array_task_id>.out"
-echo "   Checkpoints: checkpoints/<config>/"
-echo "   Results:     results/"
+echo "   Logs:        ${LOG_DIR}/<array_job_id>_<array_task_id>.out"
+echo "   Checkpoints: ${RUN_ROOT}/checkpoints/<config>/"
+echo "   Results:     ${RUN_ROOT}/results/"
 echo ""
 echo " Useful commands:"
 echo "   squeue -u \$USER                # monitor queue"

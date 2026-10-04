@@ -17,7 +17,8 @@ fit_glmnet_cv(
   fold_id = NULL,
   on_degenerate_response = c("error", "constant"),
   lambda_rule = c("min", "1se"),
-  cv_group_id = NULL
+  cv_group_id = NULL,
+  retain_model = FALSE
 )
 }
 \arguments{
@@ -58,6 +59,9 @@ model when, e.g., a saturated high-dimensional fold has all-1 outcomes.}
 \item{cv_group_id}{Optional positive integer origin/group identifier aligned
 with the training rows. Repeated IDs are kept intact within nuisance-CV
 folds. \code{NULL}, or an all-unique vector, preserves the legacy path.}
+
+\item{retain_model}{Retain coefficients, selected lambda and untruncated
+predictions in the \code{nuisance_model} attribute for conditional derivatives.}
 }
 \value{
 Numeric vector of predictions (length \code{nrow(x_predict)}). The

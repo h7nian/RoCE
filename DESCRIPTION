@@ -12,14 +12,16 @@ Maintainer: Sinian Zhang <zhan9381@umn.edu>
 Description: Implements federated learning algorithms for causal inference in 
     multi-site settings. The primary estimator targets the target average
     treatment effect (TATE) by fitting arm-specific nuisance functions and
-    directly aggregating treated-minus-control source-assisted estimators with
-    a common source-weight vector. Arm-specific potential-outcome means
+    combining source-assisted estimators with common TATE weights, separate
+    arm weights, or joint TATE optimization of the two arm-weight vectors.
+    Arm-specific potential-outcome means
     mu^a_t = E_t[Y(a)] remain available for diagnostics and secondary analyses.
     The package provides two-round and one-round communication protocols with
-    two-level cross-fitting for enhanced robustness against overfitting bias.
+    fold-summed calibration and optional nested validation of calibrated models.
     It includes doubly robust estimators with calibrated loss functions,
     variance-minimizing source aggregation, binomial and Gaussian generalized
-    linear models, C++-accelerated coordinate descent and cross-validation,
+    linear models, selectable C++ proximal Newton and coordinate descent,
+    common or arm-specific TATE aggregation weights,
     and target-only, sample-size weighted, inverse-variance weighted, and
     doubly robust comparison estimators.
 License: MIT + file LICENSE
@@ -31,6 +33,7 @@ Imports:
     Rcpp (>= 1.0.0),
     RcppEigen (>= 0.3.3.9.1),
     glmnet (>= 4.1),
+    digest,
     stats,
     utils,
     parallel,
@@ -39,6 +42,7 @@ Suggests:
     codetools,
     RCAL,
     testthat (>= 3.0.0),
+    withr,
     knitr,
     rmarkdown,
     ggplot2,
@@ -55,8 +59,15 @@ Collate:
     'nuisance_cv_groups.R'
     'checkpoint.R'
     'model_fitting.R'
+    'nuisance_training.R'
+    'calibration_training.R'
+    'calibration_adapters.R'
+    'source_nuisance_program.R'
+    'crossfit_layers.R'
     'data_generation.R'
     'data_generation_face.R'
+    'data_generation_bounded.R'
+    'baseline_influence.R'
     'estimators_helpers.R'
     'estimators_target.R'
     'estimators_oracle.R'
@@ -64,14 +75,16 @@ Collate:
     'aggregation_weight_influence.R'
     'aggregation_weight_rules.R'
     'cross_fitting_aggregation.R'
+    'tate_joint_aggregation.R'
     'aggregation_weight_bootstrap.R'
     'cross_fitting_algorithms.R'
     'simulation.R'
     'simulation_diagnostics.R'
     'real_data_rhc.R'
+    'rhc_preprocessing.R'
     'plotting.R'
 RoxygenNote: 7.3.3
 VignetteBuilder: knitr
 Config/testthat/edition: 3
-URL: https://github.com/sinianzhang/RoCE
-BugReports: https://github.com/sinianzhang/RoCE/issues
+URL: https://github.com/h7nian/FACE-HD
+BugReports: https://github.com/h7nian/FACE-HD/issues

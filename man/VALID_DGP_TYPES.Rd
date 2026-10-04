@@ -5,7 +5,7 @@
 \alias{VALID_DGP_TYPES}
 \title{Valid data generating process (DGP) types}
 \format{
-An object of class \code{character} of length 2.
+An object of class \code{character} of length 3.
 }
 \usage{
 VALID_DGP_TYPES

@@ -228,7 +228,7 @@ validate_algorithm_inputs <- function(data_split, lambda_selection = NULL,
 #' @return TRUE if valid; throws informative error or warning otherwise.
 #'
 #' @details
-#' For two-level cross-fitting with K_f folds:
+#' For the shared K_f-fold partition (including three-level cross-fitting):
 #' - Each site needs at least K_f * min_fold_size observations
 #' - Target site needs at least K_f * min_fold_size treated units
 #' - Source sites need at least K_f * min_fold_size treated units
@@ -327,7 +327,7 @@ validate_truncation_parameters <- function(M_tau, M_tau_inference) {
   valid_inference <- is.numeric(M_tau_inference) &&
     length(M_tau_inference) == 1L &&
     !is.na(M_tau_inference) &&
-    (is.infinite(M_tau_inference) || M_tau_inference > 0)
+    M_tau_inference > 0
 
   if (!valid_inference) {
     stop("M_tau_inference must be a single positive numeric value or Inf.")
@@ -362,7 +362,7 @@ validate_truncation_parameters <- function(M_tau, M_tau_inference) {
 #' @param K Positive integer number of source sites (NULL to skip this check)
 #' @param p Positive integer number of covariates (NULL to skip this check)
 #' @param config Configuration string (NULL to skip, else must be "C1"-"C4")
-#' @param dgp_type "face" (FACE negative-transfer DGP, default) or "roce"
+#' @param dgp_type "bounded" (default), "face", or "roce".
 #' @param ate_deviation Numeric ATE deviation for FACE paper non-informative sites (>= 0)
 #' @param n_deviated_sites Non-negative integer: how many source sites deviate (FACE paper only)
 #' @param warn_ignored Logical. If TRUE, warn when parameters are accepted for
@@ -381,7 +381,7 @@ validate_simulation_params <- function(estimand_type = "superpopulation",
                                         K = NULL,
                                         p = NULL,
                                         config = NULL,
-                                        dgp_type = "face",
+                                        dgp_type = "bounded",
                                         ate_deviation = 0.0,
                                         n_deviated_sites = 0L,
                                         warn_ignored = TRUE) {
@@ -435,7 +435,10 @@ validate_simulation_params <- function(estimand_type = "superpopulation",
       }
     }
 
-  } else if (dgp_type == "face") {
+  } else if (dgp_type %in% c("face", "bounded")) {
+    if (dgp_type == "bounded" && !identical(outcome_type, "binary")) {
+      stop("The bounded DGP supports binary outcomes only.", call. = FALSE)
+    }
     # FACE paper DGP-specific validation
     if (is.na(ate_deviation) || ate_deviation < 0) {
       stop("ate_deviation must be a non-negative number.")
@@ -486,6 +489,9 @@ validate_simulation_params <- function(estimand_type = "superpopulation",
     if (any(is.na(p)) || any(p < 1) ||
         any(abs(p - round(p)) > sqrt(.Machine$double.eps))) {
       stop("p must contain only positive integer covariate counts.")
+    }
+    if (dgp_type == "bounded" && any(p < 4L)) {
+      stop("The bounded DGP requires integer p >= 4.", call. = FALSE)
     }
   }
 

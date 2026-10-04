@@ -13,7 +13,6 @@ estimate_pooled_dr(
   variance_method = c("bootstrap", "analytic"),
   n_bootstrap = BOOTSTRAP_REPLICATES_DEFAULT,
   dr_weights_by_site = NULL,
-  dr_site_components = NULL,
   n_cores = 1L
 )
 }
@@ -39,9 +38,6 @@ the method's analytic variance.}
 
 \item{dr_weights_by_site}{Optional named list of precomputed source-to-target
 density-ratio weights.}
-
-\item{dr_site_components}{Optional reusable site-level weighted-AIPW and
-density-ratio correction components.}
 
 \item{n_cores}{Number of independent source density-ratio fits to run in
 parallel when \code{dr_weights_by_site} is not supplied.}

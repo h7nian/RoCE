@@ -96,19 +96,19 @@ test_that("generate_simulation_data creates valid structure", {
   expect_true(all(data$Y %in% c(0, 1)))
 })
 
-test_that("default dgp_type is 'face' at the simulation entry points", {
-  # The package default DGP is the FACE negative-transfer DGP.
-  expect_identical(formals(generate_simulation_data)$dgp_type, "face")
-  expect_identical(formals(run_single_simulation)$dgp_type,    "face")
-  expect_identical(formals(run_simulation_study)$dgp_type,     "face")
-  expect_identical(formals(validate_simulation_params)$dgp_type, "face")
+test_that("default dgp_type is 'bounded' at the simulation entry points", {
+  # The package default DGP is the bounded sparse DGP.
+  expect_identical(formals(generate_simulation_data)$dgp_type, "bounded")
+  expect_identical(formals(run_single_simulation)$dgp_type,    "bounded")
+  expect_identical(formals(run_simulation_study)$dgp_type,     "bounded")
+  expect_identical(formals(validate_simulation_params)$dgp_type, "bounded")
 
-  # Calling the dispatcher without dgp_type produces FACE-DGP data.
+  # Calling the dispatcher without dgp_type produces bounded-DGP data.
   set.seed(1)
   data <- generate_simulation_data(n_total = 300, K = 2, p = 10,
                                    config = "C1", estimand_type = "sample",
                                    warn_ignored = FALSE)
-  expect_equal(data$dgp_type, "face")
+  expect_equal(data$dgp_type, "bounded")
 })
 
 test_that("split_data_by_site correctly separates sites", {

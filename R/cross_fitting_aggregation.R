@@ -223,6 +223,8 @@ aggregate_fold_estimates <- function(fold_aggregated_estimates, all_phi_agg,
                                       target_folds, source_folds,
                                       M_tau_inference,
                                       family_int, link_int, A_val) {
+  target_folds <- .outer_fold_views(target_folds, k1)
+  source_folds <- lapply(source_folds, .outer_fold_views, k = k1)
   target_fold_k1 <- materialize_fold(target_folds, k1)
   target_only_k1 <- fold_results[[k1]]$target_only
   varphi_ot_k1 <- target_only_k1$varphi_ot
@@ -410,6 +412,8 @@ aggregate_fold_estimates <- function(fold_aggregated_estimates, all_phi_agg,
                                              fold_results, target_folds,
                                              source_folds, M_tau_inference,
                                              family_int, link_int, A_val) {
+  target_folds <- .outer_fold_views(target_folds, k1)
+  source_folds <- lapply(source_folds, .outer_fold_views, k = k1)
   secondary_folds <- setdiff(1:n_folds, k1)
   n_inner <- length(secondary_folds)
   components <- setNames(vector("list", n_inner), paste0("k2_", secondary_folds))
@@ -437,8 +441,33 @@ aggregate_fold_estimates <- function(fold_aggregated_estimates, all_phi_agg,
     for (i in seq_along(source_sites)) {
       s <- source_sites[i]
       src <- fold_results[[k1]]$source_results[[s]]
-      gamma_k2 <- src$per_k2_gamma[[k2_key]]
-      alpha_k2 <- src$per_k2_alpha[[k2_key]]
+      inner_fits <- .source_inner_fits(src)
+      if (identical(fold_results[[k1]]$source_validation_method, "outer_fit")) {
+        training_folds <- src$training_folds %||% attr(src$gamma_s, "training_folds")
+        if (!identical(as.integer(training_folds), as.integer(secondary_folds))) {
+          stop("The reused source model must use exactly the outer-training folds.", call. = FALSE)
+        }
+        for (model in list(src$gamma_s, src$alpha_ts)) {
+          recorded_folds <- attr(model, "training_folds")
+          if (!is.null(recorded_folds) && !identical(as.integer(recorded_folds), as.integer(secondary_folds))) {
+            stop("Reused source coefficients disagree with the outer-training fold record.", call. = FALSE)
+          }
+        }
+        gamma_k2 <- src$gamma_s
+        alpha_k2 <- src$alpha_ts
+      } else if (!is.null(inner_fits)) {
+        inner_fit <- inner_fits[[k2_key]]
+        training_folds <- inner_fit$training_folds %||% inner_fit$calibration_folds
+        if (is.null(inner_fit) || !length(training_folds) || any(c(k1, k2) %in% training_folds)) {
+          stop("Complete inner source model is missing or includes an evaluation fold.",
+               call. = FALSE)
+        }
+        gamma_k2 <- inner_fit$weight
+        alpha_k2 <- inner_fit$outcome
+      } else {
+        gamma_k2 <- src$per_k2_gamma[[k2_key]]
+        alpha_k2 <- src$per_k2_alpha[[k2_key]]
+      }
 
       if (is.null(gamma_k2) || is.null(alpha_k2)) {
         missing_fields <- c(
@@ -1707,6 +1736,9 @@ calculate_crossfit_aggregation <- function(data_split, target_data, source_sites
 #'   \eqn{n_t^{3/4}\sum_j \delta_j^2\eta_j^2} (main.tex
 #'   rem:quadratic_bias_rule); it never sets a weight exactly to zero.
 #' @param verbose Print progress.
+#' @param aggregation_mode \code{"common_tate"}, \code{"separate_arms"}, or
+#'   \code{"joint_tate"}; see \code{run_tate_crossfit()}. Both two-vector modes
+#'   return columns labeled by arm and source, plus \code{fold_weights_by_arm}.
 #' @return A RoCE result list for the TATE estimator.
 #' @export
 calculate_tate_crossfit_aggregation <- function(
@@ -1715,7 +1747,11 @@ calculate_tate_crossfit_aggregation <- function(
     lambda_rule = c("min", "1se"),
     verbose = TRUE,
     aggregation_lambda_grid = NULL,
-    screening_rule = c("soft_penalty", "hard_threshold", "quadratic_bias")) {
+    screening_rule = c("soft_penalty", "hard_threshold", "quadratic_bias"),
+    aggregation_mode = c("common_tate", "separate_arms", "joint_tate")) {
+  aggregation_mode <- match.arg(aggregation_mode)
+  aggregation_lambda_grid <- .validate_aggregation_lambda_grid(
+    lambda_selection, aggregation_lambda_grid, "calculate_tate_crossfit_aggregation")
   lambda_rule <- match.arg(lambda_rule)
   screening_rule <- match.arg(screening_rule)
   required_intermediates <- c("fold_info", "inner_fold_info")
@@ -1762,6 +1798,13 @@ calculate_tate_crossfit_aggregation <- function(
     )
   }
 
+  if (aggregation_mode != "common_tate") {
+    return(.aggregate_tate_arm_weights(
+      data_split, mu1_result, mu0_result, fold_info, inner_fold_info,
+      aggregation_mode, lambda_selection, lambda_rule,
+      aggregation_lambda_grid, screening_rule, verbose
+    ))
+  }
   phase2 <- .compute_phase2_weights(
     n_folds = n_folds,
     inner_fold_info = inner_fold_info,
@@ -1876,6 +1919,10 @@ calculate_tate_crossfit_aggregation <- function(
     source_estimates = source_estimates,
     weights = stats::setNames(final$average_weights, source_sites),
     fold_weights = phase2$fold_weights,
+    aggregation_mode = aggregation_mode,
+    weights_by_arm = list(mu1 = colMeans(phase2$fold_weights), mu0 = colMeans(phase2$fold_weights)),
+    fold_weights_by_arm = list(mu1 = phase2$fold_weights, mu0 = phase2$fold_weights),
+    inference_scope = "fixed nuisance fits and selected active sets; full validity remains under review",
     fold_lambdas = phase2$fold_lambdas,
     fold_wald_statistics = phase2$fold_wald_statistics,
     fold_penalty_coefficients = phase2$fold_penalty_coefficients,
@@ -1896,7 +1943,10 @@ calculate_tate_crossfit_aggregation <- function(
     all_phi_agg = all_phi_tau,
     all_phi_tau = all_phi_tau,
     estimand = "TATE",
-    method = "direct_tate_two_layer_crossfit",
+    crossfit_levels = max(mu1_result$crossfit_levels %||% 2L, mu0_result$crossfit_levels %||% 2L),
+    method = paste0("direct_tate_",
+      if (max(mu1_result$crossfit_levels %||% 2L, mu0_result$crossfit_levels %||% 2L) == 3L)
+        "three_level" else "two_level", "_crossfit"),
     arm_results = list(mu1 = mu1_result, mu0 = mu0_result),
     intermediates = list(
       target_estimates = target_estimates,

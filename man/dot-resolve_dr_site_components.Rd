@@ -36,8 +36,7 @@
 Named list of reusable target/source DR components.
 }
 \description{
-Federated-DR and Pooled-DR share the same source-level weighted AIPW fit and
-density-ratio influence correction. Computing those components once avoids
-duplicate high-dimensional nuisance CV and matrix solves.
+Federated-DR reuses source-level weighted AIPW fits and their density-ratio
+derivatives. Pooled-DR computes its own derivatives at the pooled fit.
 }
 \keyword{internal}

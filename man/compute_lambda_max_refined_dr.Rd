@@ -14,7 +14,8 @@ compute_lambda_max_refined_dr(
   link_int = 1L,
   W_outcome = NULL,
   calibrated = FALSE,
-  M_tau = M_TAU_DEFAULT
+  M_tau = M_TAU_DEFAULT,
+  truncate_initial_outcome = TRUE
 )
 }
 \arguments{
@@ -38,6 +39,10 @@ compute_lambda_max_refined_dr(
 \item{calibrated}{Whether truncation is used.}
 
 \item{M_tau}{Truncation parameter.}
+
+\item{truncate_initial_outcome}{Whether to truncate the initial outcome
+predictor before evaluating its derivative. FALSE matches the derivative
+of an untruncated outcome prediction in the evaluation score.}
 }
 \value{
 Scalar \eqn{\lambda_{\max}}.

@@ -149,7 +149,12 @@ test_that("PSOCK rho workers exactly reproduce serial grouped updates", {
 
   common_args <- list(
     sim_id = 733L,
-    n_total = 180L,
+    # This is a scheduling-equivalence test. Use the study's site sizes so
+    # independent inner tuning is not confounded with sparse-arm feasibility
+    # (the old 90/site fixture could leave about 15 arm observations per fit).
+    n_total = 2000L,
+    n_target = 1000L,
+    n_source_sizes = 1000L,
     K = 1L,
     p = 4L,
     config = "C3",

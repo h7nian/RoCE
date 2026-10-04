@@ -607,7 +607,10 @@ calculate_superpopulation_truth <- function(p, K = 3, config,
 #' @param outcome_type Outcome family: \code{"binary"} or \code{"continuous"}.
 #' @param heterogeneity_type Source outcome-model heterogeneity setting.
 #' @param shift_strength Positive multiplier controlling covariate shift.
-#' @param dgp_type Data-generating process: \code{"face"} or \code{"roce"}.
+#' @param dgp_type Data-generating process: \code{"face"}, \code{"roce"}, or
+#'   \code{"bounded"}. The bounded DGP uses p direct working features and at
+#'   most four active slopes, rather than the FACE quadratic expansion.
+#' @param dgp_control Bounded-DGP controls; see \code{\link{generate_bounded_data}}.
 #' @param ate_deviation Non-negative additive source treatment-shift deviation
 #'   under the FACE DGP. It is a mean shift for Gaussian outcomes and a
 #'   log-odds shift for binary outcomes, not generally the induced marginal
@@ -619,12 +622,13 @@ calculate_superpopulation_truth <- function(p, K = 3, config,
 #'   FACE DGP.
 #' @param effect_mod_strength Source-only treatment-effect-modification strength
 #'   under the FACE DGP; zero recovers the standard DGP.
-#' @param n_target Optional target-site size for explicit FACE-DGP allocation.
+#' @param n_target Optional target-site size for explicit FACE or bounded-DGP allocation.
 #' @param n_source_sizes Optional vector of source-site sizes for explicit
-#'   FACE-DGP allocation.
+#'   FACE or bounded-DGP allocation.
 #' @param misspecification_strength Mixing weight of the transformed covariates
 #'   in the misspecified FACE mechanisms of C2--C4 (see
-#'   \code{generate_face_data()}); ignored by C1 and by the RoCE DGP.
+#'   \code{generate_face_data()}). In the bounded DGP it controls the omitted
+#'   interaction in the first active feature. Ignored by C1 and by the RoCE DGP.
 #' @param warn_ignored Whether to warn when a valid argument is irrelevant to
 #'   the selected DGP.
 #' @return list with all generated data
@@ -659,10 +663,10 @@ generate_simulation_data <- function(n_total = NULL, K = 3, p = 4, config = "C1"
                                      outcome_type = "binary",
                                      heterogeneity_type = "none",
                                      shift_strength = ROCE_SHIFT_STRENGTH_DEFAULT,
-                                   # DGP selector: "face" (FACE negative-transfer DGP, default)
-                                   # or "roce" (RoCE DGP). ate_deviation / n_deviated_sites
+                                   # DGP selector: "bounded" (bounded sparse DGP, default); "face" retains the archived design
+                                   # or "roce" (original RoCE DGP). ate_deviation / n_deviated_sites
                                    # apply only when dgp_type = "face".
-                                   dgp_type = "face",
+                                   dgp_type = "bounded",
                                    ate_deviation   = 0.0,
                                    n_deviated_sites = 0L,
                                    deviation_mechanism = "treated_arm",
@@ -674,23 +678,26 @@ generate_simulation_data <- function(n_total = NULL, K = 3, p = 4, config = "C1"
                                    # Mixing weight of the transformed covariates in the
                                    # misspecified FACE mechanisms (C2--C4).
                                    misspecification_strength = FACE_MISSPECIFICATION_STRENGTH,
-                                   warn_ignored = TRUE) {
+                                   warn_ignored = TRUE, dgp_control = NULL) {
+  if (!is.null(dgp_control) && dgp_type != "bounded") {
+    stop("dgp_control applies only to dgp_type = 'bounded'.", call. = FALSE)
+  }
   # Explicit per-site sample sizes are a FACE-DGP feature. Reject them for the
   # roce DGP (which controls site sizes via site_allocation) rather than
   # silently ignoring the request.
-  if ((!is.null(n_source_sizes) || !is.null(n_target)) && dgp_type != "face") {
+  if ((!is.null(n_source_sizes) || !is.null(n_target)) && !dgp_type %in% c("face", "bounded")) {
     stop("n_target / n_source_sizes (explicit per-site sizes) are supported only ",
          "for dgp_type = 'face'; the roce DGP sets site sizes via site_allocation.",
          call. = FALSE)
   }
   # Value-based guards (not missing()): drivers forward these arguments
   # unconditionally, and the roce DGP must reject only a non-default request.
-  if (dgp_type != "face" &&
+  if (!dgp_type %in% c("face", "bounded") &&
       !isTRUE(all.equal(misspecification_strength, FACE_MISSPECIFICATION_STRENGTH))) {
     stop("misspecification_strength applies only to dgp_type = 'face'.",
          call. = FALSE)
   }
-  if (dgp_type != "face" && !identical(deviation_mechanism, "treated_arm")) {
+  if (!dgp_type %in% c("face", "bounded") && !identical(deviation_mechanism, "treated_arm")) {
     stop("deviation_mechanism applies only to dgp_type = 'face'.", call. = FALSE)
   }
   # In per-site mode, derive a concrete n_total (and K) so the centralized
@@ -719,7 +726,16 @@ generate_simulation_data <- function(n_total = NULL, K = 3, p = 4, config = "C1"
     warn_ignored     = warn_ignored
   )
 
-  # ---- FACE paper DGP (Han et al., JASA 2023, Section 5.1) ----
+  if (dgp_type == "bounded") {
+    if (!isTRUE(all.equal(effect_mod_strength, 0))) {
+      stop("effect_mod_strength is not supported by the bounded DGP.", call. = FALSE)
+    }
+    return(generate_bounded_data(n_total, K, p, config, estimand_type, outcome_type,
+      ate_deviation, n_deviated_sites, deviation_mechanism, n_target, n_source_sizes,
+      misspecification_strength, dgp_control))
+  }
+
+  # ---- FACE paper DGP (Han et al., Section 5.1) ----
   # Self-contained early return: all data generation for this DGP is handled
   # here so that the existing RoCE code below is not affected in any way.
   if (dgp_type == "face") {

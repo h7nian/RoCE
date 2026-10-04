@@ -11,7 +11,8 @@ reaggregate_tate_crossfit(
   lambda_selection = NULL,
   lambda_rule = NULL,
   verbose = FALSE,
-  aggregation_lambda_grid = NULL
+  aggregation_lambda_grid = NULL,
+  aggregation_mode = NULL
 )
 }
 \arguments{
@@ -32,6 +33,9 @@ reuse the original fixed multiplier.}
 \code{lambda_selection = "cv"}. When omitted for an original CV fit, the
 fitted object's grid is reused. It must be \code{NULL} for a fixed numeric
 multiplier.}
+
+\item{aggregation_mode}{Optional aggregation objective. NULL retains the
+fitted object's mode. See \code{run_tate_crossfit()} for the three choices.}
 }
 \value{
 A TATE result with refreshed inference components and the same

@@ -21,7 +21,14 @@ process_source_site(
   use_lambda_cache = TRUE,
   nuisance_nlambda = LAMBDA_GRID_SIZE_STANDARD,
   nuisance_max_iter = MAX_ITER_DEFAULT,
-  nuisance_lambda_rule = c("min", "1se")
+  nuisance_lambda_rule = c("min", "1se"),
+  nuisance_fit_cache = NULL,
+  calibration_layout = c("block", "compact"),
+  nuisance_tol = TOL_DEFAULT,
+  calibration_recipe = c("legacy", "score_derivative"),
+  source_nuisance_method = c("calibrated", "standard"),
+  source_training_message = NULL,
+  source_lambda_rules = NULL
 )
 }
 \arguments{
@@ -42,7 +49,8 @@ process_source_site(
 \item{M_tau_inference}{Truncation radius used in inference-stage source
 corrections and influence-function moments.}
 
-\item{data_split}{Original data split used for source metadata}
+\item{data_split}{Unused compatibility argument. Source metadata come from
+\code{source_folds}.}
 
 \item{combine_cache}{Environment for caching combine_folds() results (or NULL)}
 
@@ -54,8 +62,9 @@ data access pattern (two-round vs one-round).}
 
 \item{link_int}{Integer code for link function (0=identity, 1=logit)}
 
-\item{use_lambda_cache}{Logical. If TRUE, reuse selected nuisance lambdas
-within each source-site k2 loop to reduce repeated CV.}
+\item{use_lambda_cache}{Logical. If TRUE, reuse identical nuisance
+fits, including their selected penalties. Different training subsets are
+tuned independently.}
 
 \item{nuisance_nlambda}{Number of candidates in each source nuisance-model
 CV lambda path.}
@@ -67,6 +76,31 @@ this argument primarily controls the final refit at the selected penalty.}
 \item{nuisance_lambda_rule}{CV selection rule for nuisance fits:
 \code{"min"} (default) uses \code{lambda.min}; \code{"1se"} uses
 \code{lambda.1se}.}
+
+\item{nuisance_fit_cache}{Optional per-run environment for exact nuisance-fit
+reuse. Numerical inputs and tuning configuration are checked on every hit.}
+
+\item{calibration_layout}{Plug-in matrix representation: \code{"block"}
+is the reference layout; \code{"compact"} stores each row's initial
+linear predictor. Both solve the same calibration objectives.}
+
+\item{nuisance_tol}{Positive convergence tolerance for the C++ nuisance
+fits. Both solvers must meet the corresponding KKT tolerance.
+The internal CV kernels retain their documented tolerance floor;
+this controls final-refit accuracy without changing the lambda rule.}
+
+\item{calibration_recipe}{\code{"legacy"} or \code{"score_derivative"};
+the latter matches calibration to the derivative of the finite-radius score.}
+
+\item{source_nuisance_method}{\code{"calibrated"} applies final source
+score calibration. \code{"standard"} fits an ordinary source outcome
+model and the initial merged-weight balancing model on the allowed folds.}
+
+\item{source_training_message}{Target feature means and training-fold labels
+required by the standard source program; unused for calibrated sources.}
+
+\item{source_lambda_rules}{Optional source-stage CV rules, as in
+\code{calibration_control$source_lambda_rules} in \code{run_crossfit}.}
 }
 \value{
 List with source site results (mu_ts, gamma_s, alpha_ts, delta_ts, mu_pred_ts, n_s)

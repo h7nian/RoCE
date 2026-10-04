@@ -26,7 +26,12 @@ repo_root <- if (is_roce_repo(getwd())) {
   normalizePath(file.path(dirname(getwd()), ".."), mustWork = FALSE)
 }
 
-if (!force_installed && is_roce_repo(repo_root) && requireNamespace("devtools", quietly = TRUE)) {
+if (force_installed) {
+  if (!requireNamespace("RoCE", quietly = TRUE)) {
+    stop("ROCE_TEST_INSTALLED=1 requires an installed RoCE package; source compilation is disabled.")
+  }
+  library(RoCE)
+} else if (is_roce_repo(repo_root) && requireNamespace("devtools", quietly = TRUE)) {
   # IMPORTANT: helpers=FALSE prevents devtools from sourcing testthat helper
   # files (including this one), which would otherwise recurse indefinitely.
   devtools::load_all(repo_root, helpers = FALSE)

@@ -91,7 +91,9 @@ test_that("TATE method classification includes diagnostic aggregation rules", {
     "one_round_crossfit_ate",
     "one_round_crossfit_ate_armwise",
     "one_round_crossfit_ate_hard_threshold",
-    "one_round_crossfit_ate_quadratic_bias"
+    "one_round_crossfit_ate_quadratic_bias",
+    "one_round_crossfit_ate_separate_arms",
+    "two_round_crossfit_ate_joint_tate"
   ))))
   expect_false(any(.is_tate_method(c(
     "one_round_crossfit", "target_only", "treated_mean"

@@ -12,7 +12,8 @@ estimate_target_only_from_complement(
   family = "binomial",
   A_val = 1L,
   propensity_cache = NULL,
-  nuisance_lambda_rule = c("min", "1se")
+  nuisance_lambda_rule = c("min", "1se"),
+  return_training_scores = FALSE
 )
 }
 \arguments{
@@ -36,6 +37,10 @@ propensity predictions keyed by excluded/evaluation folds.}
 
 \item{nuisance_lambda_rule}{Cross-validation rule used for both target
 propensity and outcome nuisance fits.}
+
+\item{return_training_scores}{If TRUE, retain predictions and AIPW scores
+on the same training observations for two-layer aggregation-weight learning.
+The fitted models and outer evaluation predictions are unchanged.}
 }
 \value{
 List with estimate, V_ot, variance, varphi_ot (same interface as

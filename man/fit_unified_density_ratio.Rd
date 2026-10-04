@@ -21,10 +21,15 @@ fit_unified_density_ratio(
   warm_start = NULL,
   nlambda = LAMBDA_GRID_SIZE_STANDARD,
   lambda_rule = c("min", "1se"),
-  cv_group_id = NULL
+  cv_group_id = NULL,
+  nuisance_solver = NULL,
+  truncate_initial_outcome = TRUE,
+  nuisance_cv_certificate = NULL
 )
 }
 \arguments{
+\item{nuisance_cv_certificate}{Optional logical density-CV KKT certificate control. \code{NULL} inherits an enclosing call, otherwise defaults to \code{FALSE}. Certified failures may be skipped without changing the lambda grid, CV tolerance or final solver.}
+
 \item{Z_site}{Site model features for gamma parameterization (n x p_site)}
 
 \item{A}{Treatment indicator vector (n x 1)}
@@ -67,6 +72,15 @@ selects \code{lambda.min}; \code{"1se"} selects \code{lambda.1se}.}
 \item{cv_group_id}{Optional positive integer observation-origin IDs aligned
 with all input rows. Repeated IDs stay in one nuisance CV fold; NULL or
 all-unique IDs preserve the ordinary CV path. Used for resampled data.}
+
+\item{nuisance_solver}{C++ nuisance optimizer: \code{"proximal_newton"} or
+\code{"coordinate_descent"}. NULL inherits the process configuration,
+whose unconfigured default is proximal Newton. The choice applies to
+CV and final fits and is restored on exit. Initial glmnet fits retain
+their own optimizer.}
+
+\item{truncate_initial_outcome}{Whether to truncate the initial outcome
+predictor before evaluating its derivative in calibrated fitting.}
 }
 \value{
 Vector of density ratio parameters
@@ -90,4 +104,10 @@ Implements the density ratio estimation loss function.
   + \widetilde{E}_{s_j}[I(A=1) \exp(-\phi_{site}^T \boldsymbol{\gamma}) \psi'(\mathcal{T}(\phi_{outcome}^T \boldsymbol{\alpha}))]
   + \lambda_\gamma \|\boldsymbol{\gamma}\|_1.
 }
+
+If the entire original CV grid fails, the same one-retry extension
+used by \code{fit_initial_density_ratio} appends larger penalties on the
+same CV folds. The \code{cv_grid_retry} coefficient attribute records the
+extended grid. Successful original paths and convergence criteria are
+unchanged.
 }

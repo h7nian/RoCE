@@ -24,10 +24,28 @@ run_rhc_tate_experiment(
   n_bootstrap = BOOTSTRAP_REPLICATES_DEFAULT,
   parallel_arms = FALSE,
   nlambda_init = LAMBDA_GRID_SIZE_STANDARD,
-  nuisance_lambda_rule = c("min", "1se")
+  nuisance_lambda_rule = c("min", "1se"),
+  aggregation_mode = c("common_tate", "separate_arms", "joint_tate"),
+  target_nuisance_method = c("lasso", "hou_calibrated"),
+  source_validation_method = c("initial", "calibrated"),
+  crossfit_layers = NULL,
+  calibration_control = NULL,
+  calibration_layout = c("block", "compact"),
+  nuisance_solver = NULL,
+  nuisance_tol = TOL_DEFAULT,
+  nuisance_cv_certificate = NULL,
+  checkpoint_dir = NULL,
+  fold_seed = NULL,
+  covariate_profile = c("historical", "log_missing", "grouped_log_missing"),
+  preprocessing = c("cohort", "outer_fold")
 )
 }
 \arguments{
+\item{preprocessing}{\code{"cohort"} preserves the historical preprocessing.
+\code{"outer_fold"} excludes each RoCE outer evaluation fold when learning
+the shared transform. Initial/calibration CV reuse that outer-training
+transform. SS/IVW exclude their own site-validation rows for preprocessing;
+Federated-DR and Pooled-DR retain full-sample nuisance fitting.}
 \item{K}{Integer. Total number of retained insurance strata, including the
 target. The support-screened manuscript driver passes \code{K = 4}, which
 produces three source sites; the returned metadata therefore records
@@ -74,7 +92,7 @@ covariate overlap. The TATE manuscript analysis explicitly uses
 \code{M_TAU_DEFAULT = 5} for both fitting and inference.}
 
 \item{M_tau}{Numeric fitting-stage truncation radius. The manuscript uses
-\code{M_TAU_DEFAULT = 5}.}
+a source radius of \code{3} and a separately specified target radius of \code{5}.}
 
 \item{site_var}{Character. Raw RHC column to use for site partitioning;
 passed to \code{\link{build_rhc_cohort}} and
@@ -89,7 +107,7 @@ partitioning (see that function's documentation).}
 
 \item{aggregation_lambda}{Positive truncated-Wald multiplier. Its reciprocal
 is the source penalty-activation cutoff. The locked manuscript analysis
-uses \code{1} (cutoff \code{1}), matching the simulation implementation.}
+uses \code{0.5} (cutoff \code{2}); historical defaults are unchanged.}
 
 \item{comparison_methods}{Character vector of TATE comparison methods.
 Defaults to the four baselines reported in the manuscript. Supply
@@ -112,15 +130,30 @@ path. The manuscript uses \code{LAMBDA_GRID_SIZE_STANDARD = 100}.}
 \code{\link{run_tate_crossfit}}. The primary analysis uses \code{"min"};
 \code{"1se"} is available as a more strongly regularized stability
 sensitivity analysis.}
+
+\item{aggregation_mode, target_nuisance_method, source_validation_method, crossfit_layers, calibration_control, calibration_layout, nuisance_solver, nuisance_tol, nuisance_cv_certificate, checkpoint_dir}{
+Explicit fitting controls forwarded to \code{\link{run_tate_crossfit}}.
+Defaults preserve the historical RHC analysis. Current calibrated analyses
+should select their layer, anchor, calibration recipe and radii explicitly.}
+
+\item{fold_seed}{Optional positive integer for RoCE's outer fold assignment.
+\code{NULL} preserves the sample-size-based historical assignment.
+The ordinary target reference uses these same outer folds; other baselines
+retain their own documented fitting procedures on the identical cohort.}
+
+\item{covariate_profile}{Named covariate sensitivity passed to
+\code{\link{build_rhc_cohort}}. The historical default is unchanged.}
 }
 \value{
 A list containing the TATE method comparison, pairwise
-  source-assisted TATE estimates and Wald diagnostics, common aggregation
-  weights, the full TATE fit, and run metadata.
+source-assisted TATE estimates and arm-labeled Wald diagnostics,
+aggregation weights, ordinary and calibrated target references,
+the full TATE fit, and run metadata.
 }
 \description{
 Runs the treated and control nuisance fits on a shared fold partition and
-applies the TATE aggregation rule with one common source-weight
-vector. The existing arm-specific \code{run_rhc_experiment()} interface is
+applies the selected TATE aggregation rule. The historical common-weight
+default is retained; joint TATE uses two arm-specific weight vectors.
+The existing arm-specific \code{run_rhc_experiment()} interface is
 unchanged and remains available for secondary potential-outcome summaries.
 }

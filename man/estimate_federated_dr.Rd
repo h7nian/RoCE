@@ -51,6 +51,8 @@ List with estimate, variance, se
 }
 \description{
 Each source site uses density ratio weighting to estimate E_t[Y(1)].
-All sites estimate the SAME estimand, then aggregate with IVW.
-This is the theoretically correct federated baseline.
+Under the transport assumptions the site estimates target the same mean and
+are combined with IVW. Reported derivatives condition on nuisance tuning,
+active sets and the fitted IVW weights; uniform selection inference is not
+implied by this calculation.
 }
