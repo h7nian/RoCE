@@ -168,7 +168,7 @@ install.packages(c("testthat", "withr"))
 ### From Source
 
 ```bash
-git clone https://github.com/h7nian/FACE-HD.git
+git clone https://github.com/h7nian/RoCE.git FACE-HD
 cd FACE-HD
 R CMD INSTALL .
 ```

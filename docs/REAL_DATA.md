@@ -12,7 +12,7 @@ R >= 4.0 and a C++ compiler are required (Rtools on Windows, Xcode command-line
 tools on macOS, or the R development toolchain on Linux).
 
 ```bash
-git clone https://github.com/h7nian/FACE-HD.git
+git clone https://github.com/h7nian/RoCE.git FACE-HD
 cd FACE-HD
 Rscript -e 'install.packages(c("Rcpp", "RcppEigen", "glmnet", "digest", "doParallel"), repos="https://cloud.r-project.org")'
 R CMD INSTALL .
