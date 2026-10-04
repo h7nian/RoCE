@@ -26,15 +26,14 @@
 \newtheorem{assumption}{Assumption}
 \title{RoCE-K\\[3pt]\large Method design for weak source bias and increasing site counts}
 \author{Sinian Zhang}
-\date{October 2026\\\small Design version 6, 4 October 2026}
+\date{October 2026\\\small Design version 5, 3 October 2026}
 \begin{document}
 \maketitle
 \begin{center}
 \fbox{\parbox{0.93\linewidth}{\textbf{Research design for discussion.}
 This document specifies the residual Fourier--dispersion compatibility procedure,
 its bounded-score calibration, joint TATE error control, and a separate
-conditional exact-calibration benchmarks for finite strata and continuous
-linear models. The latter uses leave-out dispersion correction.
+conditional exact-calibration benchmark with finite-stratum guarantees.
 Earlier moment and joint GLS designs remain separate comparison documents.
 It does not claim a completed high-dimensional RoCE-K theorem, a validated final
 confidence procedure, or a new optimality result. The current RoCE manuscript
@@ -44,7 +43,6 @@ and its production defaults are separate.}}
 \input{sections/training_average}
 \input{sections/joint_contrast}
 \input{sections/conditional_standardization}
-\input{sections/continuous_balance}
 \bibliographystyle{plainnat}
 \bibliography{references}
 \end{document}

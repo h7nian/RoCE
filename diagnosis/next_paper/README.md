@@ -5,6 +5,44 @@ The current paper's estimator and frozen Slurm campaigns remain separate.
 Numerical references, fitted-score diagnostics and conditional derivations
 must not be described as a completed full-method theorem.
 
+## Continuous linear-balance benchmark (4 October 2026, v19)
+
+NEXT-PAPER CONTINUOUS LINEAR BALANCE (2026-10-04, v19): completed6600
+fresh-design repetitions,33 settings x200,n1000/site. The source module now has
+a separate continuous-covariate linear-model benchmark: exact signed balance,
+unbiased leave-out variance correction,and a patient-level conditional MGF
+bound for dispersion. All sources,including invalid ones,must have conditional
+means in the fitted linear span. This is not nonlinear or sparse p>n RoCE.
+
+At p20,K256,weak bias,universal-range interval length is .2623 versus .3792
+for equally protected target-only; ordinary target-normal is still .1234.
+At p200,K64,the corresponding lengths are .3485/.4081/.1535. In-model protected
+coverage ranges .995--1. K2048 weak-bias naive coverage is .360,while its
+all-valid control is .975 and protected coverage1. Strong-bias projection
+improves midpoint RMSE,but midpoint is better for cancellation/weak shifts.
+Declared CATE range .5 is a separate stronger-class sensitivity,not a fitted
+range. Nonlinear misspecification remains outside the theorem.
+
+51 research tests passed;18 saved repetitions replayed exactly. All231 metric
+rows were independently recomputed. Valid-source drift is below1.84e-15,and
+mean estimated/oracle source variance ratios range .9990--1.0009. No repeats
+were dropped. Old results and current-paper production estimators are preserved.
+Artifacts: implementation/next_paper/v19/continuous_balance_20261004_v1/.
+Published RoCE-K version6: 0772c6016451401167c8c269158ce4d55fa0470e; entries main.tex and experiments_20261004.tex.
+Next: certified target-composition ranges and approximate/nonlinear remainder
+control,with the stronger target-only comparator retained.
+
+The new source files in `residual_compatibility/` are `continuous_balance.py`,
+`run_continuous_balance.py`, `review_continuous_balance.py`, and their tests.
+The runner exposes `--profile main|boundary|stress`, `--repeats`, and `--workers`.
+Every source profile conditions on designs,uses all1000 patients,and permits
+arbitrarily weak deviations. QR rank/leverage guards are outcome-independent;
+unsupported source designs use target-only and unsupported targets use[-1,1].
+The main design retains version5 as `legacy_design_v5.tex`.
+Read the compiled report or `report/REPORT_zh.txt`; main/normal target comparisons,
+paired Monte Carlo errors,and the deliberate nonlinear failure of assumptions
+remain explicit. These prototypes are separate from the production R package.
+
 ## Joint contrast and conditional exact calibration (3 October 2026, v18)
 
 NEXT-PAPER JOINT CONTRAST AND EXACT CALIBRATION (2026-10-03, v18): completed

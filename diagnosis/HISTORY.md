@@ -2126,3 +2126,13 @@ reported its weak-bias tradeoff, and checked naive pooling failure under growing
 K without changing its variance estimator. Forty-five research tests pass.
 Artifacts: implementation/next_paper/v18/joint_contrast_20261003_v1/.
 No production-estimator or current-paper Overleaf changes in this research step.
+
+## 2026-10-04 — continuous linear balance and leave-out dispersion [COMPLETE]
+
+Derived and independently checked a conditional bounded-outcome dispersion
+bound for exact linear balancing with heteroskedastic leave-out correction.
+Completed33 settings x200 fresh repeats through p200 and K2048; retained
+normal-target comparisons,declared-range sensitivity and nonlinear boundaries.
+51 tests pass and18 replayed repetitions match exactly. Published the version6
+method and report in RoCE-K. Artifacts: implementation/next_paper/v19/
+continuous_balance_20261004_v1/. Production RoCE and ENAR are unchanged.

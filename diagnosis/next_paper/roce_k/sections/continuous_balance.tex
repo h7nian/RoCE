@@ -1,0 +1,202 @@
+\section{Continuous covariates: exact linear balance and leave-out dispersion}
+\label{sec:continuous-balance}
+
+The finite-stratum benchmark does not supply a variance correction for
+arbitrary continuous covariates. This section gives a separate conditional
+linear-model branch. It combines established exact linear balancing with
+leave-out heteroskedastic variance correction \citep{arb2018,kss2020}, and
+then calibrates the source dispersion at the patient level. The new coverage
+argument below is not a direct application of their asymptotic theorems.
+
+\subsection{Model and score construction}
+
+Condition on all covariates and treatment assignments, $\mathcal D$. Outcomes
+are independent given $\mathcal D$ and lie in $[0,1]$. For every site $j$ and
+arm $a$, including invalid sources, assume
+\[
+ \E(Y_{ji}\mid X_{ji},A_{ji}=a)=\phi(X_{ji})^T\beta_j^a.
+\]
+The basis contains an intercept. Invalid sources may have arbitrary different
+coefficients subject to the outcome range. At least $g_a$ sources share the
+target conditional mean for arm $a$. There is no minimum nonzero source shift.
+Usual causal identification assumptions connect the target conditional means
+to potential-outcome means. This is an outcome-model-assisted branch, not a
+claim of double robustness under arbitrary outcome misspecification.
+
+Let $b_t=\mathbb P_t\phi(X)$ and let $X_{ja}$ stack the observed design rows
+for source $j$, arm $a$. If the matrix has full column rank, define
+\[
+ \gamma_{ja}=X_{ja}(X_{ja}^TX_{ja})^{-1}b_t,\qquad
+ Z_j^a=\gamma_{ja}^TY_{ja},\qquad X_{ja}^T\gamma_{ja}=b_t.
+\]
+These are minimum-Euclidean-norm \emph{signed} balancing weights. For any
+common linear predictor $\phi^T\widehat\beta^a$,
+\[
+ b_t^T\widehat\beta^a+
+ \gamma_{ja}^T(Y_{ja}-X_{ja}\widehat\beta^a)=Z_j^a.
+\]
+Thus estimation of this common predictor cancels exactly. A valid source has
+conditional mean $\mu_{t,X}^a=b_t^T\beta_t^a$. The final estimand remains the
+population TATE, with a separate target-composition allowance as below.
+Weights can be negative; these are not the positive merged weights of the
+current production RoCE estimator.
+
+The computations require more observations than basis columns in each arm,
+full rank, and a fixed leverage guard. The implementation uses QR, rejects
+condition numbers above $10^8$ or leverage at least $.98$, and verifies balance
+to $10^{-9}$. Those decisions depend only on $\mathcal D$. Source design failure
+uses protected target-only; target design failure gives $[-1,1]$. No failed
+repetition is discarded. In particular, this is not a $p>n$ sparse-fit procedure.
+
+\subsection{Unbiased noise removal without replicate covariate cells}
+
+First consider one source coordinate and suppress the arm. Write
+\[
+ H_j=X_j(X_j^TX_j)^{-1}X_j^T,\quad h_{ji}=H_{j,ii},\quad
+ W_j=Y_j-\tfrac12\boldsymbol1,\quad e_j=(I-H_j)W_j,
+ \quad d_{ji}=\frac{\gamma_{ji}^2}{1-h_{ji}}.
+\]
+The leave-out mean-variance estimate is
+\[
+ \widehat v_j=\sum_i d_{ji}W_{ji}e_{ji},\qquad
+ \E(\widehat v_j\mid\mathcal D)
+     =\sum_i\gamma_{ji}^2\Var(Y_{ji}\mid\mathcal D).
+\]
+The equality follows from $(I-H_j)\E(W_j\mid\mathcal D)=0$. Centering by
+$1/2$ is deterministic and leaves the variance identity unchanged. Individual
+variance estimates may be negative; they are \emph{not} truncated inside the
+dispersion statistic. The leave-out idea and its heteroskedastic unbiasedness
+come from \citet{kss2020}; below we give our bounded-outcome concentration bound.
+
+Let $A=I/K-\boldsymbol1\boldsymbol1^T/K^2$, $a_K=(K-1)/K^2$, and
+$\theta_j=\E(Z_j\mid\mathcal D)$. Then
+\[
+ \widehat D=Z^TAZ-a_K\sum_j\widehat v_j,\qquad
+ D=\theta^TA\theta,\qquad \E(\widehat D\mid\mathcal D)=D.
+\]
+Unlike a within-cell sample variance, this correction remains unbiased when
+all observed covariate vectors differ, provided the stated linear mean model
+holds at every source.
+
+\subsection{A finite-sample conditional dispersion bound}
+
+Define the design quantities
+\[
+ S_j=\|\gamma_j\|_2^2,\quad G_j=\sum_i d_{ji}^2,\quad
+ C_j=\diag(d_j)-\tfrac12\{\diag(d_j)H_j+H_j\diag(d_j)\},\quad F_j=\|C_j\|_F^2.
+\]
+The bound can be computed without patient-by-patient dense matrices:
+\begin{align*}
+ F_A&=\frac{(\sum_j S_j)^2+\{(K-1)^2-1\}\sum_jS_j^2}{K^4},\\
+ L&=\frac{2\max_j S_j}{K},\qquad
+ Q_0=\frac{F_A+a_K^2\sum_j(F_j+G_j)}8,\qquad
+ c=\frac{a_K}2\max_{ji}d_{ji}.
+\end{align*}
+If $X_j=U_jR_j$ is a thin QR factorization,
+\[
+ F_j=\sum_i d_{ji}^2(1-\tfrac32h_{ji})
+       +\tfrac12\|U_j^T\diag(d_j)U_j\|_F^2.
+\]
+
+\begin{proposition}[Continuous linear-balance dispersion]
+For the conditional bounded-outcome linear model above,
+\[
+ \log\E\{\exp[-t(\widehat D-D)]\mid\mathcal D\}
+ \le\frac{t^2(LD+Q_0)}{2(1-ct)},\qquad 0<t<1/c.
+\]
+Consequently, with $x=\log(1/\alpha_D)$ and $y=\widehat D+cx$,
+\[
+ U_D=\left[y+xL+\sqrt{\{2xLy+x^2L^2+2xQ_0\}_+}\right]_+
+\]
+satisfies $\Prb(D\le U_D\mid\mathcal D)\ge1-\alpha_D$.
+For $K=1$, $D=U_D=0$.
+\end{proposition}
+\begin{proof}
+Let $\Gamma$ have disjoint source blocks $\gamma_j$ as its columns, and put
+$Q=\Gamma A\Gamma^T-a_K\operatorname{blockdiag}(C_j)$. Its diagonal is zero,
+$\widehat D=W^TQW$, and $\E(W)^TQ\E(W)=D$. Since $H_j\gamma_j=\gamma_j$,
+$\gamma_j^TC_j\gamma_j=0$. Therefore
+\[
+ \|Q\|_F^2=F_A+a_K^2\sum_jF_j,\qquad
+ \lambda_{\min}(Q/4)\ge-a_K\max_{ji}d_{ji}/4=-c/2.
+\]
+Let $m=\E(W\mid\mathcal D)$. Because $\|m\|_\infty\le1/2$ and
+$A^2=A/K$, the decomposition
+\[
+ (Qm)_j=\gamma_j(A\Gamma^Tm)_j
+       -\tfrac{a_K}2(I-H_j)\diag(d_j)m_j
+\]
+implies
+\[
+ \|Qm\|_2^2\le \frac{2\max_jS_j}{K}D+\frac{a_K^2}{8}\sum_jG_j.
+\]
+The zero-diagonal coordinatewise argument replaces centered bounded outcomes
+by independent Gaussians of variance proxy $1/4$ in the MGF. The resulting
+quadratic and linear terms have matrix $Q/4$ and vector $Qm/2$. Bounding the
+Gaussian determinant and inverse by the negative eigenvalue bound gives
+\[
+ \log\E e^{-t(\widehat D-D)}
+ \le\frac{t^2\{\|Qm\|_2^2+\|Q\|_F^2/8\}}{2(1-ct)}.
+\]
+Substitution proves the MGF inequality; the sub-gamma lower tail and quadratic
+inversion give $U_D$. When the inversion has an empty feasible set, returning
+zero occurs outside the protected event and does not weaken its guarantee.
+\end{proof}
+
+For a TATE coordinate, stack the two arm designs block-diagonally and stack
+weights $(\gamma_{j1},-\gamma_{j0})$. The same result applies, with summed
+$S_j,G_j,F_j$ and the maximum of the two arm-specific $\max_i d_{ji}$.
+No Gaussian outcome approximation or individual-source variance confidence
+interval is used.
+
+\subsection{From dispersion to a population TATE interval}
+
+Use the arm-wise bias certificate
+$B_A=\sum_a\sqrt{(K-g_a)U_a/g_a}$. If $g_\cap=g_1+g_0-K>0$, a contrast
+certificate is $B_C=\sqrt{(K-g_\cap)U_\tau/g_\cap}$. The adaptive option
+uses $\min(B_A,B_C)$ only after simultaneously calibrating both. This preserves
+arm-specific valid sets and permits arbitrarily small source deviations.
+
+The source center and its conditional outcome radius are
+\[
+ T_S=K^{-1}\sum_j(Z_j^1-Z_j^0),\qquad
+ r_S=\sqrt{\frac{\log(2/\alpha_S)}{2K^2}\sum_{ja}S_{ja}}.
+\]
+The full-target linear-balance estimate has the analogous radius
+$r_T=\sqrt{\log(2/\alpha_T)\sum_aS_{ta}/2}$.
+Use the previous conditional intersection, shorter-empty-fallback, and target
+projection rules. For a \emph{declared} CATE range bound $R$, add
+$R\sqrt{\log(2/\alpha_X)/(2n_t)}$ to the conditional endpoints and clip to
+$[-1,1]$. The primary analysis uses the universal bound $R=2$. A sensitivity
+with $R=.5$ imposes an extra class assumption; it is not an estimated range or
+an input obtained from the simulated truth.
+
+The fixed failure allocation is $.01$ for target composition, $.01$ each for
+source and target outcome noise, and $.02$ for the dispersion family. In the
+adaptive case, the latter splits into $.005$ per arm and $.01$ for the contrast.
+The arm-only option uses $.01$ per arm. Thus the finite-sample coverage bound
+is at least $.95$ for every $K$ under the stated class. A standalone protected
+target comparator instead allocates $.025$ each to outcomes and composition.
+An ordinary target-normal interval is retained as an asymptotic comparison.
+
+If uniformly $S_j=O(n_s^{-1})$, $G_j,F_j=O(n_s^{-3})$,
+$\max_i d_{ji}=O(n_s^{-2})$, and valid proportions stay positive, then at
+$D=0$ the bias certificate is $O_p(n_s^{-1/2}K^{-1/4})$ and source outcome
+noise is $O(n_s^{-1/2}K^{-1/2})$. These are conditional design requirements,
+not an automatic consequence of increasing $K$. Poor overlap, high leverage,
+large basis dimension, or model approximation error can invalidate the rate
+conditions or require fallback. The target population-composition term remains.
+
+For communication, the target sends its empirical feature mean and the shared
+basis definition. Each source returns its two estimates, leave-out variance
+estimates and design summaries $S_j,G_j,F_j,\max_i d_{ji}$. The contrast uses
+the same summaries; aggregation and interval construction occur at the target.
+Thus this particular linear branch admits one batched exchange. The prototype
+emulates that computation locally; it is not a deployed distributed service.
+
+The experiment includes deliberately nonlinear conditional means to expose
+this branch's boundary. Structural conditional transport alone does not make
+its leave-out variance or linear balancing exact under misspecification.
+Sparse $p>n$ fitting and nonlinear outcome models still require a controlled
+approximation remainder and a corresponding correction to the quadratic
+statistic; neither is established by this section.

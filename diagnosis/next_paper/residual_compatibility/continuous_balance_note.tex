@@ -1,0 +1,160 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern,amsmath,amssymb,booktabs,graphicx}
+\usepackage[colorlinks=true,linkcolor=blue,urlcolor=blue]{hyperref}
+\setlength{\parindent}{0pt}\setlength{\parskip}{5pt}
+\title{RoCE-K: continuous-covariate linear-balance validation}
+\author{}\date{4 October 2026}
+\begin{document}\maketitle
+
+\textbf{Finding.} A feasible conditional linear-model branch now extends the
+finite-stratum benchmark to continuous covariates. Exact signed balancing
+removes the common linear outcome fit, and leave-out variances remove
+sampling noise from source dispersion. It improves interval length against
+an equally protected target-only reference, including a $p=200$ check, but
+remains conservative relative to ordinary target-normal intervals. This is
+not a validated general nonlinear or sparse $p>n$ RoCE procedure.
+
+\section{What was proved and implemented}
+
+Every site's conditional outcome mean, including invalid sources, must lie
+in the chosen linear basis. Invalid coefficients may differ arbitrarily
+within the bounded-outcome model; no minimum deviation is imposed. At least
+$3K/4$ sources are valid in each arm, with possibly different valid sets.
+QR computes minimum-norm signed weights matching the target empirical feature
+means. All 1,000 observations per site are used; no true nuisance parameters
+are supplied to inference.
+
+Within this branch, any common linear fitted predictor cancels algebraically.
+The leave-out variance correction is unbiased under heteroskedasticity. The
+source dispersion statistic becomes a zero-diagonal patient quadratic form,
+for which the main design supplies a finite-sample conditional MGF bound and
+an explicit upper confidence bound. It requires no simultaneous confidence
+interval for every source variance and no Gaussian approximation to source
+estimates. These are new derivations for this benchmark, built on established
+balancing and leave-out principles.
+
+Arm-wise and contrast dispersion certificates are compared using a simultaneous
+error allocation. The resulting source band is combined with the full-target
+conditional band; target-covariate composition uncertainty is added once.
+The primary population analysis uses the universal CATE range bound 2.
+A separate range-.5 sensitivity assumes that stronger model class in advance.
+It must not be presented as a data-estimated range.
+
+A target projection supplies the recorded point estimate; the interval midpoint
+is also evaluated. Rank or leverage problems trigger a design-only protected
+fallback. There were no design failures in this study. This use of all outcomes
+is justified by design-only weights and exact linear cancellation; it does not
+justify ignoring cross-fitting boundaries in the general fitted RoCE method.
+
+\section{Prespecified experiments and checks}
+
+There are 6,600 distinct setting-specific repetitions, each with fresh covariates,
+treatments and outcomes: 18 main settings, nine boundary settings and six
+weak-bias stress settings, all with 200 repetitions. Seven method rows per
+setting give 231 summaries. A 15-repetition runtime pilot and 18 same-seed
+replays are excluded from the reported Monte Carlo count.
+
+The target has independent uniform $[-1,1]$ covariates. Source covariates use
+density $2^{-p}\prod_{r=1}^4(1+\delta_r x_r)$, with
+$(\delta_1,\ldots,\delta_4)=s(1,-.6,.4,-.3)$ and default $s=.4$.
+Shift sensitivities use $s=0,.8$. Target treatment probabilities are
+$.5+.12x_1-.08x_2$; source $j$ adds $.04\cos(j-1)$. The target outcome means are
+\[
+ m_t^0(x)=.35+.06x_1-.035x_2+.025x_3+.02x_4,\qquad
+ m_t^1(x)=m_t^0(x)+.10+h x_1.
+\]
+Thus the population TATE is fixed at .10. Main and boundary panels use
+$h=.15$; the weak-bias stress panel uses $h=0$. The main panel has
+$p\in\{4,10,20\}$ and $K\in\{16,64,256\}$ under all-valid and weak-bias
+configurations. The boundary panel adds $p=50,100,200$ at $K=64$, source-tilt
+sensitivities, strong shifts, cancellation, disjoint arm-valid sets and deliberate
+nonlinearity. Weak treated-arm shifts affect one quarter of sources and equal
+$2\sqrt{.5/1000}\,K^{-1/4}$; strong shifts equal .15.
+
+All feasible intervals use observed summaries and fixed class assumptions.
+Oracle conditional means/variances are used only in audits. Across in-model
+settings, maximum valid-source drift was $1.84\times10^{-15}$; maximum balance
+error was $1.56\times10^{-15}$. Mean estimated/oracle source variance ratios
+ranged from .9990 to 1.0009. No dispersion upper-bound failure was observed.
+The full research suite passed 51 tests, including dense-matrix checks, 256
+exact non-Gaussian configurations, literal leave-one-out refits and rank failure.
+Representative saved intervals reproduced exactly.
+
+\section{Continuous and moderately high-dimensional results}
+
+The following are weak-bias results for the adaptive dispersion procedure with
+the universal range bound. All comparators use the same patient samples.
+The last column is a paired length difference relative to protected target-only,
+with its Monte Carlo standard error.
+
+\begin{center}\small
+\resizebox{\linewidth}{!}{\input{continuous_table}}
+\end{center}
+
+At $p=20,K=256$, length falls from .3792 to .2623, approximately 31\%.
+At $p=200,K=64$, it falls from .4081 to .3485, approximately 15\%.
+The $p=200$ regression remains below the roughly 500 observations per treatment
+arm; no sparse $p>n$ claim follows. Signed weighting and leverage also become
+more costly as dimension increases.
+
+Ordinary target-normal intervals are substantially shorter. Protected coverage
+ranges from .995 to 1 over the in-model panels, so conservatism remains clear.
+With 200 repetitions, zero observed failures has a two-sided exact 95\%
+coverage lower limit of about .982. Observed coverage alone is not the proof.
+
+\begin{figure}[ht]\centering
+\includegraphics[width=\linewidth]{continuous_comparison.pdf}
+\caption{Weak-bias interval lengths relative to protected target-only (left)
+and ordinary target-normal (right), using the universal CATE range bound.
+Each setting has 200 fresh repetitions and 1,000 patients per site.}
+\end{figure}
+
+\section{Weak bias with growing source count}
+
+The stress panel has $p=10$ and constant target treatment effect. Consequently
+its conditional target effect equals its population effect; the naive conditional
+source interval and the protected population interval cover the same truth.
+The naive interval uses estimated leave-out variances and ignores source bias.
+
+\begin{center}\small
+\resizebox{\linewidth}{!}{\input{continuous_stress_table}}
+\end{center}
+
+The all-valid naive control remains near nominal coverage. Under weak shifts,
+coverage falls to .360 at $K=2048$, even though each individual shift decreases.
+The protected method retains coverage, with length .2310 versus .3781 for
+protected target-only. This confirms the intended stress mechanism rather than
+an artifact of deliberately underestimated source variances.
+
+\begin{figure}[ht]\centering
+\includegraphics[width=\linewidth]{continuous_stress.pdf}
+\caption{Constant-effect weak-bias stress test. Left: naive pooling and protected
+coverage. Right: the universal range-2 procedure and the stronger declared
+range-.5 sensitivity. The smaller range is an additional assumption, not an
+estimated feature of these data.}
+\end{figure}
+
+\section{Boundaries and point-estimate tradeoffs}
+
+\begin{center}\small
+\resizebox{\linewidth}{!}{\input{boundary_table}}
+\end{center}
+
+Projection improves strong-bias RMSE relative to the midpoint in this panel,
+while midpoint is substantially better under cancellation and disjoint weak
+shifts. No point rule is selected separately for each scenario.
+The nonlinear row deliberately violates the all-site linear-mean requirement.
+Its good observed coverage does not extend the theorem: valid transported
+sources then have conditional fitted drift as large as .0180 in this panel, and the leave-out variance
+correction is no longer justified by the preceding identity.
+
+The remaining bottlenecks are now more specific. The universal range-2 target
+composition allowance is conservative, especially for nearly constant treatment
+effects. A data-derived range would need its own simultaneous certificate.
+For sparse or nonlinear outcome fitting, approximate balance leaves a remainder;
+that remainder must enter both source validity and quadratic noise correction.
+These issues should be solved before labeling this branch a general RoCE-K method.
+
+\end{document}
