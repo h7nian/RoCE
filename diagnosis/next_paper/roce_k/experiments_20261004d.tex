@@ -1,0 +1,197 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern,amsmath,amssymb,booktabs,graphicx}
+\usepackage[colorlinks=true,linkcolor=blue,urlcolor=blue]{hyperref}
+\setlength{\parindent}{0pt}\setlength{\parskip}{5pt}
+\setlength{\emergencystretch}{2em}
+\title{RoCE-K: local weak-bias precision and design-branch calibration}
+\author{}\date{4 October 2026}
+\begin{document}\maketitle
+
+\textbf{Summary.} The linear-model main line now has an all-valid local
+length lower bound, derived from exact Bernoulli likelihoods. The construction
+also embeds in an i.i.d. randomized population-TATE experiment. A separate
+implementation improvement shares the population-composition error event
+across design branches, so pre-outcome abstention returns the full-budget
+protected target interval. All source/target model assumptions remain explicit.
+
+\section{Accounting and what was held fixed}
+
+There are 4,800 fresh outcome setting-repetitions in 24 local weak-bias cells,
+each with 200 repetitions. A further 2,800 repetitions from version 8 are
+reanalyzed in pairs under alternative budget/design rules; they are not counted
+as new independent datasets. Within the local panel, patterns share random
+number streams at each $K$. Exact finite-likelihood calculations are separate
+from Monte Carlo repetitions.
+
+The paired panel retains the previous DGP, seeds, feature map, valid-count
+assumption, fitted target certificate and point-projection rule. Its legacy
+intervals and point estimates reproduce the earlier saved arrays exactly.
+Prespecified design policies compare no weight threshold, inflation thresholds
+2, 4 and 8, a zero-observed-dispersion reference gate, and threshold 4 plus
+that gate. Thresholds are not selected using observed coverage or interval
+length. The primary paired panel assumes linear means at every site; the
+inference interface also accepts the broader protected model modes.
+
+\section{Budget allocation with a valid design-only fallback}
+
+The old source-assisted ledger spent $.005$ on the target coefficient event,
+$.01$ on population composition and $.035$ on conditional outcome/dispersion
+events. Its design-fallback branch nevertheless used only $.01$ for target
+outcome noise. Increasing both target noise and composition allowances only
+after observing which design branch occurred would need additional justification:
+the branch may depend on target covariates.
+
+The shared-composition rule instead fixes $.005$ for the coefficient event
+and $.0225$ for one composition event across both branches. Conditional on
+the full design, the remaining $.0225$ is split across source noise, target
+noise and dispersion in the old $.01:.01:.015$ proportions when borrowing;
+on abstention it all goes to target noise. Its design-fallback interval is
+exactly the previously defined complete-budget protected target-only interval.
+This statement is checked separately in every applicable saved repetition.
+
+\begin{center}\small
+\resizebox{\linewidth}{!}{\input{experiments/20261004d/budget_table}}
+\end{center}
+
+The table reuses the independent-seed confirmation cohort from version 8.
+For $p=4,K=2048,h=0$ with weak bias, mean population length changes from
+$.1123$ to $.1043$; ordinary target Wald length is $.1227$. Both protected
+versions have observed coverage $1.000$, and the Wald reference has $.930$.
+The latter's 200-repeat binomial interval still includes $.95$. The new
+length is approximately 15\% below the Wald reference in this setting.
+
+The allocation makes conditional source protection slightly wider while
+reducing the target composition allowance by more. This is a reallocation
+under the same total error guarantee, not a change in the DGP or a use of
+true nuisance quantities. At $p=10$ or with heterogeneous target CATE, the
+new method remains longer than ordinary Wald inference. The paired improvement
+does not constitute another independent-seed replication of the new allocation.
+
+\section{Design variance costs and pre-outcome abstention}
+
+Weight inflation is $n_{ja}\|\gamma_{ja}\|_2^2$ in each arm. The reference
+gate evaluates the dispersion certificate at zero observed dispersion using
+only retained design factors. It abstains when this reference source radius
+is no smaller than the complete-budget target noise radius. This is a
+prespecified precision heuristic, not a lower bound on the realized source
+interval or a proof that screening is optimal.
+
+\begin{center}\small
+\resizebox{\linewidth}{!}{\input{experiments/20261004d/design_budget_table}}
+\end{center}
+
+The displayed settings have weak source bias. In the difficult
+$n_s=120,p=45,K=64$ setting, the old method retained eligibility but had
+length $.3875$. The shared allocation alone gives $.3801$. The reference
+gate abstains in every repetition and returns the complete target interval,
+length $.3546$, with population/conditional coverage $1.000/.995$.
+Threshold 4 also abstains in every repeat. Threshold 8 abstains in only
+47.5\% and has average length $.3680$, showing that threshold choice has a
+real precision cost. All these prespecified sensitivity results are retained.
+
+At $n_s=200,p=45,K=64$, threshold 4 alone keeps borrowing and gives $.3794$;
+the reference gate instead returns the target interval of length $.3539$.
+In stable $n_s=1000,p=4,K=256$ designs, neither gate nor these thresholds
+abstains. With a prespecified eighth of sources having singular designs,
+the shared-budget removal interval has length $.1535$, versus $.1617$ in
+version 8 and $.2825$ for protected target-only. Its observed conditional
+and population coverage are both $1.000$.
+
+The main text additionally shows that a fixed inflation bound and leverage
+bound imply $S_j=O(n_*^{-1})$, $G_j,F_j=O(n_*^{-2})$ and
+$d_j^{\max}=O(n_*^{-1})$, where $n_*$ is the smallest retained arm size.
+These weaker, observable design bounds already suffice for the conditional
+fourth-root rate when adjusted valid proportions stay positive and source
+dispersion is local. They do not guarantee attractive finite-sample constants
+or remove the target-composition cost.
+
+\section{Local weak-bias experiment}
+
+This panel deliberately isolates the source-inference problem. There are
+500 patients in each arm at every site, an exact intercept model, and constant
+control mean $.4$. No population-composition enlargement is needed within
+this declared model. Source counts are $16,64,256,1024,4096,16384$.
+
+For the mean-matched alternative, target and valid-source treated means are
+$.5+\delta_K$, while invalid-source means are $.5-4\delta_K$, where
+\[
+ \delta_K=\frac{c}{\sqrt{500}\,K^{1/4}},\qquad c\in\{.1,.25\}.
+\]
+Valid flags are drawn with probability $.8$ and conditioned to contain at
+least $\lceil.75K\rceil$ valid sources. These flags are used only to generate
+data. Inference knows only the valid-count guarantee. Relative to target,
+invalid-source bias is $-5\delta_K$, which vanishes as $K$ grows. All-valid
+controls and same-direction shifts of size $5\delta_K$ are also included.
+
+The conditional protected procedure assigns $.0125$ each to source and target
+noise and $.025$ to dispersion. The standalone protected target uses $.05$
+for outcome noise. Ordinary target Wald and naive source-pooling Wald intervals
+use estimated Bernoulli variances and normal critical values. All intervals
+target the setting's own effect, including $.1+\delta_K$ in the mean-matched
+alternative; the true effect is not incorrectly held at $.1$ across worlds.
+
+\begin{center}\small
+\resizebox{\linewidth}{!}{\input{experiments/20261004d/local_table}}
+\end{center}
+
+The table uses $c=.25$. At $K=16384$, the invalid-source mean bias is about
+$.00494$, versus a single treated-source standard error near $.02236$.
+Nonetheless naive pooling has coverage $.020$ because its standard error is
+much smaller. The protected interval has coverage $1.000$ and length $.0120$.
+The same-direction setting gives naive coverage $.010$ and protected coverage
+$1.000$. In the all-valid control naive coverage is $.960$ and protected
+coverage $1.000$: paying for weak-bias honesty has a visible length cost even
+at favorable data. Small-$K$ protected intervals can remain wider than target
+Wald intervals, as the first row shows.
+
+\begin{figure}[ht]\centering
+\includegraphics[width=\linewidth]{experiments/20261004d/local_weak_bias.pdf}
+\caption{Exact intercept Bernoulli experiment, mean-matched weak deviations
+with $c=.25$, 200 repetitions per source count. Both target and every source
+contain 1,000 patients. No Gaussian approximation is used by the protected
+procedure.}\end{figure}
+
+\section{The corresponding lower bound}
+
+Version 9 defines a local class with maximum source bias bounded by a constant
+times $r_{n,K}=\min\{n_s^{-1/2}K^{-1/4},n_t^{-1/2}\}$. A mean-matched
+two-point source mixture cancels the first-order likelihood term. Its exact
+chi-square divergence starts at order $n_s^2\delta^4$, so $K$ sources cannot
+uniformly distinguish shifts on the fourth-root scale. The construction
+includes the trusted target information and conditions the source-label prior
+to meet the deterministic valid-count guarantee.
+
+The resulting bound is on expected length \emph{at the all-valid null}, for
+intervals honest over the local weak-bias class. It is stronger in this respect
+than the preceding unrestricted-invalid worst-case bound. An i.i.d. randomized
+patient submodel gives the same calculation for population TATE, with covariates
+ancillary and constant CATE. For $n_s=n_t=1000$, $K=4096$, $c=.1$ and
+valid-flag probability $.8$, the exact audit gives total-variation upper bound
+$.0296583$, valid-count tail $3.13\times10^{-15}$, and expected-length lower
+bound $.00034403$ at the all-valid null.
+
+The bound's constants were not optimized. It establishes a necessary scale,
+not finite-sample optimality of the current interval. With comparable sample
+sizes, fixed dimension, stable designs, constant true CATE and $K=o(n^2)$,
+the main upper bound has the same order because its extra $n^{-1}$ composition
+term is smaller. Heterogeneous CATE, growing target dimension and honest
+adaptation over arbitrary nonlinear invalid means remain separate questions.
+
+\section{Validation and remaining work}
+
+The 70 research tests cover exact patient-likelihood identities in both
+experiments, count-conditioning and target information, all-valid rate scaling,
+legacy inference parity, original valid-count bookkeeping, design-only gate
+inputs and exact full-target fallback. Every reported coverage and length is
+recomputed from saved endpoints: 140 budget-method rows, 294 paired comparisons
+and 96 local-method rows. Earlier code and all results are archived; production
+RoCE/ENAR is unchanged.
+
+The next precision question concerns constants and adaptation over the broader
+invalid-source class. The new lower bound does not imply that the current
+$n_s^{-1/2}$ bounded-invalid certificate floor is optimal at all-valid data.
+Additional improvements must preserve the joint error accounting and avoid
+using outcome-dependent screening without an accompanying selection argument.
+\end{document}

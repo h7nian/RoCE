@@ -27,27 +27,24 @@
 \newtheorem{assumption}{Assumption}
 \title{RoCE-K\\[3pt]\large Method design for weak source bias and increasing site counts}
 \author{Sinian Zhang}
-\date{October 2026\\\small Design version 9, 4 October 2026}
+\date{October 2026\\\small Design version 8, 4 October 2026}
 \begin{document}
 \maketitle
 \begin{center}
 \fbox{\parbox{0.93\linewidth}{\textbf{Research design for discussion.}
 The main line is conditional balance, leave-out noise correction, dispersion
-bias protection, and data-derived target composition protection. The primary theory addresses weak bias and growing source counts in a linear
-conditional model, including local precision limits. Broader invalid-source
-models are extensions with explicit precision costs.
+bias protection, and data-derived target composition protection. Controlled
+approximation and random-design growth conditions are stated explicitly.
 Earlier Fourier, moment and nuisance-budget designs remain comparisons in the
 appendix. This is a research design, not a completed general nonlinear or
 sparse high-dimensional method. The current RoCE manuscript
 and its production defaults are separate.}}
 \end{center}
-\input{sections/main_guarantee}
+\input{sections/main_guarantee_v8}
 \input{sections/continuous_balance}
 \input{sections/target_protection}
-\input{sections/design_budget}
-\input{sections/design_stability}
-\input{sections/local_precision}
 \input{sections/approximation_control}
+\input{sections/design_stability}
 \input{sections/precision_boundary}
 \appendix
 \input{sections/hybrid}

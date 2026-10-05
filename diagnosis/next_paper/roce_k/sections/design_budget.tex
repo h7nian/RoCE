@@ -1,0 +1,120 @@
+\section{Design-based abstention and a shared population error budget}
+\label{sec:design-budget}
+
+The version-8 source-failure branch used only the target outcome allowance
+$\alpha_T=.01$, although no sources were used after failure. This needlessly
+widened the fallback relative to the separately reported target-only interval.
+The correction must account for the distinction between conditional outcome
+events and the unconditional target-composition event.
+
+\subsection{Why independently valid branch intervals are insufficient}
+
+Let $B(\mathcal D)$ be the design-only decision to borrow. Both the valid-count
+screen and balance-weight screening can depend on the observed target
+covariates through $b_t$. A composition concentration event is unconditional
+over these covariates. Thus switching between two separately calibrated
+population intervals using $B(\mathcal D)$ does not automatically preserve
+their individual coverage level. In particular, increasing the composition
+allowance only on the fallback branch cannot be justified by conditioning on
+the same design.
+
+Instead fix a single coefficient allowance $\alpha_R$ and a single composition
+allowance $\alpha_X$, common to all branches. Put
+$\alpha_C=\alpha-\alpha_R-\alpha_X$. Conditional on $\mathcal D$, split
+$\alpha_C$ between source noise, target noise and dispersion when borrowing,
+and assign all of it to target noise when abstaining. Both branches then
+satisfy
+\[
+ \Prb\{\tau_X\notin I_X(B(\mathcal D))\mid\mathcal D\}\le\alpha_C.
+\]
+One common coefficient/composition event completes the population argument:
+\[
+ \Prb\{\tau_t\notin I\}\le\alpha_C+\alpha_R+\alpha_X=\alpha.
+\]
+No independence of the decision and target covariates is required. Estimated
+approximation certificates still need their separate failure allowance.
+
+The new \texttt{shared\_composition} allocation uses
+\[
+ \alpha_R=.005,\qquad\alpha_X=.0225,\qquad\alpha_C=.0225.
+\]
+On the borrowing branch, preserve the old conditional proportions:
+\[
+ (\alpha_S,\alpha_T,\alpha_D)
+   =\frac{.0225}{.035}(.01,.01,.015).
+\]
+On the abstention branch, use $\alpha_T=.0225$ alone. Its reported interval
+is then \emph{exactly} the complete-budget protected target-only interval,
+including the same composition certificate.
+
+The legacy allocation remains an explicit control. A second control,
+\texttt{conditional\_reallocation}, keeps its common $\alpha_X=.01$ and
+reassigns the full $.035$ conditional budget to target noise only on design
+fallback. It is valid but generally does not equal the previous standalone
+target interval, whose composition allowance is $.0225$.
+
+This change guarantees equality with target-only on pre-outcome abstention.
+It does not guarantee that every realized borrowing interval is shorter than
+the complete-budget target interval. Selecting the shorter of differently
+calibrated population procedures after seeing outcomes would require a new
+joint coverage argument.
+
+\subsection{Precision-aware rules using design information only}
+
+Numerical estimability does not ensure a useful source estimate. For arm
+$a$ at site $j$, define weight inflation
+\[
+ \mathcal I_{ja}=n_{ja}\|\gamma_{ja}\|_2^2\ge1.
+\]
+It equals one for uniform arm weights. A prespecified threshold $L_I$ removes
+a site if either arm exceeds it. The experiments declare $L_I=4$ as a main
+diagnostic and report $2,8$ sensitivities, without selecting thresholds by
+observed coverage or length. The count update still uses the original
+guarantee: $g_a'=\max(0,g_a-m)$ after all design exclusions.
+
+A separate optional precision gate uses the exact retained design factors
+but sets the \emph{observed} source dispersion to zero in the certificate.
+Let $B_{\rm ref}(\mathcal D)$ be its resulting bias radius and let
+$r_S(\mathcal D)$ be the borrowing-branch noise radius. Abstain if
+\[
+ r_S(\mathcal D)+B_{\rm ref}(\mathcal D)
+ \ge \sqrt{\frac{\log(2/\alpha_C)}2\sum_a S_{ta}}.
+\]
+Approximation modes include their design-based centering/MGF budgets when
+forming $B_{\rm ref}$. This reference calculation is a heuristic for likely
+precision under small observed dispersion. It is not a deterministic lower
+bound on the realized source radius, which also depends on outcomes. Its
+coverage validity follows solely from being fixed by design before outcomes;
+it can discard a borrowing opportunity. The full-target fallback therefore
+has a clear interpretation without an unsupported claim of optimal screening.
+
+\subsection{An observable sufficient condition for the conditional rate}
+
+The weight guard has a theoretical role beyond numerical stability. Suppose
+all retained arms have at least $n_*$ patients, inflation at most $L_I<\infty$
+and leverage at most $h_*<1$, with constants fixed along the sequence. Then
+\[
+ S_j\le\frac{L_I}{n_*},\qquad
+ d_j^{\max}\le\frac{L_I}{(1-h_*)n_*},\qquad
+ G_j,F_j\le\frac{L_I^2}{(1-h_*)^2n_*^2}.
+\]
+Indeed, $\max_i\gamma_i^2\le\sum_i\gamma_i^2=S_j$ and
+$\sum_i\gamma_i^4\le S_j^2$. These bounds are weaker than the
+$n_s^{-3}$ and $n_s^{-2}$ sufficient bounds used in the main theorem, but
+still imply for $K'$ retained sources
+\[
+ L=O\{(n_*K')^{-1}\},\quad
+ Q_0=O\{n_*^{-2}(K')^{-1}\},\quad
+ c=O\{(n_*K')^{-1}\}.
+\]
+Under exact linear means, positive adjusted valid proportions and arm
+$D=O\{n_*^{-1}(K')^{-1/2}\}$, the same argument gives
+\[
+ \E(|J_S|\mid\mathcal D)=O\{n_*^{-1/2}(K')^{-1/4}\}.
+\]
+This is a directly checkable sufficient
+condition on the retained design, without requiring an individual-weight
+bound of order $n_*^{-1}$. Dimension can still affect the probability that
+enough sites pass, the minimum retained arm size and the target-composition
+cost. Fixed thresholds do not remove these issues, and do not guarantee useful
+constants in a small-sample experiment.

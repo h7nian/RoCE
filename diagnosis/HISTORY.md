@@ -2162,3 +2162,15 @@ bound and a finite-support saturated-basis comparison. Added one main algorithm
 and theorem with model-specific precision conditions.62 tests pass; old v20
 outputs replay exactly. Earlier results and manuscript version7 are preserved.
 Artifacts: implementation/next_paper/v21/main_theorem_removal_20261004_v1/.
+
+## 2026-10-04 — local weak-bias limits and safe design abstention [COMPLETE]
+
+Derived an all-valid local length bound using exact Bernoulli mixtures, with
+valid-count conditioning and target information. Added its i.i.d. randomized
+population embedding and explicitly scoped rate matching. Shared composition
+calibration makes pre-outcome abstention equal protected target-only. Evaluated
+weight-inflation guards and a design-only reference-radius gate. Completed
+4,800 fresh local setting-repetitions and paired reanalysis of2,800 existing
+repetitions; all legacy outputs match exactly.70 tests pass. Preserved the
+version8 entry, prior results and production estimators.
+Artifacts: implementation/next_paper/v22/weak_bias_budget_20261004_v1/.

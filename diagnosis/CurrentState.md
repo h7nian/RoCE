@@ -8,6 +8,46 @@ Repository commits use h7nian <zhan9381@umn.edu> and only the main branch.
 Personal tooling/session records stay outside the repository. Earlier Git
 history is archived on scratch under implementation/releases/20261004_authorship_cleanup/.
 
+NEXT-PAPER LOCAL WEAK BIAS AND DESIGN BUDGETS (2026-10-04, v22): completed
+4,800 fresh local-model setting-repetitions and paired reanalysis of 2,800 v21
+repetitions. These are not 7,800 independent new datasets. The linear model is
+the primary paper branch; arbitrary invalid means remain a broader extension.
+
+Derived an exact Bernoulli all-valid expected-length lower bound for intervals
+honest over a local weak-bias class. Count-conditioned priors enforce the valid
+source guarantee; target information is included. The construction covers
+both fixed treatment-arm samples and an i.i.d. randomized population-TATE
+submodel. For comparable sizes it gives the necessary n^(-1/2) K^(-1/4) scale.
+Matching the full population upper rate additionally requires constant CATE,
+fixed dimension, stable designs, K=o(n^2), and negligible bad-design cost.
+This is not optimality for arbitrary nonlinear invalid means or all scenarios.
+
+A common coefficient/composition event now permits safe conditional budget
+reallocation on design-only abstention. With shared composition .0225 and
+coefficient .005, the remaining .0225 is conditional: use all of it for target
+noise on abstention, or split it among source/target/dispersion when borrowing.
+Abstention intervals exactly equal full-budget protected target-only. Legacy
+budgets and conditional-only reallocation remain explicit controls.
+
+Paired p4,K2048,weak-bias population length improves .112275 -> .104327;
+ordinary target Wald is .122697. Observed protected coverage remains1.000.
+The p10 and heterogeneous-CATE controls still exceed Wald length. In the
+n_s120,p45,K64 poor-overlap setting, design-only precision gating returns
+protected target exactly (.354644 versus legacy .387492). Weight thresholds
+2/4/8 are prespecified sensitivities, not selected from outcome performance.
+
+The fresh exact-intercept panel uses n1000/site and K16--16384. At K16384,
+mean-matched weak bias c=.25 gives protected length .0120 and coverage1.000;
+naive source Wald coverage is .020 (same-direction: .010). This model declares
+constant arm means, so no population-composition enlargement is needed.
+
+70 tests pass. All 2,800 legacy repetitions replay exactly; every applicable
+shared-budget design fallback equals the full target interval. Independently
+recomputed140 budget rows,294 paired comparisons and96 local rows. Previous
+results, v8 manuscript, and production RoCE/ENAR remain unchanged.
+Artifacts: implementation/next_paper/v22/weak_bias_budget_20261004_v1/.
+Published RoCE-K version 9: 69ea1b0ca4620cd4fc886bfae3280a69b764181e; main.tex and experiments_20261004d.tex.
+
 NEXT-PAPER MAIN GUARANTEE AND DESIGN REMOVAL (2026-10-04, v21): completed
 4,400 outcome setting-repetitions (22 settings x 200) plus exact finite-model
 calculations. The dedicated RoCE-K main text now has one algorithm/theorem,

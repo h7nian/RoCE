@@ -1,0 +1,149 @@
+\section{Local weak bias and honest adaptation at all-valid data}
+\label{sec:local-precision}
+
+The broad-class obstruction in Section~\ref{sec:precision-boundary} leaves an
+important question open: what length is necessary at favorable all-valid
+data when coverage must also protect nearby weakly invalid configurations?
+We answer this on an explicit Bernoulli linear submodel. The distinction
+between source selection and honest inference follows the motivation of
+\citet{guo2023}; moment matching also underlies adaptation costs in the
+Gaussian model of \citet{wang2026}. The following calculation uses exact
+patient-level Bernoulli likelihoods, with a trusted target and a deterministic
+lower bound on the valid-source count.
+
+\subsection{Define the local class before optimizing the method}
+
+Fix $0<\rho<w<1$, $g=\lceil\rho K\rceil$ and a constant $M>0$. Consider
+bounded linear arm means with at least $g$ valid sources per arm, and with
+every source-assisted conditional mean bias bounded by
+\[
+ |\theta_{ja}-\mu_{t,X}^a|\le M r_{n,K},\qquad
+ r_{n,K}=\min\{n_s^{-1/2}K^{-1/4},\ n_t^{-1/2}\}.
+\]
+There is no lower separation requirement. This defines the weak-bias subclass
+for the present result; it does not constrain the main algorithm to know
+which sources are invalid. For comparable target/source sample sizes, the
+first term determines this local scale. In this class the arm dispersions
+are at most $M^2r_{n,K}^2$.
+
+\subsection{Exact two-world construction}
+
+Let control means equal $.4$ at every site. Under $P_0$, all treated means,
+including target, equal $\theta_0=.5$. Under the alternative, target and
+valid-source treated means are $\theta_1=.5+\delta$, while invalid-source
+treated means equal $.5-\lambda\delta$, where
+\[
+ \lambda=\frac{w}{1-w},\qquad \delta=c r_{n,K},\qquad
+ 0<c\le M(1-w).
+\]
+All site means are constant, hence exactly linear. Relative to the alternative
+target, invalid-source bias is $-\delta/(1-w)$ and tends to zero. Draw each
+site's valid flag with probability $w$, then condition on at least $g$ valid
+flags. Every fixed configuration in this prior belongs to the declared local
+class. Control means are valid everywhere. The target effects are $.1$ and
+$.1+\delta$.
+
+There are two experiments for which the likelihood calculation is explicit.
+\begin{enumerate}
+\item \emph{Conditional fixed arms:} each source contributes $n_s$ treated
+Bernoulli observations and the target contributes $n_t$; put $\kappa=4$.
+Independent control observations have identical laws in both worlds.
+\item \emph{I.i.d. randomized patients:} each source has $n_s$ total patients
+and the target has $n_t$. Covariates are i.i.d. from the same specified law in
+the two worlds, $A\sim\operatorname{Bernoulli}(1/2)$ independently of $X$,
+and outcomes have the constant means above. Put $\kappa=2$. Covariates are
+ancillary for this likelihood comparison, and the population TATE equals
+the constant effect. This is an unconditional random-design population
+submodel, rather than a conditioning argument about one rare design.
+\end{enumerate}
+
+For one treated Bernoulli observation, the likelihood-ratio cross moment under
+mean $.5$ is $1+4uv$ for shifts $u,v$. In the second experiment an untreated
+observation has likelihood ratio one, so averaging over $A$ gives $1+2uv$.
+Let $P_u^{(n_s)}$ denote one site's full observation law at treated shift $u$.
+The unconditioned alternative site law is
+$Q=wP_\delta^{(n_s)}+(1-w)P_{-\lambda\delta}^{(n_s)}$. Its chi-square
+divergence from the all-valid null is exactly
+\begin{align*}
+ \chi_s^2
+ &=\sum_{\ell=2}^{n_s}\binom{n_s}{\ell}
+       (\kappa\delta^2)^\ell
+       \{w+(1-w)(-\lambda)^\ell\}^2.\tag{L1}
+\end{align*}
+The degree-one term vanishes because the source mixture's mean equals the
+null mean. The first detectable departure is quadratic in the shift, giving
+a fourth-order likelihood divergence. This positive series also avoids
+numerical cancellation in the equivalent three-term closed expression.
+
+Including all sources and the trusted target, the unconditioned joint
+chi-square divergence is
+\[
+ \chi_{\rm joint}^2=(1+\chi_s^2)^K
+                       (1+\kappa\delta^2)^{n_t}-1.
+\]
+Let $q_K=\Prb\{\operatorname{Binomial}(K,w)<g\}$. Conditioning the alternative
+prior to enforce the valid count changes its data law by at most $q_K$ in
+total variation. Unlike the preceding broad-class construction, only the
+alternative prior needs conditioning; the null is already entirely valid.
+
+\begin{theorem}[All-valid length required by local weak-bias honesty]
+\label{thm:local-lower}
+For either experiment, any interval with coverage at least $1-\alpha$ at
+every fixed parameter configuration in the stated local class satisfies
+\[
+ \E_{P_0}|I|\ge
+ \delta\left[1-2\alpha-
+    \min\{1,\tfrac12\sqrt{\chi_{\rm joint}^2}\}-q_K\right]_+.
+\tag{L2}
+\]
+For fixed $\rho<w$, $M>0$, $\alpha<1/2$ and sufficiently small constant $c$,
+this yields $\E_{P_0}|I|\gtrsim r_{n,K}$ as $K\to\infty$. The assertion is
+at the all-valid null, not merely at an unspecified worst-case configuration.
+In the i.i.d. randomized experiment it applies to honest population-TATE
+intervals in this constant-effect submodel.
+\end{theorem}
+
+\begin{proof}
+Uniform coverage implies coverage under the count-conditioned alternative
+prior. Transfer its coverage event to $P_0$ using total variation at most
+$\frac12\sqrt{\chi_{\rm joint}^2}+q_K$. Together with null coverage, both
+target effects belong to the interval with probability at least the bracket
+in (L2), forcing length at least $\delta$.
+
+For the rate, set $L=\max(1,\lambda)$. Since the two-point shift multiplier
+has second moment $\lambda$,
+$|w+(1-w)(-\lambda)^\ell|\le\lambda L^{\ell-2}$ for $\ell\ge2$.
+Using $\binom{n_s}{\ell}\le n_s^\ell/\ell!$ in (L1) gives
+\[
+ \chi_s^2\le\frac{\kappa^2\lambda^2}{2}
+       n_s^2\delta^4\exp(\kappa n_s L^2\delta^2).
+\]
+Our choice of $r_{n,K}$ ensures $K n_s^2\delta^4\le c^4$,
+$n_s\delta^2\le c^2K^{-1/2}$ and $n_t\delta^2\le c^2$. Therefore
+$\log(1+\chi_{\rm joint}^2)=O(c^4+c^2)$ uniformly along the sequence.
+Moreover $q_K\le e^{-2K(w-\rho)^2}$. A sufficiently small $c$, also satisfying
+$c\le M(1-w)$, keeps the bracket bounded away from zero. Bernoulli means
+remain interior for all sufficiently large sample sizes/source counts.
+\end{proof}
+
+\subsection{What this settles, and what it does not}
+
+When $n_t\asymp n_s\asymp n$ and $K\to\infty$, the lower bound is
+$n^{-1/2}K^{-1/4}$. It rules out uniformly honest oracle pooling length
+$n^{-1/2}K^{-1/2}$ even at all-valid data, when nearby weakly invalid
+configurations remain in the coverage class. In the exact-linear conditional
+experiment, it matches the order of the main dispersion upper bound.
+
+For the population method, fixed dimension, stable designs, constant true
+CATE and $K=o(n^2)$ make its extra $n^{-1}$ composition term negligible
+relative to $n^{-1/2}K^{-1/4}$. When the bad-design contribution is also
+negligible, the main upper bound and this population-submodel lower bound
+match in order at the null. This is a specific honest-adaptation statement,
+not an optimality theorem for every CATE, design or growing dimension.
+
+The broad bounded-invalid class contains these local linear alternatives,
+so its honest procedures also face this lower bound. The result does not
+show that the broader class permits a matching adaptive upper bound. In
+particular, the current $n_s^{-1/2}$ bounded-invalid certificate floor remains
+potentially larger than necessary at favorable configurations. Sharpening
+that upper bound is a separate research problem.

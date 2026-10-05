@@ -11,7 +11,7 @@ from population_protection import projection_geometry, projection_error_budget
 
 
 def select_source_designs(source_designs, target_mean, valid_minimum,
-                          design_policy='all_required'):
+                          design_policy='all_required', weight_inflation_limit=None):
     """Prepare both arms using only (feature matrix, treatment) site tuples.
 
     Each feature matrix already includes its intercept. A site is removed if
@@ -46,10 +46,37 @@ def select_source_designs(source_designs, target_mean, valid_minimum,
     adjusted = np.maximum(0, valid.astype(int)-len(rejected))
     eligible = bool(retained and np.all(adjusted > 0)
                     and (design_policy == 'remove' or not rejected))
-    return dict(original_count=count, original_valid=valid.astype(int),
+    selection = dict(original_count=count, original_valid=valid.astype(int),
         retained_indices=np.array(retained, dtype=int), rejected=rejected,
         designs=prepared, retained_count=len(retained), adjusted_valid=adjusted,
         eligible=eligible, design_policy=design_policy)
+    return restrict_weight_inflation(selection, weight_inflation_limit)
+
+
+def restrict_weight_inflation(selection, limit=None):
+    """Prune cached designs by n_arm * ||gamma||^2, without reading outcomes.
+
+    This factor is one for uniform arm weights. The threshold is prespecified;
+    filtering updates the original count guarantee, not the retained fraction.
+    """
+    if limit is None:
+        return selection
+    if not np.isfinite(limit) or limit < 1:
+        raise ValueError('Weight inflation limit must be finite and at least one')
+    positions, rejected = [], list(selection['rejected'])
+    for position, (index, arms) in enumerate(zip(selection['retained_indices'], selection['designs'])):
+        inflation = max(len(arm['rows'])*arm['design']['weight_square_sum'] for arm in arms)
+        if inflation > limit:
+            rejected.append(dict(index=int(index), reason='Weight inflation exceeds declared limit'))
+        else:
+            positions.append(position)
+    retained = selection['retained_indices'][positions]
+    adjusted = np.maximum(0, selection['original_valid']-len(rejected))
+    eligible = bool(len(retained) and np.all(adjusted > 0)
+                    and (selection['design_policy'] == 'remove' or not rejected))
+    return dict(selection, retained_indices=retained, rejected=rejected,
+        designs=[selection['designs'][i] for i in positions], retained_count=len(retained),
+        adjusted_valid=adjusted, eligible=eligible, weight_inflation_limit=limit)
 
 
 def evaluate_retained_sources(selection, source_outcomes):

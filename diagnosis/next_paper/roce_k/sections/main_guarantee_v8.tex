@@ -1,11 +1,6 @@
 \section{Main algorithm and model-specific guarantees}
 \label{sec:main-guarantee}
 
-The primary claims concern weak source bias and increasing $K$ under exact
-linear conditional means. The approximation modes are extensions with separate
-precision costs. Section~\ref{sec:local-precision} gives a local all-valid
-length lower bound in an exact Bernoulli submodel.
-
 The estimand is the population target effect $\tau_t=\E_t\{Y(1)-Y(0)\}$.
 There are $K$ sources and a target sample of size $n_t$. A common, prespecified
 feature map $\phi$ includes an intercept. The target and source outcomes lie
@@ -42,9 +37,7 @@ Fix the model class, valid counts, feature map, design policy and error ledger
 before examining outcomes. The following steps define the current procedure.
 \begin{enumerate}
 \item Compute $b_t=\mathbb P_t\phi(X)$. Check each arm's rank, condition number
-and leverage using only $\mathcal D$. Optional prespecified weight-inflation
-and precision gates are described in Section~\ref{sec:design-budget}; they
-also use no outcomes. A target failure returns $[-1,1]$.
+and leverage using only $\mathcal D$. A target failure returns $[-1,1]$.
 Under \texttt{all\_required}, any source failure uses the protected target
 procedure. Under \texttt{remove}, drop every site failing either arm, let
 $m$ be the number dropped, and set
@@ -85,8 +78,7 @@ bias contribution. The source and target bands are
           \sqrt{\frac{\log(2/\alpha_T)}2\sum_a\|\gamma_{ta}\|_2^2}\right].
 \end{align*}
 Use $J_S\cap J_T$ if nonempty, and the shorter band otherwise. A source
-design/count fallback or a design-only precision abstention recalibrates $J_T$
-with the full conditional allowance $\alpha_C=\alpha_S+\alpha_T+\alpha_D$. Denote this conditional interval
+design/count fallback uses $J_T$ directly. Denote this conditional interval
 by $I_X$; it targets the observed-target effect
 $\tau_X=b_t^T(\beta_t^1-\beta_t^0)$.
 \item Construct the target slope-contrast ellipsoid with failure
@@ -102,19 +94,12 @@ define the point estimate. No simulated true CATE
 range, variance or source labels are supplied to this construction.
 \end{enumerate}
 
-The current population wrapper uses a shared composition ledger:
-\[
- \alpha_R=.005,\quad\alpha_X=.0225,\quad\alpha_C=.0225,
- \qquad (\alpha_S,\alpha_T,\alpha_D)
-       =\frac{.0225}{.035}(.01,.01,.015)
-\]
-on the borrowing branch. A design-only fallback assigns all $\alpha_C$ to
-target outcome noise. The separately reported protected target-only comparator
-uses $(\alpha_T,\alpha_R,\alpha_X)=(.0225,.005,.0225)$, so design abstention
-agrees exactly with that comparator. The composition allowance is fixed across
-branches; Section~\ref{sec:design-budget} explains why this is necessary for
-the stated proof. The version-8 allocation remains available as an explicit
-legacy control. Ordinary target Wald inference is an asymptotic comparator.
+The implemented default ledger is
+$(\alpha_S,\alpha_T,\alpha_D,\alpha_R,\alpha_X)
+=(.01,.01,.015,.005,.01)$. A separately reported protected target-only
+comparator uses $(\alpha_T,\alpha_R,\alpha_X)=(.0225,.005,.0225)$.
+Thus it benefits from the same target certificate and its own full $.05$
+budget. The ordinary normal target interval is an asymptotic comparator.
 
 \begin{theorem}[Coverage, removal and the scope of precision improvement]
 \label{thm:main}
@@ -168,9 +153,7 @@ bands hold simultaneously by their error allocation. The valid-count
 dispersion inequality then covers $\tau_X$ in $J_S$, while $J_T$ covers it
 on its target event. On their joint event the intersection is nonempty and
 covers; changing the empty-intersection branch cannot remove this event.
-The count/design fallback uses the full conditional allowance for its target
-bound. Its conditional failure probability is still at most
-$\alpha_S+\alpha_T+\alpha_D$.
+The count/design fallback uses the same target bound.
 
 The target coefficient event dominates both true CATE range and empirical
 variance. Apply empirical Bernstein to the fixed true CATE function, then
