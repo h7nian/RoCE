@@ -915,6 +915,7 @@ calculate_weighted_site_aipw <- function(y, a, X, weights = NULL, family = "bino
     weights = as.numeric(weights),
     outcome_model = attr(m_hat, "nuisance_model"),
     propensity_model = attr(pi_hat, "nuisance_model"),
+    curvature_diagnostics = aipw_if$curvature_diagnostics,
     inference_scope = aipw_if$inference_scope
   ))
 }

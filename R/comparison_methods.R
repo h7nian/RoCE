@@ -207,6 +207,8 @@
       mu0_influence_se = sqrt(mu0_influence_variance),
       cross_arm_covariance = cross_arm_covariance,
       cross_arm_correlation = cross_arm_correlation,
+      curvature_diagnostics = list(mu1 = mu1_result$components$curvature_diagnostics,
+        mu0 = mu0_result$components$curvature_diagnostics),
       dr_weight_diagnostics = dr_diagnostics
     )
   )
@@ -418,7 +420,7 @@
     target_data <- data_split[["t"]]
     Z_target <- as.matrix(target_data$Z_site)
 
-    return(.parallel_site_fits(required_sites, function(site) {
+    return(.parallel_site_fits(required_sites, function(site) tryCatch({
       site_data <- data_split[[site]]
       is_target <- identical(site, "t")
       dr_weights <- if (is_target) NULL else dr_weights_by_site[[site]]
@@ -437,6 +439,7 @@
           variance = base_result$variance,
           n = site_data$n,
           varphi_ot = base_result$varphi_ot,
+          curvature_diagnostics = base_result$curvature_diagnostics,
           base_result = base_result
         ))
       }
@@ -458,12 +461,16 @@
         varphi_ot = source_influence,
         target_if_component = target_correction,
         source_if_correction = source_correction,
+        curvature_diagnostics = c(base_result$curvature_diagnostics,
+          list(density = density_derivative$curvature_diagnostics)),
         lambda = as.numeric(
           attr(dr_weights, "lambda_used") %||% NA_real_
         ),
         base_result = base_result
       )
-    }, n_cores = n_cores))
+    }, error = function(error) {
+      stop(sprintf("DR site=%s arm=%s: %s", site, A_val, conditionMessage(error)), call. = FALSE)
+    }), n_cores = n_cores))
   }
 
   if (!is.list(dr_site_components) ||
@@ -1259,6 +1266,7 @@ estimate_federated_dr <- function(data_split, dr_lambda = NULL,
       inference_scope = "conditional_nuisance_lambda_active_sets_and_ivw_weights",
       var_target_component = var_target_component,
       var_source_component = var_source_component,
+      curvature_diagnostics = lapply(site_results, `[[`, "curvature_diagnostics"),
       dr_weight_diagnostics = dr_weight_diagnostics
     )
   ))
@@ -1348,17 +1356,25 @@ estimate_pooled_dr <- function(data_split, dr_lambda = NULL,
   # This fit must not depend on whether local Federated-DR models were cached
   # or requested alongside it. Pooled nuisance tuning uses its own RNG stream.
   nuisance_seed <- 130363L + as.integer(A_val)
-  result <- with_seed(nuisance_seed, calculate_weighted_site_aipw(
-    y = all_y, a = all_a, X = all_X, weights = all_weights, family = family, A_val = A_val))
+  result <- tryCatch(with_seed(nuisance_seed, calculate_weighted_site_aipw(
+    y = all_y, a = all_a, X = all_X, weights = all_weights, family = family, A_val = A_val)),
+    error = function(error) {
+      stop(sprintf("Pooled-DR site=pooled arm=%s: %s", A_val, conditionMessage(error)), call. = FALSE)
+    })
+  curvature_diagnostics <- list(pooled = result$curvature_diagnostics)
 
   # Stacked IF: base weighted AIPW IF + DR-weight estimation correction
   N_all <- length(all_y)
   total_correction <- rep(0, N_all)
   for (site in names(source_meta)) {
     meta <- source_meta[[site]]
-    density_derivative <- .baseline_density_influence(
+    density_derivative <- tryCatch(.baseline_density_influence(
       data_split[[site]]$Z_site, target_data$Z_site, dr_weights_by_site[[site]],
-      result$phi[meta$idx], result$estimate, mean(all_weights), length(meta$idx) / N_all)
+      result$phi[meta$idx], result$estimate, mean(all_weights), length(meta$idx) / N_all),
+      error = function(error) {
+        stop(sprintf("Pooled-DR site=%s arm=%s: %s", site, A_val, conditionMessage(error)), call. = FALSE)
+      })
+    curvature_diagnostics[[site]] <- list(density = density_derivative$curvature_diagnostics)
     total_correction[meta$idx] <- N_all / length(meta$idx) * density_derivative$source
     total_correction[seq_len(n_target)] <- total_correction[seq_len(n_target)] +
       N_all / n_target * density_derivative$target
@@ -1419,6 +1435,7 @@ estimate_pooled_dr <- function(data_split, dr_lambda = NULL,
       variance_wss = wss,
       inference_scope = result$inference_scope,
       nuisance_seed = nuisance_seed,
+      curvature_diagnostics = curvature_diagnostics,
       dr_weight_diagnostics = dr_weight_diagnostics
     )
   ))

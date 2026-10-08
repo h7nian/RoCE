@@ -95,3 +95,35 @@ Code:
 - Implementations are aligned at first-order IF/asymptotic level.
 - Finite-sample exactness is not guaranteed for any semiparametric baseline.
 - The code avoids heuristic `dr_inflation` and uses explicit IF-based variance paths.
+
+### Redundant nuisance parameters
+
+The nuisance derivative solver distinguishes numerical redundancy in the active
+training design from unstable curvature. It centers and scales the design for
+rank checks and transforms sensitivities, data scores and penalty derivatives
+in the same coordinates. Full-rank, well-conditioned fits retain the original
+direct solve. Redundant fits use the identifiable subspace only when the
+sensitivity, score blocks and penalty gradient have negligible components in
+the null space. This does not refit the nuisance model or change its selected
+lambda, predictors or feature map.
+
+OR checks include the evaluation design, since a relation that holds within one
+treatment arm may fail in the evaluation population. Density-ratio checks
+include both source and target information. A dependency that fails these
+checks, a near-collinear design, or unstable curvature in the retained space
+raises an error; no ridge or unverified singular-value truncation is applied.
+The numerical rank threshold is `100 * .Machine$double.eps * active_columns`,
+the retained relative singular values must be at least `1e-7`, and the null-space
+compatibility tolerance is `1e-8`. These are numerical checks, not statistical
+tuning parameters or guarantees through active-set transitions.
+
+DR results expose aggregate `curvature_diagnostics` for each arm, site and
+nuisance component. The real-data runner writes `curvature_diagnostics.csv` on
+success, and `status.txt` and `warnings.txt` even if a method fails. Diagnostics
+contain ranks, lambdas and solver checks, not patient-level scores or feature
+names. Existing successful outputs are not overwritten: use a new output
+directory after reinstalling an updated package. Inference remains conditional
+on the selected nuisance lambdas and active sets; Federated-DR also conditions
+on its estimated inverse-variance aggregation weights.
+Simulation manifests identify this implementation as `conditional_active_set_v2`
+so checkpoints using the older derivative solver are not reused silently.

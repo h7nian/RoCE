@@ -40,3 +40,24 @@ real_data_method_row <- function(label, fit) {
     ci_lower = fit$estimate - stats::qnorm(.975) * fit$se,
     ci_upper = fit$estimate + stats::qnorm(.975) * fit$se)
 }
+
+# Only aggregate solver metadata; no feature names, coefficients or patient rows.
+real_data_curvature_rows <- function(fit) {
+  diagnostics <- fit$components$curvature_diagnostics
+  rows <- list()
+  for (arm in names(diagnostics)) for (site in names(diagnostics[[arm]])) {
+    for (component in names(diagnostics[[arm]][[site]])) {
+      entry <- diagnostics[[arm]][[site]][[component]]
+      if (is.null(entry)) next  # Constant-response fits have no curvature solve.
+      rows[[length(rows) + 1L]] <- data.frame(
+        arm = arm, site = site, component = component, solver = entry$solver,
+        active_columns = entry$active_columns, rank = entry$rank, lambda = entry$lambda,
+        raw_rcond = entry$raw_rcond, curvature_ratio = entry$curvature_ratio,
+        rank_tolerance = entry$rank_tolerance,
+        compatibility_tolerance = entry$compatibility_tolerance,
+        max_null_fraction = if (length(entry$null_compatibility)) max(entry$null_compatibility) else 0,
+        stringsAsFactors = FALSE)
+    }
+  }
+  if (length(rows)) do.call(rbind, rows) else data.frame()
+}
