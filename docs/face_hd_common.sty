@@ -1,0 +1,104 @@
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{face_hd_common}[2026/05/04 Shared FACE-HD notation]
+
+\RequirePackage{marquis_notations}
+\RequirePackage{etoolbox}
+\AtBeginEnvironment{thebibliography}{\interlinepenalty=10000\relax}
+
+% Main-text statements are shared with their unnumbered restatements.
+% A standalone supplement imports main labels with the prefix main-.
+\ifcsname ifFACEHDSTANDALONE\endcsname\else
+  \expandafter\newif\csname ifFACEHDSTANDALONE\endcsname
+\fi
+\newcommand{\FACEHDAddMainLabel}[1]{%
+  \ifx\FACEHDMainLabels\empty
+    \edef\FACEHDMainLabels{main-#1}%
+  \else
+    \edef\FACEHDMainLabels{\FACEHDMainLabels,main-#1}%
+  \fi}
+\DeclareRobustCommand{\maincref}[1]{%
+  \ifFACEHDSTANDALONE
+    \begingroup
+    \let\FACEHDMainLabels\empty
+    \forcsvlist{\FACEHDAddMainLabel}{#1}%
+    \expandafter\cref\expandafter{\FACEHDMainLabels}%
+    \endgroup
+  \else
+    \cref{#1}%
+  \fi}
+\newif\ifFACEHDRestating
+\newcommand{\FACEHDMainEquation}[2]{%
+  \ifFACEHDRestating
+    \[#2\]%
+  \else
+    \begin{equation}\label{#1}#2\end{equation}%
+  \fi}
+\theoremstyle{plain}
+\newtheorem*{mainresultrestated}{\FACEHDRestatedName}
+\newenvironment{restatedmain}[1]
+  {\FACEHDRestatingtrue\def\FACEHDRestatedName{\maincref{#1}}%
+   \begin{mainresultrestated}[restated]}
+  {\end{mainresultrestated}}
+\theoremstyle{remark}
+\input{face_hd_results.tex}
+
+\providecommand{\FACEHDAuthors}{Sinian Zhang, Yuanlin Feng, and Jue Hou}
+\providecommand{\FACEHDPDFAuthors}{Sinian Zhang; Yuanlin Feng; Jue Hou}
+\providecommand{\FACEHDAffiliationLineOne}{Division of Biostatistics \& Health Data Science}
+\providecommand{\FACEHDAffiliationLineTwo}{School of Public Health, University of Minnesota, Minneapolis, Minnesota, USA}
+
+\providecommand{\tildeE}{\widetilde{E}}
+\providecommand{\op}{o_p}
+\providecommand{\Op}{O_p}
+\providecommand{\balpha}{\bga}
+\providecommand{\bgamma}{\bgg}
+\providecommand{\bbeta}{\bgb}
+\providecommand{\bhat}[1]{\widehat{\boldsymbol{#1}}}
+
+\makeatletter
+\newcommand{\FACEHDResetSupplementCounters}{%
+  \appendix
+  \renewcommand{\thesection}{S\arabic{section}}%
+  \renewcommand{\thesubsection}{S\arabic{section}.\arabic{subsection}}%
+  \renewcommand{\theequation}{S\arabic{equation}}%
+  \renewcommand{\thefigure}{S\arabic{figure}}%
+  \renewcommand{\thetable}{S\arabic{table}}%
+  \renewcommand{\thetheorem}{S\arabic{theorem}}%
+  \renewcommand{\thelemma}{S\arabic{lemma}}%
+  \renewcommand{\theproposition}{S\arabic{proposition}}%
+  \renewcommand{\thecorollary}{S\arabic{corollary}}%
+  \renewcommand{\thedefinition}{S\arabic{definition}}%
+  \renewcommand{\theassumption}{S\arabic{assumption}}%
+  \renewcommand{\theremark}{S\arabic{remark}}%
+  \def\theHsection{supp.section.\arabic{section}}%
+  \def\theHsubsection{supp.subsection.\arabic{section}.\arabic{subsection}}%
+  \def\theHequation{supp.equation.\arabic{equation}}%
+  \def\theHfigure{supp.figure.\arabic{figure}}%
+  \def\theHtable{supp.table.\arabic{table}}%
+  \def\theHtheorem{supp.theorem.\arabic{theorem}}%
+  \def\theHlemma{supp.lemma.\arabic{lemma}}%
+  \def\theHproposition{supp.proposition.\arabic{proposition}}%
+  \def\theHcorollary{supp.corollary.\arabic{corollary}}%
+  \def\theHdefinition{supp.definition.\arabic{definition}}%
+  \def\theHassumption{supp.assumption.\arabic{assumption}}%
+  \def\theHremark{supp.remark.\arabic{remark}}%
+  \@ifundefined{thealgorithm}{}{\renewcommand{\thealgorithm}{S\arabic{algorithm}}}%
+  \@ifundefined{thecodelisting}{}{\renewcommand{\thecodelisting}{S\arabic{codelisting}}}%
+  \@ifundefined{c@algorithm}{}{\def\theHalgorithm{supp.algorithm.\arabic{algorithm}}}%
+  \@ifundefined{c@codelisting}{}{\def\theHcodelisting{supp.codelisting.\arabic{codelisting}}}%
+  \setcounter{section}{0}%
+  \setcounter{subsection}{0}%
+  \setcounter{equation}{0}%
+  \setcounter{figure}{0}%
+  \setcounter{table}{0}%
+  \setcounter{theorem}{0}%
+  \setcounter{lemma}{0}%
+  \setcounter{proposition}{0}%
+  \setcounter{corollary}{0}%
+  \setcounter{definition}{0}%
+  \setcounter{assumption}{0}%
+  \setcounter{remark}{0}%
+  \@ifundefined{c@algorithm}{}{\setcounter{algorithm}{0}}%
+  \@ifundefined{c@codelisting}{}{\setcounter{codelisting}{0}}%
+}
+\makeatother

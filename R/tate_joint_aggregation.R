@@ -277,7 +277,7 @@
   }
   variance <- .weight_layer_variance(all_phi_tau, n_t, n_source, gradient)
   estimate <- mean(all_phi_tau)
-  se <- sqrt(variance$variance)
+  se <- sqrt(variance$fixed_variance)
   target_raw <- .assemble_target_pseudovalues(fold_info, n_t, ".aggregate_tate_arm_weights")
   target_variance <- .multisite_pseudovalue_variance(target_raw, as.integer(n_t))
   for (arm in names(phase2)) colnames(phase2[[arm]]$fold_weights) <- source_sites
@@ -296,8 +296,10 @@
     }, numeric(1L))
   })
   source_estimates <- mu1_result$source_estimates - mu0_result$source_estimates
-  list(estimate = estimate, se = se, variance = variance$variance,
+  list(estimate = estimate, se = se, variance = variance$fixed_variance,
+    variance_method = "leading",
     se_fixed_weights = sqrt(variance$fixed_variance), variance_fixed_weights = variance$fixed_variance,
+    se_weight_adjusted = sqrt(variance$variance), variance_weight_adjusted = variance$variance,
     weight_layer = variance[c("indirect_variance", "cross_term", "kink_cells", "fold_source_cells")],
     ci_lower = estimate - Z_ALPHA_05 * se, ci_upper = estimate + Z_ALPHA_05 * se,
     target_only = list(estimate = mean(target_raw), variance = target_variance, se = sqrt(target_variance)),
@@ -314,7 +316,7 @@
     aggregation_mode = aggregation_mode, aggregation_lambda_selection = lambda_selection,
     aggregation_lambda_rule = lambda_rule, aggregation_lambda_grid = aggregation_lambda_grid,
     aggregation_screening_rule = screening_rule,
-    inference_scope = "fixed nuisance fits and selected active sets; full validity remains under review",
+    inference_scope = "leading site-centered influence-function variance; oracle-equivalence conditions required",
     clip_diagnostics = .combine_tate_clip_diagnostics(mu1_result, mu0_result),
     n_sites = K + 1L, n_folds = n_folds, N_all = N_all,
     crossfit_levels = max(mu1_result$crossfit_levels %||% 2L, mu0_result$crossfit_levels %||% 2L),

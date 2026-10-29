@@ -63,6 +63,15 @@ exports overall/fold-specific weights and nuisance diagnostics; the output
 root records configuration, input/build fingerprints, site sizes and R session
 information.
 
+For RoCE version 0.1.1 and later, the primary SE and CI use the leading
+site-centered variance, without the additional weight-learning correction.
+`methods.csv` records `variance_method="leading"`; `se_weight_adjusted` retains
+the local corrected SE as a diagnostic. The fitted object also retains
+`variance_fixed_weights`, `se_fixed_weights`, `variance_weight_adjusted`, and
+the weight-layer decomposition. Baseline inference is unchanged. Legacy fits
+without a convention marker are exported as `not_recorded`, not relabeled.
+Use a new output directory when changing package builds or SE conventions.
+
 Full fits can contain patient-level scores and are saved only with
 `ROCE_SAVE_FIT=1`. Outputs stay in your environment; share permitted summaries.
 The separate research prototypes in `diagnosis/next_paper/` are not used here.

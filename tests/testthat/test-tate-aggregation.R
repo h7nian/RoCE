@@ -535,11 +535,13 @@ test_that("TATE cross-fitting returns one common source-weight vector", {
     )
   )
   expect_equal(
-    result$variance,
+    result$variance_weight_adjusted,
     result$variance_fixed_weights + result$weight_layer$indirect_variance +
       result$weight_layer$cross_term,
     tolerance = 1e-12
   )
+  expect_equal(result$variance, result$variance_fixed_weights, tolerance = 1e-12)
+  expect_equal(result$se, result$se_fixed_weights, tolerance = 1e-12)
   expect_equal(result$estimate, mean(result$all_phi_tau))
   expect_equal(
     result$intermediates$target_only_phi,

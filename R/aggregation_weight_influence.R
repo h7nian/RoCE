@@ -1,6 +1,6 @@
-# Delta-method contribution of the learned common source weights to the TATE
-# variance: main.tex sec:adaptive_aggregation ("Variance of the learned
-# weights") and supplemental.tex supp:weight_layer. Nuisance fits and fold
+# Diagnostic delta-method contribution of learned source weights. The public
+# SE uses the leading variance; this local adjustment is retained separately
+# as variance_weight_adjusted / se_weight_adjusted. Nuisance fits and fold
 # membership are held fixed; only the inner-fold moments that determine the
 # weights are differentiated with respect to the empirical mass of each
 # observation.

@@ -1,0 +1,376 @@
+
+\RequirePackage{amsmath}
+\RequirePackage{amssymb}
+%\RequirePackage{mdsymbol}
+\ifx\proof\undefined
+\RequirePackage{amsthm}
+\fi
+
+
+\let\hat\widehat
+\let\tilde\widetilde
+
+%%%% calligraphic fonts
+
+\newcommand{\Acal}{\mathcal{A}}
+\newcommand{\Bcal}{\mathcal{B}}
+\newcommand{\Ccal}{\mathcal{C}}
+\newcommand{\Dcal}{\mathcal{D}}
+\newcommand{\Ecal}{\mathcal{E}}
+\newcommand{\Fcal}{\mathcal{F}}
+\newcommand{\Gcal}{\mathcal{G}}
+\newcommand{\Hcal}{\mathcal{H}}
+\newcommand{\Ical}{\mathcal{I}}
+\newcommand{\Jcal}{\mathcal{J}}
+\newcommand{\Kcal}{\mathcal{K}}
+\newcommand{\Lcal}{\mathcal{L}}
+\newcommand{\Mcal}{\mathcal{M}}
+\newcommand{\Ncal}{\mathcal{N}}
+\newcommand{\Ocal}{\mathcal{O}}
+\newcommand{\ocal}{\tiny{\mathcal{O}}}
+\newcommand{\Pcal}{\mathcal{P}}
+\newcommand{\Qcal}{\mathcal{Q}}
+\newcommand{\Rcal}{\mathcal{R}}
+\newcommand{\Scal}{{\mathcal{S}}}
+\newcommand{\Tcal}{{\mathcal{T}}}
+\newcommand{\Ucal}{\mathcal{U}}
+\newcommand{\Vcal}{\mathcal{V}}
+\newcommand{\Wcal}{\mathcal{W}}
+\newcommand{\Xcal}{\mathcal{X}}
+\newcommand{\Ycal}{\mathcal{Y}}
+\newcommand{\Zcal}{\mathcal{Z}}
+
+%%%% script fonts
+\newcommand{\Ascr}{\mathscr{A}}
+\newcommand{\Bscr}{\mathscr{B}}
+\newcommand{\Cscr}{\mathscr{C}}
+\newcommand{\Dscr}{\mathscr{D}}
+\newcommand{\Escr}{\mathscr{E}}
+\newcommand{\Fscr}{\mathscr{F}}
+\newcommand{\Gscr}{\mathscr{G}}
+\newcommand{\Hscr}{\mathscr{H}}
+\newcommand{\Iscr}{\mathscr{I}}
+\newcommand{\Jscr}{\mathscr{J}}
+\newcommand{\Kscr}{\mathscr{K}}
+\newcommand{\Lscr}{\mathscr{L}}
+\newcommand{\Mscr}{\mathscr{M}}
+\newcommand{\Nscr}{\mathscr{N}}
+\newcommand{\Oscr}{\mathscr{O}}
+\newcommand{\oscr}{\tiny{\mathscr{O}}}
+\newcommand{\Pscr}{\mathscr{P}}
+\newcommand{\Qscr}{\mathscr{Q}}
+\newcommand{\Rscr}{\mathscr{R}}
+\newcommand{\Sscr}{{\mathscr{S}}}
+\newcommand{\Tscr}{{\mathscr{T}}}
+\newcommand{\Uscr}{\mathscr{U}}
+\newcommand{\Vscr}{\mathscr{V}}
+\newcommand{\Wscr}{\mathscr{W}}
+\newcommand{\Xscr}{\mathscr{X}}
+\newcommand{\Yscr}{\mathscr{Y}}
+\newcommand{\Zscr}{\mathscr{Z}}
+
+%%%% blackboard fonts
+\newcommand{\Abb}{\mathbb{A}}
+\renewcommand{\Bbb}{\mathbb{B}}
+\newcommand{\Cbb}{\mathbb{C}}
+\newcommand{\Dbb}{\mathbb{D}}
+\newcommand{\Ebb}{\mathbb{E}}
+\newcommand{\Fbb}{\mathbb{F}}
+\newcommand{\Gbb}{\mathbb{G}}
+\newcommand{\Hbb}{\mathbb{H}}
+\newcommand{\Ibb}{\mathbb{I}}
+\newcommand{\Jbb}{\mathbb{J}}
+\newcommand{\Kbb}{\mathbb{K}}
+\newcommand{\Lbb}{\mathbb{L}}
+\newcommand{\Mbb}{\mathbb{M}}
+\newcommand{\Nbb}{\mathbb{N}}
+\newcommand{\Obb}{\mathbb{O}}
+\newcommand{\Pbb}{\mathbb{P}}
+\newcommand{\Qbb}{\mathbb{Q}}
+\newcommand{\Rbb}{\mathbb{R}}
+\newcommand{\Sbb}{{\mathbb{S}}}
+\newcommand{\Tbb}{{\mathbb{T}}}
+\newcommand{\Ubb}{\mathbb{U}}
+\newcommand{\Vbb}{\mathbb{V}}
+\newcommand{\Wbb}{\mathbb{W}}
+\newcommand{\Xbb}{\mathbb{X}}
+\newcommand{\Ybb}{\mathbb{Y}}
+\newcommand{\Zbb}{\mathbb{Z}}
+
+
+%%%%%%%% Widely accepted definitions %%%%%%%%%%%%%%%
+
+\newcommand{\C}{\mathbb{C}} % Complex numbers
+\newcommand{\N}{\mathbb{N}} % Natural numbers
+\newcommand{\Q}{\mathbb{Q}} % Rationals
+\newcommand{\R}{\mathbb{R}} % Real numbers
+\newcommand{\Z}{\mathbb{Z}} % Integers
+\newcommand{\I}{\mathbb{I}} % Identity matrix
+\newcommand{\Irm}{\mathrm{I}} % Indicator function
+\newcommand{\E}{\mathbb{E}} % Expectation
+\renewcommand{\P}{\mathbb{P}} % Probability
+\newcommand{\PE}{\mathbf{P}} % Expectation
+\newcommand{\PEn}{\mathbf{P_n}} % Empirical Expectation
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%% Bold Latin %%%%%%%%%%%%%%%
+
+\newcommand{\ba}{\mathbf{a}}
+\newcommand{\bb}{\mathbf{b}}
+\newcommand{\bc}{\mathbf{c}}
+\newcommand{\bd}{\mathbf{d}}
+\newcommand{\be}{\mathbf{e}}
+\newcommand{\bg}{\mathbf{g}}
+\newcommand{\bh}{\mathbf{h}}
+\newcommand{\bl}{\mathbf{l}}
+\newcommand{\bfm}{\mathbf{m}}
+\newcommand{\bo}{\mathbf{o}}
+\newcommand{\bq}{\mathbf{q}}
+\newcommand{\br}{\mathbf{r}}
+\newcommand{\bs}{\mathbf{s}}
+\newcommand{\bu}{\mathbf{u}}
+\newcommand{\bv}{\mathbf{v}}
+\newcommand{\bw}{\mathbf{w}}
+\newcommand{\bx}{\mathbf{x}}
+\newcommand{\by}{\mathbf{y}}
+\newcommand{\bz}{\mathbf{z}}
+\newcommand{\bA}{\mathbf{a}}
+\newcommand{\bB}{\mathbf{b}}
+\newcommand{\bC}{\mathbf{c}}
+\newcommand{\bD}{\mathbf{D}}
+\newcommand{\bG}{\mathbf{G}}
+\newcommand{\bH}{\mathbf{H}}
+\newcommand{\bI}{\mathbf{I}}
+\newcommand{\bJ}{\mathbf{J}}
+\newcommand{\bL}{\mathbf{L}}
+\newcommand{\bM}{\mathbf{M}}
+\newcommand{\bO}{\mathbf{O}}
+\newcommand{\bT}{\mathbf{T}}
+\newcommand{\bS}{\mathbf{S}}
+\newcommand{\bU}{\mathbf{U}}
+\newcommand{\bV}{\mathbf{V}}
+\newcommand{\bW}{\mathbf{W}}
+\newcommand{\bX}{\mathbf{X}}
+\newcommand{\bY}{\mathbf{Y}}
+\newcommand{\bZ}{\mathbf{Z}}
+\newcommand{\dell}{\dot{\boldsymbol{\ell}}}
+\newcommand{\ddell}{\ddot{\mathbbm{l}}}
+
+%%%%%%%% Hat Latin %%%%%%%%%%%%%%%
+\newcommand{\hw}{\hat{w}}
+\newcommand{\hD}{\hat{D}}
+\newcommand{\hN}{\hat{N}}
+\newcommand{\hbq}{\hat{\mathbf{q}}}
+\newcommand{\hbb}{\hat{\mathbf{b}}}
+\newcommand{\hbS}{\hat{\bS}}
+\newcommand{\hbZ}{\hat{\bZ}}
+
+%%%%%%%% Tilde Latin %%%%%%%%%%%%%%%
+\newcommand{\tbq}{\tilde{\mathbf{q}}}
+
+%%%%%%%% Bold Greek %%%%%%%%%%%%%%%
+
+\newcommand{\bga}{\boldsymbol{\alpha}}
+\newcommand{\bgb}{\boldsymbol{\beta}}
+\newcommand{\bgd}{\boldsymbol{\delta}}
+\newcommand{\bgD}{\boldsymbol{\Delta}}
+\newcommand{\bge}{\boldsymbol{\eta}}
+\newcommand{\bgg}{\boldsymbol{\gamma}}
+\newcommand{\bgG}{\boldsymbol{\Gamma}}
+\newcommand{\bgz}{\boldsymbol{\zeta}}
+\newcommand{\bgth}{\boldsymbol{\theta}}
+\newcommand{\bgl}{\boldsymbol{\lambda}}
+\newcommand{\bgs}{\boldsymbol{\sigma}}
+\newcommand{\bgf}{\boldsymbol{\phi}}
+\newcommand{\bgF}{\boldsymbol{\Phi}}
+\newcommand{\bgTh}{\boldsymbol{\Theta}}
+\newcommand{\bgS}{\boldsymbol{\Sigma}}
+\newcommand{\bgps}{\boldsymbol{\psi}}
+\newcommand{\bgPs}{\boldsymbol{\Psi}}
+\newcommand{\bgm}{\boldsymbol{\mu}}
+\newcommand{\bgX}{\boldsymbol{\Xi}}
+\newcommand{\bgx}{\boldsymbol{\xi}}
+\newcommand{\bgw}{\boldsymbol{\omega}}
+
+%%%%%%%% hat Greek %%%%%%%%%%%%%%%
+
+\newcommand{\hbga}{\hat{\boldsymbol{\alpha}}}
+\newcommand{\hbgb}{\hat{\boldsymbol{\beta}}}
+\newcommand{\hbge}{\hat{\boldsymbol{\eta}}}
+\newcommand{\hbgps}{\hat{\boldsymbol{\psi}}}
+\newcommand{\hbgg}{\hat{\boldsymbol{\gamma}}}
+\newcommand{\hbgth}{\hat{\bgth}}
+\newcommand{\hbgTh}{\hat{\boldsymbol{\Theta}}}
+\newcommand{\hbgX}{\hat{\boldsymbol{\Xi}}}
+\newcommand{\hgth}{\hat{\theta}}
+\newcommand{\hgp}{\hat{\pi}}
+\newcommand{\hgt}{\hat{\tau}}
+\newcommand{\hgs}{\hat{\sigma}}
+
+%%%%%%%% Tilde Greek %%%%%%%%%%%%%%%
+\newcommand{\tbgb}{\tilde{\boldsymbol{\beta}}}
+\newcommand{\tbgg}{\tilde{\boldsymbol{\gamma}}}
+\newcommand{\tbge}{\tilde{\boldsymbol{\eta}}}
+\newcommand{\tbgps}{\tilde{\boldsymbol{\psi}}}
+
+%%%%%%%% Bold Arabic %%%%%%%%%%%%%%%
+\newcommand{\bzero}{\mathbf{0}}
+
+%%%%%%%% increments %%%%%%%%%%%%%%%
+\newcommand{\dt}{\triangle t}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%% Some standard definitions
+
+\newcommand*{\mini}{\mathop{\mathrm{minimize}}}
+\newcommand*{\maxi}{\mathop{\mathrm{maximize}}}
+\newcommand*{\argmin}{\mathop{\mathrm{argmin}}}
+\newcommand*{\argmax}{\mathop{\mathrm{argmax}}}
+\newcommand{\sgn}{\mathop{\mathrm{sign}}}
+\newcommand{\tr}{\mathop{\mathrm{tr}}}
+\DeclareMathOperator*{\Var}{{\rm Var}}
+\DeclareMathOperator*{\Cor}{Corr}
+\DeclareMathOperator*{\Cov}{Cov}
+\DeclareMathOperator*{\ind}{\mathrm{I}}  % Indicator
+\newcommand{\smallfrac}[2]{{\textstyle \frac{#1}{#2}}}
+\DeclareMathOperator*{\expit}{\mathrm{expit}}
+\DeclareMathOperator*{\logit}{\mathrm{logit}}
+
+
+\newcommand*{\zero}{\mathbf{0}}
+\newcommand*{\one}{\mathbf{1}}
+
+\newcommand*{\Risk}{{\rm Risk}}
+\newcommand*{\Bias}{{\rm Bias}}
+
+\newcommand{\pen}{{\rm pen}}
+\newcommand{\diag}{{\rm diag}}
+
+\newcommand{\iidsim}{\stackrel{{iid}}{\sim}}
+\def\bks{\backslash}
+\newcommand\indep{\perp\!\!\!\perp}
+\newcommand{\eqlaw}{\stackrel{\mathcal{L}}{=}}
+\newcommand{\approxlaw}{\stackrel{\mathcal{L}}{\approx}}
+\newcommand{\tolaw}{\stackrel{\mathcal{L}}{\to}}
+
+%%%%%%%%  amsmath %%%%%%%%%%
+
+
+\ifx\BlackBox\undefined
+\newcommand{\BlackBox}{\rule{1.5ex}{1.5ex}}  % end of proof
+\fi
+
+\ifx\QED\undefined
+\def\QED{~\rule[-1pt]{5pt}{5pt}\par\medskip}
+\fi
+
+\ifx\proof\undefined
+\newenvironment{proof}{\par\noindent{\bf Proof\ }}{\hfill\BlackBox\\[2mm]}
+%\newenvironment{proof}{\emph{Proof. }}{ \hfill \QED}
+\fi
+
+\ifx\theorem\undefined
+\newtheorem{theorem}{Theorem}
+\fi
+\ifx\lemma\undefined
+\newtheorem{lemma}{Lemma}
+\fi
+\ifx\proposition\undefined
+\newtheorem{proposition}{Proposition}
+\fi
+\ifx\corollary\undefined
+\newtheorem{corollary}{Corollary}
+\fi
+ \ifx\conjecture\undefined
+\newtheorem{conjecture}{Conjecture}
+\fi
+
+\newtheorem*{theoremstar}{Theorem \thmstarnumber}
+
+\makeatletter
+\newenvironment{theorem*}[1]
+ {\edef\thmstarnumber{\getrefnumber{#1}*}%
+  \let\@currentlabel\thmstarnumber\theoremstar}
+ {\endtheoremstar}
+\makeatother
+
+\makeatletter
+\newenvironment{theoremRep}[1]
+ {\edef\thmstarnumber{\getrefnumber{#1}}%
+  \let\@currentlabel\thmstarnumber\theoremstar}
+ {\endtheoremstar}
+\makeatother
+
+\newtheorem*{lemmastar}{Lemma \lemmastarnumber}
+
+\makeatletter
+\newenvironment{lemma*}[1]
+ {\edef\lemmastarnumber{\getrefnumber{#1}*}%
+  \let\@currentlabel\lemmastarnumber\lemmastar}
+ {\endlemmastar}
+\makeatother
+
+\makeatletter
+\newenvironment{lemmaRep}[1]
+ {\edef\lemmastarnumber{\getrefnumber{#1}}%
+  \let\@currentlabel\lemmastarnumber\lemmastar}
+ {\endlemmastar}
+\makeatother
+
+\theoremstyle{definition}
+\ifx\definition\undefined
+\newtheorem{definition}{Definition}
+\fi
+\ifx\example\undefined
+\newtheorem{example}{Example}
+\fi
+\ifx\assumption\undefined
+\newtheorem{assumption}{Assumption}
+\fi
+
+
+\newtheorem*{assumptionstar}{Assumption \assumptionstarnumber}
+\makeatletter
+\newenvironment{assumption*}[1]
+ {\edef\assumptionstarnumber{\getrefnumber{#1}*}%
+  \let\@currentlabel\assumptionstarnumber\assumptionstar}
+ {\endassumptionstar}
+\makeatother
+
+\makeatletter
+\newenvironment{assumptionRep}[1]
+ {\edef\assumptionstarnumber{\getrefnumber{#1}}%
+  \let\@currentlabel\assumptionstarnumber\assumptionstar}
+ {\endassumptionstar}
+\makeatother
+
+\newtheorem*{definitionstar}{Definition \definitionstarnumber}
+
+\makeatletter
+\newenvironment{definition*}[1]
+ {\edef\definitionstarnumber{\getrefnumber{#1}*}%
+  \let\@currentlabel\definitionstarnumber\definitionstar}
+ {\enddefinitionstar}
+\makeatother
+
+
+\ifx\condition\undefined
+\newtheorem{condition}{Condition}
+\fi
+
+\theoremstyle{remark}
+\ifx\remark\undefined
+\newtheorem{remark}{Remark}
+\fi
+\ifx\fact\undefined
+\newtheorem{fact}[theorem]{Fact}
+\fi
+\ifx\claim\undefined
+\newtheorem{claim}[theorem]{Claim}
+\fi
+\ifx\property\undefined
+\newtheorem{property}{Property}
+\fi

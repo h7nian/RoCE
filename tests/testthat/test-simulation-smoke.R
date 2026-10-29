@@ -195,6 +195,12 @@ test_that("simulation treatment-arm scheduling does not change TATE results", {
     "estimate", "se", "se_fixed_weights", "weight_layer_indirect_variance"
   )]))))
   expect_identical(quadratic$weight_layer_kink_cells, 0)
+  expect_identical(unique(sequential$roce_variance_method[
+    grepl("^(one|two)_round_crossfit", sequential$method)]), "leading")
+  expect_equal(quadratic$se, quadratic$se_fixed_weights, tolerance = 1e-12)
+  expect_equal(quadratic$se_weight_adjusted^2,
+    quadratic$se_fixed_weights^2 + quadratic$weight_layer_indirect_variance +
+      quadratic$weight_layer_cross_term, tolerance = 1e-12)
   expect_true(all(sequential$quadratic_bias_rule_requested))
   expect_true(all(sequential$deviation_mechanism == "treated_arm"))
   expect_true(all(is.finite(unlist(hard[c(

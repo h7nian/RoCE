@@ -150,9 +150,8 @@ aggregate_fold_estimates <- function(fold_aggregated_estimates, all_phi_agg,
     stop("Group sizes (n_t + sum(n_source_full)) must equal N_all")
   }
 
-  # The reported variance adds the delta-method contribution of the learned
-  # fold weights to the fixed-weight pseudo-value variance (main.tex
-  # sec:adaptive_aggregation, "Variance of the learned weights").
+  # Report the leading site-centered pseudo-value variance. Retain the local
+  # weight-learning delta-method calculation as a separate diagnostic.
   weight_layer <- .weight_layer_variance(
     all_phi_agg, n_t, n_source_full,
     .weight_layer_gradient(
@@ -160,8 +159,8 @@ aggregate_fold_estimates <- function(fold_aggregated_estimates, all_phi_agg,
       fold_weight_psd_ridge, n_t, n_source_full
     )
   )
-  final_variance <- weight_layer$variance
   variance_fixed_weights <- weight_layer$fixed_variance
+  final_variance <- variance_fixed_weights
 
   se <- sqrt(final_variance)
   ci_lower <- final_estimate - Z_ALPHA_05 * se
@@ -176,16 +175,20 @@ aggregate_fold_estimates <- function(fold_aggregated_estimates, all_phi_agg,
     cat(sprintf("      - Fold-average estimate:    %.6f  (diff=%.2e)\n",
                 fold_avg_estimate, abs(final_estimate - fold_avg_estimate)))
     cat(sprintf("      - Variance (within-site, fixed weights): %.6f\n", variance_fixed_weights))
-    cat(sprintf("      - Variance (with weight layer): %.6f (SE=%.4f)\n", final_variance, se))
+    cat(sprintf("      - Reported leading SE: %.4f\n", se))
+    cat(sprintf("      - Diagnostic variance (with weight layer): %.6f\n", weight_layer$variance))
     cat(paste0("   95% CI: [", round(ci_lower, 4), ", ", round(ci_upper, 4), "]\n"))
   }
 
   return(list(
     final_estimate = final_estimate,
     final_variance = final_variance,
+    variance_method = "leading",
     variance_fixed_weights = variance_fixed_weights,
+    variance_weight_adjusted = weight_layer$variance,
     se = se,
     se_fixed_weights = sqrt(variance_fixed_weights),
+    se_weight_adjusted = sqrt(weight_layer$variance),
     weight_layer = weight_layer[c("indirect_variance", "cross_term", "kink_cells", "fold_source_cells")],
     ci_lower = ci_lower,
     ci_upper = ci_upper,
@@ -1646,8 +1649,11 @@ calculate_crossfit_aggregation <- function(data_split, target_data, source_sites
     estimate = final_estimate,
     se = se,
     variance = final_variance,
+    variance_method = final_agg$variance_method,
     se_fixed_weights = final_agg$se_fixed_weights,
     variance_fixed_weights = final_agg$variance_fixed_weights,
+    se_weight_adjusted = final_agg$se_weight_adjusted,
+    variance_weight_adjusted = final_agg$variance_weight_adjusted,
     weight_layer = final_agg$weight_layer,
     ci_lower = ci_lower,
     ci_upper = ci_upper,
@@ -1740,6 +1746,10 @@ calculate_crossfit_aggregation <- function(data_split, target_data, source_sites
 #'   \code{"joint_tate"}; see \code{run_tate_crossfit()}. Both two-vector modes
 #'   return columns labeled by arm and source, plus \code{fold_weights_by_arm}.
 #' @return A RoCE result list for the TATE estimator.
+#' @details Reported \code{se}, \code{variance}, and confidence intervals use
+#'   the leading site-centered variance, with \code{variance_method="leading"}.
+#'   The local weight-learning adjustment remains available in
+#'   \code{se_weight_adjusted} and \code{variance_weight_adjusted} as a diagnostic.
 #' @export
 calculate_tate_crossfit_aggregation <- function(
     data_split, mu1_result, mu0_result,
@@ -1906,8 +1916,11 @@ calculate_tate_crossfit_aggregation <- function(
     estimate = final$final_estimate,
     se = final$se,
     variance = final$final_variance,
+    variance_method = final$variance_method,
     se_fixed_weights = final$se_fixed_weights,
     variance_fixed_weights = final$variance_fixed_weights,
+    se_weight_adjusted = final$se_weight_adjusted,
+    variance_weight_adjusted = final$variance_weight_adjusted,
     weight_layer = final$weight_layer,
     ci_lower = final$ci_lower,
     ci_upper = final$ci_upper,
@@ -1922,7 +1935,7 @@ calculate_tate_crossfit_aggregation <- function(
     aggregation_mode = aggregation_mode,
     weights_by_arm = list(mu1 = colMeans(phase2$fold_weights), mu0 = colMeans(phase2$fold_weights)),
     fold_weights_by_arm = list(mu1 = phase2$fold_weights, mu0 = phase2$fold_weights),
-    inference_scope = "fixed nuisance fits and selected active sets; full validity remains under review",
+    inference_scope = "leading site-centered influence-function variance; oracle-equivalence conditions required",
     fold_lambdas = phase2$fold_lambdas,
     fold_wald_statistics = phase2$fold_wald_statistics,
     fold_penalty_coefficients = phase2$fold_penalty_coefficients,

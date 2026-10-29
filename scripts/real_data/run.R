@@ -48,7 +48,7 @@ prepare <- function() {
     stop("All sites must have the same named feature columns in the same order.")
   }
   for (arm in 0:1) RoCE:::validate_crossfit_sample_sizes(data, config$fit$n_folds, A_val = arm)
-  data_hash <- digest::digest(data, algo = "sha256")
+  data_hash <- real_data_input_hash(prepared)
   path <- file.path(output, "input_sha256.txt")
   if (file.exists(path) && !identical(readLines(path), data_hash)) {
     stop("Input changed since the previous run; choose a new output directory.")

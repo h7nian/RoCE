@@ -62,7 +62,7 @@
   }, numeric(1L)))
 }
 
-test_that("weight-layer variance decomposes and its fixed part is the pseudo-value variance", {
+test_that("reported variance is leading and weight-layer variance remains a diagnostic", {
   skip_on_cran()
   fixture <- .weight_layer_fixture(K = 2L, seed = 7101)
   fit <- fixture$fit
@@ -75,8 +75,14 @@ test_that("weight-layer variance decomposes and its fixed part is the pseudo-val
   )
   expect_equal(fit$se_fixed_weights, sqrt(fit$variance_fixed_weights), tolerance = 1e-14)
   expect_equal(fit$se, sqrt(fit$variance), tolerance = 1e-14)
+  expect_identical(fit$variance_method, "leading")
+  expect_equal(fit$variance, fit$variance_fixed_weights, tolerance = 1e-14)
+  expect_equal(fit$se, fit$se_fixed_weights, tolerance = 1e-14)
+  expect_equal(fit$ci_lower, fit$estimate - qnorm(.975) * fit$se_fixed_weights, tolerance = 1e-12)
+  expect_equal(fit$ci_upper, fit$estimate + qnorm(.975) * fit$se_fixed_weights, tolerance = 1e-12)
+  expect_equal(fit$se_weight_adjusted^2, fit$variance_weight_adjusted, tolerance = 1e-14)
   expect_equal(
-    fit$variance,
+    fit$variance_weight_adjusted,
     fit$variance_fixed_weights + fit$weight_layer$indirect_variance +
       fit$weight_layer$cross_term,
     tolerance = 1e-12
@@ -181,7 +187,7 @@ test_that("quadratic-bias weights solve their normal equations", {
   expect_error(RoCE:::.quadratic_bias_weights(indefinite), "positive")
 })
 
-test_that("weight layer is reported for the arm-specific and hard-threshold paths", {
+test_that("leading SE and weight diagnostics are retained in arm and hard-threshold paths", {
   skip_on_cran()
   set.seed(7104)
   data <- generate_simulation_data(
@@ -200,8 +206,11 @@ test_that("weight layer is reported for the arm-specific and hard-threshold path
     screening_rule = "hard_threshold"
   ))) {
     expect_true(all(is.finite(c(fit$se, fit$se_fixed_weights))))
+    expect_identical(fit$variance_method, "leading")
+    expect_equal(fit$se, fit$se_fixed_weights, tolerance = 1e-14)
+    expect_equal(fit$variance, fit$variance_fixed_weights, tolerance = 1e-14)
     expect_equal(
-      fit$variance,
+      fit$variance_weight_adjusted,
       fit$variance_fixed_weights + fit$weight_layer$indirect_variance +
         fit$weight_layer$cross_term,
       tolerance = 1e-12
@@ -227,4 +236,5 @@ test_that("weight layer vanishes when no source is retained", {
   expect_equal(fit$weight_layer$indirect_variance, 0)
   expect_equal(fit$variance, fit$variance_fixed_weights, tolerance = 1e-14)
   expect_equal(fit$variance, fit$target_only$variance, tolerance = 1e-12)
+  expect_equal(fit$se_weight_adjusted, fit$se, tolerance = 1e-12)
 })

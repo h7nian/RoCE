@@ -9,27 +9,24 @@
 set -euo pipefail
 
 PROJECT_ROOT="${ROCE_PROJECT_ROOT:-$(git rev-parse --show-toplevel)}"
-DOCS_ROOT="${PROJECT_ROOT}/docs"
+DOCS_ROOT="${ROCE_DOCS_ROOT:-${PROJECT_ROOT}/docs}"
 
 module load texlive/2025
 cd "${PROJECT_ROOT}"
 mkdir -p "${PROJECT_ROOT}/results/direct_tate_mc500_b5000/logs"
 
-for mirrored_file in \
+for manuscript_file in \
   main.tex \
   supplemental.tex \
-  roce_common.sty \
+  face_hd_common.sty \
+  face_hd_results.tex \
   ref.bib; do
-  cmp "${DOCS_ROOT}/${mirrored_file}" \
-    "${PROJECT_ROOT}/overleaf/${mirrored_file}"
+  test -s "${DOCS_ROOT}/${manuscript_file}"
 done
 
 cd "${DOCS_ROOT}"
 for document in main supplemental; do
-  pdflatex -interaction=nonstopmode -halt-on-error "${document}.tex"
-  bibtex "${document}"
-  pdflatex -interaction=nonstopmode -halt-on-error "${document}.tex"
-  pdflatex -interaction=nonstopmode -halt-on-error "${document}.tex"
+  latexmk -pdf -interaction=nonstopmode -halt-on-error "${document}.tex"
   test -s "${document}.pdf"
 done
 

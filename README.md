@@ -50,6 +50,20 @@ Cross-fitting layers and communication rounds are separate choices. Joint TATE
 retains within-site arm covariance. Baselines include target-only, sample-size
 weighting, inverse-variance weighting, Federated-DR, and Pooled-DR.
 
+Since version 0.1.1, RoCE reports the leading site-centered variance:
+`se == se_fixed_weights` and `variance == variance_fixed_weights`, with
+`variance_method = "leading"`. Confidence intervals and simulation coverage use
+this SE, retaining within-site and cross-arm covariance. Estimated source
+weights and point estimates use the same optimization as before.
+
+The local weight-learning adjustment remains available as the diagnostic fields
+`se_weight_adjusted`, `variance_weight_adjusted`, and `weight_layer`. It is not
+added to the reported SE. First-order validity requires the stated nuisance and
+oracle-equivalence conditions; a fixed aggregation cutoff does not by itself
+establish coverage in every source-bias setting. Use a new output directory
+after installing this version. Previously saved fits and results retain their
+original SE convention and are not automatically converted.
+
 ## Simulations and development
 
 The default simulation DGP uses bounded covariates, four active slopes, and a

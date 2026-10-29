@@ -801,6 +801,8 @@
     weight_psd_ridge_fold_fraction =
       mean(optimizer_ridge > 0),
     se_fixed_weights = result$se_fixed_weights,
+    se_weight_adjusted = result$se_weight_adjusted %||%
+      sqrt(result$se_fixed_weights^2 + result$weight_layer$indirect_variance + result$weight_layer$cross_term),
     weight_layer_indirect_variance = result$weight_layer$indirect_variance,
     weight_layer_cross_term = result$weight_layer$cross_term,
     weight_layer_kink_cells = result$weight_layer$kink_cells,
@@ -1923,6 +1925,8 @@ run_single_simulation <- function(sim_id, n_total = 1000, K = 3, p = 4,
     results$or_degenerate_folds <- n_or_degenerate
     results$aggregation_lambda <- aggregation_lambda
     results$aggregation_cutoff <- 1 / aggregation_lambda
+    results$roce_variance_method <- ifelse(
+      grepl("^(one|two)_round_crossfit", results$method), "leading", "not_applicable")
     # Persist the nuisance-CV grid size. Runtime experiments with different
     # grids must remain distinguishable in downstream aggregation and audits.
     results$nlambda_init <- as.integer(nlambda_init)

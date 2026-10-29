@@ -23,6 +23,43 @@ test_that("real-data adapter preserves labels, rows and shared feature maps", {
   expect_error(build(frame), "numeric")
 })
 
+test_that("real-data input identity includes folds and baseline preprocessing", {
+  helper <- file.path(repo_root, "scripts/real_data/helpers.R")
+  skip_if_not(file.exists(helper), "Repository-only collaborator adapter")
+  scope <- new.env(parent = globalenv())
+  sys.source(helper, envir = scope)
+  prepared <- list(data_split = list(t = list(Y = c(0, 1))),
+    folds = list(target_folds = list(1L, 2L)),
+    comparison_data = list(t = list(Y = c(0, 1))))
+  reference <- scope$real_data_input_hash(prepared)
+  expect_identical(reference, scope$real_data_input_hash(prepared))
+  changed <- prepared
+  changed$folds$target_folds <- rev(changed$folds$target_folds)
+  expect_false(identical(reference, scope$real_data_input_hash(changed)))
+  changed <- prepared
+  changed$comparison_data$t$Y <- c(1, 1)
+  expect_false(identical(reference, scope$real_data_input_hash(changed)))
+  expect_identical(prepared$data_split, changed$data_split)
+})
+
+test_that("real-data rows use the reported SE and distinguish weight diagnostics and legacy fits", {
+  helper <- file.path(repo_root, "scripts/real_data/helpers.R")
+  skip_if_not(file.exists(helper), "Repository-only collaborator adapter")
+  scope <- new.env(parent = globalenv())
+  sys.source(helper, envir = scope)
+  fit <- list(estimate = .2, se = .1, variance_method = "leading", se_weight_adjusted = .15)
+  row <- scope$real_data_method_row("RoCE", fit)
+  expect_identical(row$variance_method, "leading")
+  expect_equal(row$se_weight_adjusted, .15)
+  expect_equal(c(row$ci_lower, row$ci_upper), .2 + c(-1, 1) * qnorm(.975) * .1)
+  legacy <- scope$real_data_method_row("RoCE", list(estimate = .2, se = .15))
+  expect_identical(legacy$variance_method, "not_recorded")
+  expect_true(is.na(legacy$se_weight_adjusted))
+  baseline <- scope$real_data_method_row("federated_dr", list(estimate = .2, se = .12,
+    components = list(variance_method = "bootstrap")))
+  expect_identical(baseline$variance_method, "bootstrap")
+})
+
 test_that("real-data curvature output contains only aggregate solver diagnostics", {
   scope <- new.env(parent = globalenv())
   helper <- file.path(repo_root, "scripts/real_data/helpers.R")

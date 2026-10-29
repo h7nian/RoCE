@@ -27,7 +27,7 @@ Reference results on the outcome scale:
 | Method | Estimate | SE |
 |---|---:|---:|
 | Target-only (calibrated) | 0.0240017838 | 0.0246111620 |
-| RoCE | 0.0301579860 | 0.0216427172 |
+| RoCE | 0.0301579860 | 0.0211518346 |
 | SS | 0.0599344470 | 0.0156863585 |
 | IVW | 0.0583093805 | 0.0159419496 |
 | Federated-DR | 0.0438655238 | 0.0193523358 |
@@ -35,3 +35,20 @@ Reference results on the outcome scale:
 
 Compare configuration and diagnostics when reproducing these numbers. Real-data
 SE comparisons do not establish causal bias or coverage.
+
+The RoCE reference SE uses the leading variance reported by version 0.1.1.
+Its 95% CI is `[-0.0112988480, 0.0716148200]`; the former local weight-adjusted
+SE, `0.0216427172`, remains a diagnostic. Reaggregating the saved primary fit
+reproduces the original point estimate and weights without refitting nuisance
+models. The target-only and baseline results are unchanged.
+
+To audit the saved Private-target RHC analysis checkpoint and its lambda path:
+
+```bash
+Rscript scripts/real_data/reaggregate_rhc_variance.R ANALYSIS_RDS METHODS_CSV NEW_OUTPUT_DIR
+```
+
+This script checks the 5039-record reference cohort, matches the saved results,
+and exports aggregate summaries only. Completed analyses must use the same
+site data, fold-specific preprocessing and baseline input; the runner hashes
+all three before reusing an output directory.

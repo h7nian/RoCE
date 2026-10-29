@@ -1,0 +1,11 @@
+{
+  "simulation_original_sha256": "69669abcb97f19172795d255b851866376df86611a8db66ed48e474f923d3aff",
+  "simulation_leading_cells": 60,
+  "simulation_repeats_per_cell": 200,
+  "simulation_nuisance_refits": 0,
+  "rhc_original_sha256": "c2c94e10b06f285536a83ccd87766a2981e4b36f8d09caba1fb8eb61e996d8f9",
+  "rhc_leading_se": 0.0211518345905977,
+  "rhc_point_estimate": 0.0301579860268669,
+  "rhc_nuisance_refits": 0,
+  "allofus_status": "Original supplied summary retained; matching leading variance is not available locally. Do not mix with the different Northeast diagnostic run."
+}

@@ -57,3 +57,9 @@ A single source-weight vector is learned by minimizing the estimated
 variance of the TATE contrast, so all treated/control covariance terms enter
 both the weight objective and the final Wald variance.
 }
+\details{
+Reported \code{se}, \code{variance}, and confidence intervals use
+  the leading site-centered variance, with \code{variance_method="leading"}.
+  The local weight-learning adjustment remains available in
+  \code{se_weight_adjusted} and \code{variance_weight_adjusted} as a diagnostic.
+}

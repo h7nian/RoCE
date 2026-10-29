@@ -1099,6 +1099,10 @@ build_crossfit_folds <- function(data_split, n_folds) {
 #'        target-only outer/inner fold fits across communication modes. Use the
 #'        same cache only with the same data and fold partition.
 #' @return list with estimates and variance components
+#' @details Reported \code{se}, \code{variance}, and confidence intervals use
+#'   the leading site-centered variance, with \code{variance_method="leading"}.
+#'   The local weight-learning adjustment is retained separately in
+#'   \code{se_weight_adjusted} and \code{variance_weight_adjusted} for diagnostics.
 #' @export
 run_crossfit <- function(data_split, n_folds = N_FOLDS_DEFAULT,
                          communication_mode = c("two_round", "one_round"),
@@ -1546,6 +1550,12 @@ run_crossfit <- function(data_split, n_folds = N_FOLDS_DEFAULT,
 #' @return A RoCE TATE result. Arm-specific fits are combined before
 #'   weight estimation; the returned object contains the TATE-level estimates,
 #'   common weights, fold diagnostics, and target-only reference.
+#' @details Reported \code{se}, \code{variance}, and confidence intervals use
+#'   the leading site-centered variance, retaining cross-arm covariance, with
+#'   \code{variance_method="leading"}. The local weight-learning adjustment is
+#'   retained in \code{se_weight_adjusted} and \code{variance_weight_adjusted}
+#'   for diagnostics. First-order validity requires the oracle-equivalence
+#'   conditions; fixed-cutoff inference is not guaranteed uniformly over source biases.
 #' @param parallel_arms Logical. If \code{TRUE}, fit the treated and control
 #'   nuisance pipelines concurrently. Callers must allocate approximately
 #'   \code{2 * n_cores} CPUs because each arm can still parallelize over source
@@ -2449,7 +2459,7 @@ reaggregate_tate_crossfit <- function(
 #' Reuses one set of fitted nuisance coefficients. Each distinct inference
 #' radius refreshes correction and influence components once; all cutoffs at
 #' that radius then reuse those refreshed components and rerun only the
-#' low-dimensional common-weight optimization.
+#' low-dimensional weight optimization, retaining the fitted aggregation mode.
 #'
 #' @param data_split Site-stratified data used for the original fit.
 #' @param fitted_tate Result returned by \code{run_tate_crossfit()}.
@@ -2458,6 +2468,9 @@ reaggregate_tate_crossfit <- function(
 #' @param verbose Print reaggregation progress.
 #' @return A list with the validated grid, a result list aligned to its rows,
 #'   and counts of inference refreshes and nuisance refits.
+#' @details Results use the current leading-variance convention. A legacy fit
+#'   is reaggregated even at its original cutoff so one grid cannot mix old
+#'   weight-adjusted SEs with current leading SEs. Nuisance fits are reused.
 #' @export
 reaggregate_tate_sensitivity_grid <- function(
     data_split, fitted_tate, sensitivity_grid, verbose = FALSE) {
@@ -2543,7 +2556,7 @@ reaggregate_tate_sensitivity_grid <- function(
     lambda <- 1 / grid$cutoff[[index]]
     if (.same_sensitivity_value(
       lambda, inference_fit$aggregation_lambda_selection
-    )) {
+    ) && identical(inference_fit$variance_method, "leading")) {
       results[[index]] <- inference_fit
     } else {
       started_at <- proc.time()[["elapsed"]]
@@ -2553,6 +2566,7 @@ reaggregate_tate_sensitivity_grid <- function(
         mu0_result = inference_fit$arm_results$mu0,
         lambda_selection = lambda,
         lambda_rule = inference_fit$aggregation_lambda_rule %||% "min",
+        aggregation_mode = inference_fit$aggregation_mode %||% "common_tate",
         screening_rule = inference_fit$aggregation_screening_rule %||% "soft_penalty",
         verbose = verbose
       )

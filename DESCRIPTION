@@ -1,8 +1,8 @@
 Package: RoCE
 Type: Package
 Title: RoCE: Robust Federated Causal Estimation through Calibrated High-Dimensional Models
-Version: 0.1.0
-Date: 2026-08-25
+Version: 0.1.1
+Date: 2026-10-28
 Authors@R: 
     person("Sinian", "Zhang", 
            email = "zhan9381@umn.edu",

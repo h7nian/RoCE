@@ -1,0 +1,52 @@
+% Shared main-text statements and their same-number restatements.
+% Edit a statement here; both documents use this exact text.
+% Supplement-only references remain local; main references use maincref.
+
+\newcommand{\FACEHDSourceIdentification}{%
+For a transportable source and coefficient vectors $\alpha,\gamma$ with finite expectations, \maincref{asmp:identification} gives
+\[
+\mu_{s_j}^a(\alpha,\gamma)-\mu_t^a
+=\E_t\left[\left(1-\frac{q_{s_j}^a(\boldsymbol X;\gamma)}{q_{s_j}^{a,\star}(\boldsymbol X)}\right)(m(\boldsymbol X;\alpha)-m_t^{a,\star}(\boldsymbol X))\right].
+\]
+Thus $\mu_{s_j}^a(\alpha,\gamma)=\mu_t^a$ if $m(\boldsymbol X;\alpha)=m_t^{a,\star}(\boldsymbol X)$ or $q_{s_j}^a(\boldsymbol X;\gamma)=q_{s_j}^{a,\star}(\boldsymbol X)$.
+}
+
+\newcommand{\FACEHDSourceCalibration}{%
+For a transportable source and one arm, let $(\bar\alpha,\bar\gamma)$ be the identifiable calibrated population coefficients satisfying the predictor bound in \maincref{sec:calibration}. If the outcome model is correct at $\alpha^\star$, $\bar\alpha=\alpha^\star$; if the joint weight model is correct at $\gamma^\star$, $\bar\gamma=\gamma^\star$. In either case, the other coefficient minimizes its paired population calibration loss with the correct initial coefficient. Then $\mu_{s_j}^a(\bar\alpha,\bar\gamma)=\mu_t^a$, and both gradients in \maincref{eq:main_calibration_derivatives} vanish at $(\bar\alpha,\bar\gamma)$.
+}
+
+\newcommand{\FACEHDJointCovariance}{%
+Independent site samples give additive variances for the first-order site contributions. The joint treatment-effect variance is estimated by
+\FACEHDMainEquation{eq:main_joint_tate_variance}{
+\widehat V_\tau^{(-k_1)}(\eta)
+=\sum_r\frac{\widehat{\operatorname{Var}}_{r,-k_1}
+\{\widehat G_{r,i}^1(\eta^1)-\widehat G_{r,i}^0(\eta^0)\}}{n_{r,-k_1}}.
+}
+Here each empirical variance centers contributions within the inner calibration folds and pools their second central moments within the site. Under the candidate linear expansions and fitted-score covariance consistency, this expression consistently estimates the treatment-effect variance on the valid candidate subspace.
+}
+
+\newcommand{\FACEHDSourceExpansion}{%
+For the fitting procedure and penalty levels in \maincref{sec:source_inference}, under \maincref{asmp:identification,asmp:main_sampling,asmp:main_nuisance}, each $s_j\in\mathcal J^{a,*}$ satisfies
+\[
+\widehat\mu_{s_j}^a-\mu_t^a
+=n_t^{-1}\sum_{i\in\mathcal D_t}\zeta_{t,s_j,i}^a
++n_{s_j}^{-1}\sum_{i\in\mathcal D_{s_j}}\xi_{t,s_j,i}^a
++o_p(N^{-1/2}),
+\]
+and its fitted site-score covariances are consistent.
+}
+
+\newcommand{\FACEHDJointAggregation}{%
+For the fitting procedure and penalty levels in \maincref{sec:source_inference}, under \maincref{asmp:identification,asmp:main_sampling,asmp:main_nuisance,asmp:main_training_moments,asmp:main_aggregation} and the target-only conditions of \cref{prop:target_only_asymptotic_linearity}, the outer-fold weights satisfy $\widehat\eta^{(-k_1)}\to_p\eta^*$ and
+\[
+P\{\widehat\eta_{s_j}^{a,(-k_1)}=0\ \text{for all }a=0,1,\ s_j\notin\mathcal J^{a,*}\}\to1.
+\]
+\begin{samepage}
+Moreover,
+\[
+\sqrt N(\widehat\tau_t-\tau_t)\xrightarrow{d}\mathcal N(0,V_\tau^*),
+\qquad V_\tau^*\le L_\tau^*(0).
+\]
+If $\mathcal J^{0,*}=\mathcal J^{1,*}=\varnothing$, the aggregate equals the target-only contrast with probability tending to one.
+\end{samepage}
+}

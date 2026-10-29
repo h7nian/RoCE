@@ -29,5 +29,10 @@ A list with the validated grid, a result list aligned to its rows,
 Reuses one set of fitted nuisance coefficients. Each distinct inference
 radius refreshes correction and influence components once; all cutoffs at
 that radius then reuse those refreshed components and rerun only the
-low-dimensional common-weight optimization.
+low-dimensional weight optimization, retaining the fitted aggregation mode.
+}
+\details{
+Results use the current leading-variance convention. A legacy fit
+  is reaggregated even at its original cutoff so one grid cannot mix old
+  weight-adjusted SEs with current leading SEs. Nuisance fits are reused.
 }

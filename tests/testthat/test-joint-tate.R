@@ -100,12 +100,60 @@ test_that("all TATE aggregation modes reuse the same fitted nuisance models", {
     expect_identical(reaggregated$crossfit_levels, 3L)
     expect_true(is.finite(reaggregated$estimate))
     expect_true(is.finite(reaggregated$se))
+    expect_identical(reaggregated$variance_method, "leading")
+    expect_equal(reaggregated$variance,
+      .multisite_pseudovalue_variance(reaggregated$all_phi_tau,
+        as.integer(vapply(data, function(x) x$n, numeric(1L)))), tolerance = 1e-12)
+    expect_equal(reaggregated$se, reaggregated$se_fixed_weights, tolerance = 1e-12)
+    expect_equal(reaggregated$variance_weight_adjusted,
+      reaggregated$variance + reaggregated$weight_layer$indirect_variance +
+        reaggregated$weight_layer$cross_term, tolerance = 1e-12)
+    expect_equal(reaggregated$se_weight_adjusted^2, reaggregated$variance_weight_adjusted,
+      tolerance = 1e-12)
+    expect_equal(c(reaggregated$ci_lower, reaggregated$ci_upper),
+      reaggregated$estimate + c(-1, 1) * qnorm(.975) * reaggregated$se_fixed_weights,
+      tolerance = 1e-12)
     expect_identical(reaggregated$source_validation_method, "calibrated")
     expect_identical(reaggregated$arm_results$mu1$fold_results[[1L]]$source_results$s1$alpha_ts,
                      fit$arm_results$mu1$fold_results[[1L]]$source_results$s1$alpha_ts)
     expect_identical(reaggregated$arm_results$mu0$fold_results[[1L]]$target_only$calibration$outcome,
                      fit$arm_results$mu0$fold_results[[1L]]$target_only$calibration$outcome)
     estimates[[mode]] <- reaggregated
+  }
+  # A cutoff-only sensitivity scan must not silently switch the estimator's
+  # aggregation objective on rows whose lambda differs from the original.
+  for (mode in names(estimates)) {
+    original <- estimates[[mode]]
+    lambdas <- original$aggregation_lambda_selection * c(1, .5, 2)
+    sensitivity <- reaggregate_tate_sensitivity_grid(data, original,
+      data.frame(cutoff = 1 / lambdas, M_tau_inference = original$M_tau_inference))
+    expect_identical(sensitivity$results[[1L]], original)
+    expect_identical(sensitivity$n_inference_refreshes, 0L)
+    expect_identical(sensitivity$n_nuisance_refits, 0L)
+    legacy <- original
+    legacy$variance <- original$variance_weight_adjusted
+    legacy$se <- original$se_weight_adjusted
+    legacy$variance_method <- legacy$variance_weight_adjusted <- legacy$se_weight_adjusted <- NULL
+    legacy$ci_lower <- legacy$estimate - qnorm(.975) * legacy$se
+    legacy$ci_upper <- legacy$estimate + qnorm(.975) * legacy$se
+    refreshed <- reaggregate_tate_sensitivity_grid(data, legacy,
+      data.frame(cutoff = 1/lambdas[1L], M_tau_inference = original$M_tau_inference))
+    expect_identical(refreshed$results[[1L]]$variance_method, "leading")
+    expect_equal(refreshed$results[[1L]]$estimate, original$estimate, tolerance = 1e-12)
+    expect_equal(refreshed$results[[1L]]$fold_weights, original$fold_weights, tolerance = 1e-12)
+    expect_equal(refreshed$results[[1L]]$se, original$se_fixed_weights, tolerance = 1e-12)
+    expect_identical(refreshed$n_nuisance_refits, 0L)
+    for (i in seq_along(lambdas)) {
+      candidate <- sensitivity$results[[i]]
+      direct <- calculate_tate_crossfit_aggregation(data,
+        original$arm_results$mu1, original$arm_results$mu0,
+        lambda_selection = lambdas[i], aggregation_mode = mode,
+        screening_rule = original$aggregation_screening_rule, verbose = FALSE)
+      expect_identical(candidate$aggregation_mode, mode)
+      expect_equal(candidate$estimate, direct$estimate, tolerance = 1e-12)
+      expect_equal(candidate$se, direct$se, tolerance = 1e-12)
+      expect_equal(candidate$fold_weights, direct$fold_weights, tolerance = 1e-12)
+    }
   }
   expect_equal(estimates$common_tate$estimate, fit$estimate, tolerance = 1e-12)
   expect_equal(estimates$common_tate$se, fit$se, tolerance = 1e-12)

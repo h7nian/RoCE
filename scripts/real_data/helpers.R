@@ -33,12 +33,26 @@ site_data_from_frame <- function(data, site_column, treatment_column, outcome_co
   result
 }
 
+real_data_input_hash <- function(prepared) {
+  # Completed results depend on evaluation folds/transforms and baseline input,
+  # not just the canonical site data. Metadata may contain runtime-only labels.
+  digest::digest(list(data_split = prepared$data_split, folds = prepared$folds,
+    comparison_data = prepared$comparison_data), algo = "sha256")
+}
+
 real_data_method_row <- function(label, fit) {
   stopifnot(length(fit$estimate) == 1L, length(fit$se) == 1L,
             is.finite(fit$estimate), is.finite(fit$se), fit$se > 0)
+  variance_method <- fit$variance_method
+  if (is.null(variance_method)) variance_method <- fit$components$variance_method
+  if (is.null(variance_method)) variance_method <- "not_recorded"
+  adjusted_se <- fit$se_weight_adjusted
+  if (is.null(adjusted_se)) adjusted_se <- NA_real_
   data.frame(method = label, estimate = fit$estimate, se = fit$se,
     ci_lower = fit$estimate - stats::qnorm(.975) * fit$se,
-    ci_upper = fit$estimate + stats::qnorm(.975) * fit$se)
+    ci_upper = fit$estimate + stats::qnorm(.975) * fit$se,
+    variance_method = variance_method, se_weight_adjusted = adjusted_se,
+    stringsAsFactors = FALSE)
 }
 
 # Only aggregate solver metadata; no feature names, coefficients or patient rows.
